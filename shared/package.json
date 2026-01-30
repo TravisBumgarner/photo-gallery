@@ -1,0 +1,18 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./db": "./src/db/index.ts",
+    "./db/schema": "./src/db/schema.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.11.5",
+    "better-sqlite3": "^11.7.0",
+    "typescript": "^5.3.3"
+  }
+}

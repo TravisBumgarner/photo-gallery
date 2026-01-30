@@ -1,7 +1,10 @@
 import { Router } from 'express';
-import { db } from '../db/index.js';
-import { photos } from '../db/schema.js';
+import { createDb } from 'shared/db';
+import { photos } from 'shared/db/schema';
+import { config } from '../config.js';
 import { sql, desc, asc, or, like, and, gte, lte } from 'drizzle-orm';
+
+const db = createDb(config.DATABASE_URL);
 
 export const router = Router();
 
@@ -114,7 +117,7 @@ router.get('/photos', async (req, res) => {
     }
 
     // Determine sort column and order
-    const sortColumn = photos[sortBy as keyof typeof photos] || photos.dateCaptured;
+    const sortColumn = (photos[sortBy as keyof typeof photos] || photos.dateCaptured) as typeof photos.dateCaptured;
     const orderFn = sortOrder === 'asc' ? asc : desc;
 
     // Execute query
@@ -225,7 +228,7 @@ router.get('/photos/suggestions', async (req, res) => {
   try {
     // Get top cameras
     const topCameras = await db
-      .select({ 
+      .select({
         value: photos.camera,
         count: sql<number>`count(*) as count`
       })
@@ -355,8 +358,8 @@ router.get('/photos/meta/aperture-values', async (req, res) => {
 router.get('/photos/meta/dates', async (req, res) => {
   try {
     const dates = await db
-      .selectDistinct({ 
-        date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')` 
+      .selectDistinct({
+        date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')`
       })
       .from(photos)
       .where(sql`${photos.dateCaptured} IS NOT NULL`)
