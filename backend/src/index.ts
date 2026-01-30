@@ -20,19 +20,19 @@ app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: config.CORS_ORIGIN,
     credentials: true,
 }));
 app.use(express.json());
 
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'default-secret-change-me',
+    secret: config.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
         httpOnly: true,
         sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        secure: config.NODE_ENV === 'production',
         maxAge: 30 * 60 * 1000, // 30 minutes
     },
 }));
@@ -46,7 +46,7 @@ app.get('/health', (req, res) => {
 app.use('/api', authRouter);
 
 // Serve frontend static assets in production (before auth barrier so login page is accessible)
-if (process.env.NODE_ENV === 'production') {
+if (config.NODE_ENV === 'production') {
     const frontendDir = path.join(__dirname, '../frontend-dist');
     app.use(express.static(frontendDir));
 

@@ -35,6 +35,7 @@ Ingestion takes photos out of your library, extracts metadata, generates thumbna
     - `SSH_DEST_DIR` - Remote directory for rsync (production mode only)
     - `SESSION_SECRET` - Secret for signing session cookies (Use a strong random value)
     - `APP_PASSWORD` - Password for logging into the app (Use a strong random value)
+    - `CORS_ORIGIN` - Frontend origin for CORS (e.g. `http://localhost:5173`)
 
 
 1. `npm run ingest`
