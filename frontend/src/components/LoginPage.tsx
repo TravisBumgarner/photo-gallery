@@ -53,7 +53,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
                 elevation={3}
             >
                 <Typography variant="h5" mb={3} textAlign="center">
-                    Photo Gallery
+                    Login
                 </Typography>
 
                 {error && (
