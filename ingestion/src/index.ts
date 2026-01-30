@@ -39,8 +39,8 @@ async function main() {
     process.exit(1);
   }
 
-  const outputDir = path.resolve('./public/images');
-  const thumbnailDir = path.resolve('./public/thumbnails');
+  const outputDir = path.resolve('../backend/public/images');
+  const thumbnailDir = path.resolve('../backend/public/thumbnails');
 
   const dryRun = config.DRY_RUN === 'true';
 
@@ -124,6 +124,7 @@ async function main() {
   // DB sync: remove stale rows that have no corresponding file on disk
   console.log('\nSyncing DB with images on disk...');
   try {
+    await fs.mkdir(outputDir, { recursive: true });
     const filesOnDisk = await fs.readdir(outputDir);
     const uuidsOnDisk = new Set(
       filesOnDisk.map(f => path.basename(f, path.extname(f)))

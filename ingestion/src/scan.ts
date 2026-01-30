@@ -1,17 +1,10 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { config } from './config.js';
 
-function getImageExtensions(): string[] {
-  const raw = config.IMAGE_EXTENSIONS;
-  return raw.split(',').map(ext => {
-    const trimmed = ext.trim();
-    return trimmed.startsWith('.') ? trimmed : `.${trimmed}`;
-  });
-}
+
+const VALID_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
 
 export async function scanDirectory(dir: string): Promise<string[]> {
-  const imageExtensions = getImageExtensions();
   const files: string[] = [];
 
   async function scan(currentDir: string) {
@@ -25,7 +18,7 @@ export async function scanDirectory(dir: string): Promise<string[]> {
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
         const nameWithoutExt = path.basename(entry.name, path.extname(entry.name));
-        if (imageExtensions.includes(ext) && nameWithoutExt.endsWith('_exported_for_viewing_locally')) {
+        if (VALID_IMAGE_EXTENSIONS.includes(ext) && nameWithoutExt.endsWith('_exported_for_viewing_locally')) {
           files.push(fullPath);
         }
       }
