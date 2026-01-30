@@ -47,6 +47,8 @@ export interface PhotoFilters {
   aspectRatio?: string;
   rating?: number;
   label?: string;
+  keyword?: string;
+  folder?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }

@@ -11,8 +11,7 @@
         "db:generate": "drizzle-kit generate",
         "db:migrate": "tsx src/db/migrate.ts",
         "db:studio": "drizzle-kit studio",
-        "process-images": "tsx src/scripts/processImages.ts",
-        "inspect-photo": "tsx src/scripts/inspectPhoto.ts"
+        "ingest": "tsx src/ingestion/index.ts"
     },
     "keywords": [],
     "author": "",
