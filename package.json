@@ -1,22 +1,28 @@
 {
-    "name": "photo-gallery",
-    "version": "1.0.0",
-    "description": "Full-stack app with React, Vite, Express, and Drizzle ORM",
-    "scripts": {
-        "setup": "bash bootstrap.sh",
-        "install:all": "cd backend && npm install && cd ../frontend && npm install",
-        "dev:backend": "cd backend && npm run dev",
-        "dev:frontend": "cd frontend && npm run dev",
-        "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-        "build": "cd backend && npm run build && cd ../frontend && npm run build",
-        "db:generate": "cd backend && npm run db:generate",
-        "db:migrate": "cd backend && npm run db:migrate",
-        "db:studio": "cd backend && npm run db:studio"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "devDependencies": {
-        "concurrently": "^8.2.2"
-    }
+  "name": "photo-gallery",
+  "version": "1.0.0",
+  "description": "Full-stack app with React, Vite, Express, and Drizzle ORM",
+  "workspaces": [
+    "shared",
+    "backend",
+    "ingestion",
+    "frontend"
+  ],
+  "scripts": {
+    "setup": "bash bootstrap.sh",
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "db:generate": "npm run db:generate -w backend",
+    "db:migrate": "npm run db:migrate -w backend",
+    "db:studio": "npm run db:studio -w backend",
+    "ingest": "npm run ingest -w ingestion"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
 }

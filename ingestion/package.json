@@ -1,0 +1,23 @@
+{
+  "name": "ingestion",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "ingest": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "blurhash": "^2.0.5",
+    "dotenv": "^16.4.1",
+    "drizzle-orm": "^0.36.4",
+    "exiftool-vendored": "^35.2.0",
+    "shared": "*",
+    "sharp": "^0.33.5",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^11.7.0",
+    "@types/node": "^20.11.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

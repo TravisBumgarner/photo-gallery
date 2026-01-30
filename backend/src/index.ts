@@ -1,18 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { config } from './config.js';
 import { router as apiRouter } from './routes/api.js';
 import { router as photosRouter } from './routes/photos.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.PORT;
 
 // Middleware
 app.use(cors());
@@ -33,5 +31,5 @@ app.get('/health', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
