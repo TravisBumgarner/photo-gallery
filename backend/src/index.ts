@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { config } from './config.js';
 import { router as apiRouter } from './routes/api.js';
 import { router as photosRouter } from './routes/photos.js';
 import { router as authRouter } from './routes/auth.js';
@@ -12,10 +12,8 @@ import { requireAuth } from './middleware/auth.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.PORT;
 
 // Trust reverse proxy (NearlyFreeSpeech runs Node behind a proxy)
 app.set('trust proxy', 1);

@@ -1,63 +1,40 @@
 # Photo Gallery
 
-React + Vite frontend, Express + Drizzle backend, SQLite database.
+Self hosted mobile photo gallery for browsing Lightroom photos quickly.
 
-## Setup
+![Photo Gallery Interface](readme/intro.png)
 
-```bash
-./bootstrap.sh
-# or: npm run setup
-```
+Built with React + Vite, Express + Drizzle, and SQLite. Managed via npm workspaces.
 
-This installs dependencies, creates `backend/.env` if missing, and runs database migrations.
+## Local Setup
 
-## Development
+1. `npm install`
+1. `cp backend/.env.example backend/.env`
+1. `cp ingestion/.env.example ingestion/.env`
+1. `npm run db:migrate`
+1. Ingestion (see below)
+1. `npm run dev` (frontend on :5173, backend on :3000)
 
-```bash
-npm run dev
-```
+## Ingestion
 
-Starts both servers concurrently:
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3000
+Ingestion takes photos out of your library, extracts metadata, generates thumbnails, and loads the data into the database.
 
-The frontend proxies `/api`, `/images`, and `/thumbnails` requests to the backend.
+1. Preparing Photos
+    - Lightroom:
+        1. `File -> Export` and click `Add`. Select the preset in `lightroom-export-presets`.
+        2. Selecting `Export To: Same folder as original photo` will the Photo Gallery to generate a folder structure for ease of navigation. Alternatively select a single folder.
+    - No other apps are currently supported, feel free to reach out if another is wanted.
 
-## Scripts
+1. Configure `ingestion/.env`
+    - `DATABASE_URL` - Path to the SQLite database file
+    - `SOURCE_DIR` - Directory to scan for exported photos
+    - `INGEST_MODE` - `local` for development, `production` to enable rsync to remote server
+    - `DRY_RUN` - `true` to preview without processing, `false` to run for real
+    - `IMAGE_EXTENSIONS` - Comma-separated list of file extensions to include
+    - `SSH_HOST` - Remote host for rsync (production mode only)
+    - `SSH_DEST_DIR` - Remote directory for rsync (production mode only)
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start frontend + backend |
-| `npm run dev:frontend` | Start frontend only |
-| `npm run dev:backend` | Start backend only |
-| `npm run build` | Build both for production |
-| `npm run db:generate` | Generate migrations after schema changes |
-| `npm run db:migrate` | Run database migrations |
-| `npm run db:studio` | Open Drizzle Studio (database GUI) |
-| `npm run process-images` | Process photos into the gallery |
-
-## Processing Images
-
-```bash
-npm run process-images [path-to-photos]
-```
-
-On startup the script prompts for **Development** or **Production** mode:
-
-- **Development (`d`)** — uses the local `.env` database, reads/writes images locally. Behaves the same as before.
-- **Production (`p`)** — SCP's the remote SQLite database from the production server, processes images locally, then rsync's images, thumbnails, and the updated database back to the remote server.
-
-Production mode requires SSH access to the host alias `nfs_photo-gallery` (configure in `~/.ssh/config`). The remote layout is:
-
-```
-/home/protected/
-├── sqlite.db
-└── public/
-    ├── images/
-    └── thumbnails/
-```
-
-The script also checks for orphaned database rows (rows referencing images that no longer exist on disk or the remote server) and offers to clean them up before processing.
+1. `npm run ingest`
 
 ## Deployment
 
@@ -68,8 +45,8 @@ The script also checks for orphaned database rows (rows referencing images that 
 Builds the frontend and backend locally, then syncs everything to the remote NearlyFreeSpeech host (`nfs_photo-gallery`). The script:
 
 1. Installs dependencies and builds both frontend (Vite) and backend (TypeScript)
-2. Rsync's the compiled backend, frontend dist, migrations, and `run.sh` to `/home/protected/`
-3. Installs production dependencies on the remote server and sets permissions
+1. Rsync's the compiled backend, frontend dist, migrations, and `run.sh` to `/home/protected/`
+1. Installs production dependencies on the remote server and sets permissions
 
 The remote `.env` and `sqlite.db` are **not** overwritten by the deploy — manage those on the server directly. In production the backend serves the frontend dist, so no separate web server is needed for the SPA.
 

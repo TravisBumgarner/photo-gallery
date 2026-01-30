@@ -1,7 +1,10 @@
 import { Router } from 'express';
-import { db } from '../db/index.js';
-import { photos } from '../db/schema.js';
+import { createDb } from 'shared/db';
+import { photos } from 'shared/db/schema';
+import { config } from '../config.js';
 import { sql, desc, asc, or, like, and, gte, lte, type AnyColumn } from 'drizzle-orm';
+
+const db = createDb(config.DATABASE_URL);
 
 export const router = Router();
 
@@ -22,6 +25,8 @@ router.get('/photos', async (req, res) => {
       aspectRatio = '',
       rating = '',
       label = '',
+      keyword = '',
+      folder = '',
       sortBy = 'dateCaptured',
       sortOrder = 'desc',
     } = req.query;
@@ -97,6 +102,18 @@ router.get('/photos', async (req, res) => {
     // Filter by label
     if (label) {
       conditions.push(sql`${photos.label} = ${label}`);
+    }
+
+    // Filter by keyword
+    if (keyword) {
+      conditions.push(like(photos.keywords, `%"${keyword}"%`));
+    }
+
+    // Filter by folder path (prefix match on JSON keywords array)
+    if (folder) {
+      const segments = (folder as string).split('/');
+      const jsonPrefix = '["' + segments.join('","') + '"';
+      conditions.push(like(photos.keywords, `${jsonPrefix}%`));
     }
 
     // Determine sort column and order
@@ -217,7 +234,7 @@ router.get('/photos/suggestions', async (req, res) => {
   try {
     // Get top cameras
     const topCameras = await db
-      .select({ 
+      .select({
         value: photos.camera,
         count: sql<number>`count(*) as count`
       })
@@ -347,8 +364,8 @@ router.get('/photos/meta/aperture-values', async (req, res) => {
 router.get('/photos/meta/dates', async (req, res) => {
   try {
     const dates = await db
-      .selectDistinct({ 
-        date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')` 
+      .selectDistinct({
+        date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')`
       })
       .from(photos)
       .where(sql`${photos.dateCaptured} IS NOT NULL`)
@@ -394,6 +411,69 @@ router.get('/photos/meta/labels', async (req, res) => {
   } catch (error) {
     console.error('Error fetching labels:', error);
     res.status(500).json({ error: 'Failed to fetch labels' });
+  }
+});
+
+// Get distinct keywords
+router.get('/photos/meta/keywords', async (req, res) => {
+  try {
+    const rows = await db
+      .select({ keywords: photos.keywords })
+      .from(photos)
+      .where(sql`${photos.keywords} IS NOT NULL`);
+
+    const keywordSet = new Set<string>();
+    rows.forEach((row) => {
+      if (row.keywords) {
+        try {
+          const parsed = JSON.parse(row.keywords);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((kw: string) => keywordSet.add(kw));
+          }
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    });
+
+    const sorted = Array.from(keywordSet).sort((a, b) => a.localeCompare(b));
+    res.json(sorted);
+  } catch (error) {
+    console.error('Error fetching keywords:', error);
+    res.status(500).json({ error: 'Failed to fetch keywords' });
+  }
+});
+
+// Get distinct folder paths derived from keywords
+router.get('/photos/meta/folders', async (req, res) => {
+  try {
+    const rows = await db
+      .select({ keywords: photos.keywords })
+      .from(photos)
+      .where(sql`${photos.keywords} IS NOT NULL`);
+
+    const pathSet = new Set<string>();
+    rows.forEach((row) => {
+      if (row.keywords) {
+        try {
+          const parsed = JSON.parse(row.keywords);
+          if (Array.isArray(parsed)) {
+            // Build all ancestor paths
+            for (let i = 1; i <= parsed.length; i++) {
+              pathSet.add(parsed.slice(0, i).join('/'));
+            }
+          }
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    });
+
+    const sorted = Array.from(pathSet).sort((a, b) => a.localeCompare(b));
+    res.json(sorted);
+  } catch (error) {
+    console.error('Error fetching folders:', error);
+    res.status(500).json({ error: 'Failed to fetch folders' });
   }
 });
 

@@ -11,13 +11,12 @@ import {
     ListItemButton,
     ListItemText,
     Chip,
-    Rating,
     Collapse,
-    Slider,
 } from '@mui/material';
-import { ChevronLeft as ChevronLeftIcon, Star as StarIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon, CalendarMonth as CalendarMonthIcon } from '@mui/icons-material';
+import { ChevronLeft as ChevronLeftIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon, CalendarMonth as CalendarMonthIcon } from '@mui/icons-material';
 import { PhotoFilters } from '../types';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
+import SearchBar from './SearchBar';
 
 interface FilterPanelProps {
     filters: PhotoFilters;
@@ -36,31 +35,21 @@ const aspectRatioOptions = [
 
 function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
     const [cameras, setCameras] = useState<string[]>([]);
-    const [isoValues, setIsoValues] = useState<number[]>([]);
-    const [apertureValues, setApertureValues] = useState<number[]>([]);
     const [dates, setDates] = useState<string[]>([]);
     const [dateCounts, setDateCounts] = useState<Record<string, number>>({});
-    const [, setLabels] = useState<string[]>([]);
+    const [keywords, setKeywords] = useState<string[]>([]);
     const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
-
-    // Local state for slider values during dragging
-    const [isoRange, setIsoRange] = useState<[number, number] | null>(null);
-    const [apertureRange, setApertureRange] = useState<[number, number] | null>(null);
 
     useEffect(() => {
         // Fetch all metadata
         Promise.all([
             fetch('/api/photos/meta/cameras', { credentials: 'include' }).then(res => res.json()),
-            fetch('/api/photos/meta/iso-values', { credentials: 'include' }).then(res => res.json()),
-            fetch('/api/photos/meta/aperture-values', { credentials: 'include' }).then(res => res.json()),
             fetch('/api/photos/meta/dates', { credentials: 'include' }).then(res => res.json()),
             fetch('/api/photos/meta/dates-with-counts', { credentials: 'include' }).then(res => res.json()),
-            fetch('/api/photos/meta/labels', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/keywords', { credentials: 'include' }).then(res => res.json()),
         ])
-            .then(([camerasData, isoData, apertureData, datesData, dateCountsData, labelsData]) => {
+            .then(([camerasData, datesData, dateCountsData, keywordsData]) => {
                 setCameras(camerasData);
-                setIsoValues(isoData);
-                setApertureValues(apertureData);
                 setDates(datesData);
                 // Convert array to map
                 const countsMap: Record<string, number> = {};
@@ -68,7 +57,7 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
                     countsMap[item.date] = item.count;
                 });
                 setDateCounts(countsMap);
-                setLabels(labelsData);
+                setKeywords(keywordsData);
             })
             .catch(err => console.error('Failed to fetch metadata:', err));
     }, []);
@@ -99,6 +88,14 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
                 <IconButton onClick={onClose} size="small">
                     <ChevronLeftIcon />
                 </IconButton>
+            </Box>
+
+            {/* Search */}
+            <Box sx={{ p: 0.75, borderBottom: 1, borderColor: 'divider' }}>
+                <SearchBar
+                    value={filters.search || ''}
+                    onChange={(search) => onFilterChange({ search })}
+                />
             </Box>
 
             {/* Scrollable filter content */}
@@ -155,85 +152,6 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
                                 />
                             ))}
                         </Stack>
-                    </Box>
-
-                    <Divider />
-
-                    {/* ISO Range */}
-                    <Box>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                            <Typography variant="caption" fontWeight="600">
-                                ISO
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {isoRange ? `${isoRange[0]} - ${isoRange[1]}` : `${filters.minIso ?? Math.min(...isoValues)} - ${filters.maxIso ?? Math.max(...isoValues)}`}
-                            </Typography>
-                        </Stack>
-                        {isoValues.length > 0 && (
-                            <Slider
-                                value={isoRange || [
-                                    filters.minIso ?? Math.min(...isoValues),
-                                    filters.maxIso ?? Math.max(...isoValues)
-                                ]}
-                                onChange={(_, newValue) => {
-                                    setIsoRange(newValue as [number, number]);
-                                }}
-                                onChangeCommitted={(_, newValue) => {
-                                    const [min, max] = newValue as number[];
-                                    const minIso = Math.min(...isoValues);
-                                    const maxIso = Math.max(...isoValues);
-                                    onFilterChange({
-                                        minIso: min === minIso ? undefined : min,
-                                        maxIso: max === maxIso ? undefined : max
-                                    });
-                                    setIsoRange(null);
-                                }}
-                                min={Math.min(...isoValues)}
-                                max={Math.max(...isoValues)}
-                                valueLabelDisplay="auto"
-                                size="small"
-                            />
-                        )}
-                    </Box>
-
-                    <Divider />
-
-                    {/* Aperture Range */}
-                    <Box>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                            <Typography variant="caption" fontWeight="600">
-                                Aperture
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {apertureRange ? `f/${apertureRange[0]} - f/${apertureRange[1]}` : `f/${filters.minAperture ?? Math.min(...apertureValues)} - f/${filters.maxAperture ?? Math.max(...apertureValues)}`}
-                            </Typography>
-                        </Stack>
-                        {apertureValues.length > 0 && (
-                            <Slider
-                                value={apertureRange || [
-                                    filters.minAperture ?? Math.min(...apertureValues),
-                                    filters.maxAperture ?? Math.max(...apertureValues)
-                                ]}
-                                onChange={(_, newValue) => {
-                                    setApertureRange(newValue as [number, number]);
-                                }}
-                                onChangeCommitted={(_, newValue) => {
-                                    const [min, max] = newValue as number[];
-                                    const minAperture = Math.min(...apertureValues);
-                                    const maxAperture = Math.max(...apertureValues);
-                                    onFilterChange({
-                                        minAperture: min === minAperture ? undefined : min,
-                                        maxAperture: max === maxAperture ? undefined : max
-                                    });
-                                    setApertureRange(null);
-                                }}
-                                min={Math.min(...apertureValues)}
-                                max={Math.max(...apertureValues)}
-                                valueLabelDisplay="auto"
-                                valueLabelFormat={(value) => `f/${value}`}
-                                size="small"
-                            />
-                        )}
                     </Box>
 
                     <Divider />
@@ -412,87 +330,36 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
 
                     <Divider />
 
-                    {/* Rating Filter */}
+                    {/* Tags Filter */}
                     <Box>
                         <Typography variant="caption" fontWeight="600" display="block" mb={0.25}>
-                            Rating
+                            Tags
                         </Typography>
-                        <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
-                            <Chip
-                                label="All"
-                                size="small"
-                                color={filters.rating === undefined ? 'primary' : 'default'}
-                                onClick={() => onFilterChange({ rating: undefined })}
-                            />
-                            <Rating
-                                value={filters.rating || 0}
-                                onChange={(_, newValue) => {
-                                    onFilterChange({ rating: newValue === 0 ? undefined : newValue || undefined });
-                                }}
-                                emptyIcon={<StarIcon style={{ opacity: 0.3 }} fontSize="inherit" />}
-                                size="small"
-                            />
-                        </Stack>
-                    </Box>
-
-                    <Divider />
-
-                    {/* Label Filter */}
-                    <Box>
-                        <Typography variant="caption" fontWeight="600" display="block" mb={0.25}>
-                            Color Label
-                        </Typography>
-                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                            <Box
-                                onClick={() => onFilterChange({ label: '' })}
-                                sx={{
-                                    width: 32,
-                                    height: 32,
-                                    border: 2,
-                                    borderColor: !filters.label ? 'primary.main' : 'divider',
-                                    borderRadius: 0.5,
-                                    cursor: 'pointer',
-                                    bgcolor: 'background.paper',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 'bold',
-                                    '&:hover': {
-                                        borderColor: 'primary.main',
-                                    },
-                                }}
-                            >
-                                All
-                            </Box>
-                            {['Red', 'Yellow', 'Green', 'Blue', 'Purple'].map((label) => {
-                                const labelColors: Record<string, string> = {
-                                    'Red': '#f44336',
-                                    'Yellow': '#ffeb3b',
-                                    'Green': '#4caf50',
-                                    'Blue': '#2196f3',
-                                    'Purple': '#9c27b0',
-                                };
-                                return (
-                                    <Box
-                                        key={label}
-                                        onClick={() => onFilterChange({ label })}
-                                        sx={{
-                                            width: 32,
-                                            height: 32,
-                                            bgcolor: labelColors[label],
-                                            border: 2,
-                                            borderColor: filters.label === label ? 'black' : 'transparent',
-                                            borderRadius: 0.5,
-                                            cursor: 'pointer',
-                                            '&:hover': {
-                                                borderColor: 'black',
-                                            },
-                                        }}
-                                    />
-                                );
-                            })}
-                        </Stack>
+                        <List dense disablePadding sx={{ maxHeight: 120, overflowY: 'auto' }}>
+                            <ListItem disablePadding>
+                                <ListItemButton
+                                    sx={{ py: 0.1, px: 0.75 }}
+                                    selected={!filters.keyword}
+                                    onClick={() => onFilterChange({ keyword: '' })}
+                                >
+                                    <ListItemText primary="All" primaryTypographyProps={{ variant: 'body2' }} />
+                                </ListItemButton>
+                            </ListItem>
+                            {keywords.map((kw) => (
+                                <ListItem key={kw} disablePadding>
+                                    <ListItemButton
+                                        sx={{ py: 0.1, px: 0.75 }}
+                                        selected={filters.keyword === kw}
+                                        onClick={() => onFilterChange({ keyword: kw })}
+                                    >
+                                        <ListItemText
+                                            primary={kw}
+                                            primaryTypographyProps={{ variant: 'body2', noWrap: true }}
+                                        />
+                                    </ListItemButton>
+                                </ListItem>
+                            ))}
+                        </List>
                     </Box>
 
                     <Divider />
@@ -513,6 +380,8 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
                                 maxAperture: undefined,
                                 startDate: '',
                                 endDate: '',
+                                keyword: '',
+                                folder: '',
                                 sortBy: 'dateCaptured',
                                 sortOrder: 'desc',
                             })

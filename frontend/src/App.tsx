@@ -309,6 +309,7 @@ function App() {
                                             maxAperture: undefined,
                                             startDate: '',
                                             endDate: '',
+                                            folder: '',
                                             sortBy: 'date',
                                             sortOrder: 'desc',
                                         });

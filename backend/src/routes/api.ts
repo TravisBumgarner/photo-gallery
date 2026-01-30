@@ -1,6 +1,9 @@
 import { Router } from 'express';
-import { db } from '../db/index.js';
-import { users } from '../db/schema.js';
+import { createDb } from 'shared/db';
+import { users } from 'shared/db/schema';
+import { config } from '../config.js';
+
+const db = createDb(config.DATABASE_URL);
 
 export const router = Router();
 
