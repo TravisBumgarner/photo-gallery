@@ -10,12 +10,13 @@ import {
     Button,
     useMediaQuery,
 } from '@mui/material';
-import { ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
+import { ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { Photo, PhotosResponse, PhotoFilters } from './types';
 import VirtualPhotoGrid from './components/VirtualPhotoGrid';
 import PhotoViewer from './components/PhotoViewer';
 import FilterPanel from './components/FilterPanel';
 import Toolbar from './components/Toolbar';
+import LoginPage from './components/LoginPage';
 
 function App() {
     const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
@@ -50,6 +51,9 @@ function App() {
         [prefersDarkMode],
     );
 
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [authLoading, setAuthLoading] = useState(true);
+
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [loading, setLoading] = useState(false);
     const [page, setPage] = useState(1);
@@ -65,6 +69,33 @@ function App() {
     const loadingRef = useRef(false);
     const initialLoadRef = useRef(false);
     const prevFiltersRef = useRef<string>('');
+
+    // Check auth on mount
+    useEffect(() => {
+        fetch('/api/auth/check', { credentials: 'include' })
+            .then(res => res.json())
+            .then(data => {
+                setIsAuthenticated(data.authenticated === true);
+            })
+            .catch(() => {
+                setIsAuthenticated(false);
+            })
+            .finally(() => {
+                setAuthLoading(false);
+            });
+    }, []);
+
+    const handleLogout = async () => {
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'include',
+            });
+        } catch {
+            // logout even if request fails
+        }
+        setIsAuthenticated(false);
+    };
 
     const fetchPhotos = useCallback(async (pageNum: number, currentFilters: PhotoFilters, append = false) => {
         if (loadingRef.current) return;
@@ -87,7 +118,9 @@ function App() {
             console.log('Fetching with filters:', currentFilters);
             console.log('Query params:', params.toString());
 
-            const response = await fetch(`/api/photos?${params}`);
+            const response = await fetch(`/api/photos?${params}`, {
+                credentials: 'include',
+            });
             const data: PhotosResponse = await response.json();
 
             if (data.photos && data.pagination) {
@@ -108,13 +141,13 @@ function App() {
 
     // Initial load
     useEffect(() => {
-        if (!initialLoadRef.current) {
+        if (isAuthenticated && !initialLoadRef.current) {
             initialLoadRef.current = true;
             const filtersString = JSON.stringify(filters);
             prevFiltersRef.current = filtersString;
             fetchPhotos(1, filters, false);
         }
-    }, []);
+    }, [isAuthenticated]);
 
     // Handle filter changes
     useEffect(() => {
@@ -162,6 +195,26 @@ function App() {
         }
     };
 
+    if (authLoading) {
+        return (
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                    <CircularProgress />
+                </Box>
+            </ThemeProvider>
+        );
+    }
+
+    if (!isAuthenticated) {
+        return (
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <LoginPage onLogin={() => setIsAuthenticated(true)} />
+            </ThemeProvider>
+        );
+    }
+
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
@@ -208,6 +261,7 @@ function App() {
                         onFilterChange={handleFilterChange}
                         columnCount={columnCount}
                         onColumnCountChange={setColumnCount}
+                        onLogout={handleLogout}
                     />
 
                     {/* Photos Grid */}

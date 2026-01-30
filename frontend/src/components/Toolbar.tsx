@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Box, Stack, Chip, Select, MenuItem, FormControl, IconButton, Typography, Breadcrumbs, Link, Slider, Rating } from '@mui/material';
-import { Add as AddIcon, Remove as RemoveIcon, Folder as FolderIcon, Star as StarIcon } from '@mui/icons-material';
+import { Box, Stack, Chip, Select, MenuItem, FormControl, IconButton, Typography, Breadcrumbs, Link, Slider, Rating, Tooltip } from '@mui/material';
+import { Add as AddIcon, Remove as RemoveIcon, Folder as FolderIcon, Star as StarIcon, Logout as LogoutIcon } from '@mui/icons-material';
 import { PhotoFilters } from '../types';
 
 interface ToolbarProps {
@@ -8,9 +8,10 @@ interface ToolbarProps {
     onFilterChange: (filters: Partial<PhotoFilters>) => void;
     columnCount: number;
     onColumnCountChange: (count: number) => void;
+    onLogout: () => void;
 }
 
-function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange }: ToolbarProps) {
+function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange, onLogout }: ToolbarProps) {
     const [folders, setFolders] = useState<string[]>([]);
     const [isoValues, setIsoValues] = useState<number[]>([]);
     const [apertureValues, setApertureValues] = useState<number[]>([]);
@@ -19,9 +20,9 @@ function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange }: 
 
     useEffect(() => {
         Promise.all([
-            fetch('/api/photos/meta/folders').then(res => res.json()),
-            fetch('/api/photos/meta/iso-values').then(res => res.json()),
-            fetch('/api/photos/meta/aperture-values').then(res => res.json()),
+            fetch('/api/photos/meta/folders', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/iso-values', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/aperture-values', { credentials: 'include' }).then(res => res.json()),
         ])
             .then(([foldersData, isoData, apertureData]) => {
                 setFolders(foldersData);
@@ -213,6 +214,13 @@ function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange }: 
                             <AddIcon fontSize="small" />
                         </IconButton>
                     </Stack>
+
+                    {/* Logout */}
+                    <Tooltip title="Logout">
+                        <IconButton size="small" onClick={onLogout}>
+                            <LogoutIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
                 </Stack>
             </Stack>
 

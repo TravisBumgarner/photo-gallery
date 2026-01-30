@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import { ChevronLeft as ChevronLeftIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon, CalendarMonth as CalendarMonthIcon } from '@mui/icons-material';
 import { PhotoFilters } from '../types';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import SearchBar from './SearchBar';
 
 interface FilterPanelProps {
@@ -43,10 +43,10 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
     useEffect(() => {
         // Fetch all metadata
         Promise.all([
-            fetch('/api/photos/meta/cameras').then(res => res.json()),
-            fetch('/api/photos/meta/dates').then(res => res.json()),
-            fetch('/api/photos/meta/dates-with-counts').then(res => res.json()),
-            fetch('/api/photos/meta/keywords').then(res => res.json()),
+            fetch('/api/photos/meta/cameras', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/dates', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/dates-with-counts', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/keywords', { credentials: 'include' }).then(res => res.json()),
         ])
             .then(([camerasData, datesData, dateCountsData, keywordsData]) => {
                 setCameras(camerasData);

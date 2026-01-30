@@ -1,6 +1,6 @@
 import { useState, memo } from 'react';
 import { Blurhash } from 'react-blurhash';
-import { Card, CardMedia, CardContent, Typography, Box } from '@mui/material';
+import { Card, CardMedia, Typography, Box } from '@mui/material';
 import { Photo } from '../types';
 
 interface PhotoCardProps {

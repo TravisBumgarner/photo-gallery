@@ -16,10 +16,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/express-session": "^1.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.1",
     "drizzle-orm": "^0.36.4",
     "express": "^4.18.2",
+    "express-session": "^1.19.0",
     "shared": "*",
     "zod": "^3.22.0"
   },
