@@ -33,6 +33,9 @@ Ingestion takes photos out of your library, extracts metadata, generates thumbna
     - `IMAGE_EXTENSIONS` - Comma-separated list of file extensions to include
     - `SSH_HOST` - Remote host for rsync (production mode only)
     - `SSH_DEST_DIR` - Remote directory for rsync (production mode only)
+    - `SESSION_SECRET` - Secret for signing session cookies (Use a strong random value)
+    - `APP_PASSWORD` - Password for logging into the app (Use a strong random value)
+
 
 1. `npm run ingest`
 
