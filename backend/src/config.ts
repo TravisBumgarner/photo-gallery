@@ -4,11 +4,11 @@ import { z } from 'zod';
 dotenv.config();
 
 const envSchema = z.object({
-  PORT: z.string().default('3000'),
-  DATABASE_URL: z.string().default('sqlite.db'),
-  NODE_ENV: z.string().default('development'),
-  SESSION_SECRET: z.string().default('default-secret-change-me'),
-  APP_PASSWORD: z.string().default('change-me'),
+  PORT: z.string(),
+  DATABASE_URL: z.string(),
+  NODE_ENV: z.string(),
+  SESSION_SECRET: z.string(),
+  APP_PASSWORD: z.string(),
 });
 
 export const config = envSchema.parse(process.env);
