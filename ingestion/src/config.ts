@@ -8,7 +8,6 @@ const envSchema = z.object({
   SOURCE_DIR: z.string(),
   INGEST_MODE: z.enum(['local', 'production']),
   DRY_RUN: z.string(),
-  IMAGE_EXTENSIONS: z.string(),
   SSH_HOST: z.string().optional(),
   SSH_DEST_DIR: z.string().optional(),
 });
