@@ -45,7 +45,7 @@ function SearchBar({ value, onChange }: SearchBarProps) {
     const fetchGroupedSuggestions = async () => {
         try {
             setLoading(true);
-            const response = await fetch('/api/photos/suggestions');
+            const response = await fetch('/api/photos/suggestions', { credentials: 'include' });
             const data: GroupedSuggestions = await response.json();
 
             const grouped: OptionGroup[] = [];
@@ -79,7 +79,7 @@ function SearchBar({ value, onChange }: SearchBarProps) {
         setShowGrouped(false);
         setLoading(true);
         const timer = setTimeout(() => {
-            fetch(`/api/photos/autocomplete?query=${encodeURIComponent(inputValue)}`)
+            fetch(`/api/photos/autocomplete?query=${encodeURIComponent(inputValue)}`, { credentials: 'include' })
                 .then(res => {
                     if (!res.ok) {
                         throw new Error(`HTTP error! status: ${res.status}`);

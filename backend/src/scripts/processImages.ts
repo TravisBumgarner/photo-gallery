@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import readline from 'readline';
 import sharp from 'sharp';
 import { encode } from 'blurhash';
 import { ExifTool } from 'exiftool-vendored';
@@ -10,7 +11,7 @@ import { photos } from '../db/schema.js';
 
 const exiftool = new ExifTool({ maxProcs: 10 }); // Increase concurrent exiftool processes
 
-const THUMBNAIL_WIDTH = 400;
+const THUMBNAIL_WIDTH = 200;
 const BLURHASH_COMPONENTS_X = 4;
 const BLURHASH_COMPONENTS_Y = 3;
 const PARALLEL_BATCH_SIZE = 20; // Process 20 images at a time
@@ -240,6 +241,68 @@ async function scanDirectory(dir: string): Promise<string[]> {
   return files;
 }
 
+async function prompt(question: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase());
+    });
+  });
+}
+
+async function cleanupOrphanedRows(outputDir: string, thumbnailDir: string): Promise<void> {
+  // Read all image filenames on disk
+  let imageFiles: Set<string>;
+  try {
+    const entries = await fs.readdir(outputDir);
+    imageFiles = new Set(entries);
+  } catch {
+    // Directory doesn't exist yet — nothing to clean up
+    return;
+  }
+
+  // Get all rows from DB
+  const allRows = await db.select({ id: photos.id, filename: photos.filename, thumbnailPath: photos.thumbnailPath }).from(photos);
+
+  // Find rows whose file no longer exists on disk
+  const orphanedRows = allRows.filter(row => !imageFiles.has(row.filename));
+
+  if (orphanedRows.length === 0) {
+    console.log('No orphaned DB rows found.\n');
+    return;
+  }
+
+  console.log(`Going to delete ${orphanedRows.length} rows from DB without images:`);
+  for (const row of orphanedRows) {
+    console.log(`  - ${row.filename}`);
+  }
+
+  const answer = await prompt(`\nProceed with deletion? (y/n) `);
+  if (answer !== 'y' && answer !== 'yes') {
+    console.log('Skipping cleanup.\n');
+    return;
+  }
+
+  const orphanedIds = orphanedRows.map(r => r.id);
+  // Delete in batches to stay within SQLite variable limits
+  const BATCH = 500;
+  for (let i = 0; i < orphanedIds.length; i += BATCH) {
+    const batch = orphanedIds.slice(i, i + BATCH);
+    await db.delete(photos).where(sql`${photos.id} IN (${sql.join(batch.map(id => sql`${id}`), sql`, `)})`);
+  }
+
+  // Also remove orphaned thumbnail files
+  for (const row of orphanedRows) {
+    if (row.thumbnailPath) {
+      const thumbFile = path.join(thumbnailDir, path.basename(row.thumbnailPath));
+      await fs.unlink(thumbFile).catch(() => {});
+    }
+  }
+
+  console.log(`Deleted ${orphanedRows.length} orphaned rows and their thumbnails.\n`);
+}
+
 async function main() {
   const inputDir = process.argv[2] || './photos';
   const outputDir = path.resolve('./public/images');
@@ -253,6 +316,9 @@ async function main() {
   // Create directories
   await fs.mkdir(outputDir, { recursive: true });
   await fs.mkdir(thumbnailDir, { recursive: true });
+
+  // Clean up DB rows that reference images no longer on disk
+  await cleanupOrphanedRows(outputDir, thumbnailDir);
 
   // Scan for images
   console.log('Scanning for images...');
@@ -268,7 +334,6 @@ async function main() {
 
   // Process each image
   let processed = 0;
-  let skipped = 0;
   let failed = 0;
   const startTime = Date.now();
 

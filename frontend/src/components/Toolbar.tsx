@@ -1,5 +1,5 @@
-import { Box, Stack, Chip, Select, MenuItem, FormControl, IconButton, Typography } from '@mui/material';
-import { Add as AddIcon, Remove as RemoveIcon } from '@mui/icons-material';
+import { Box, Stack, Chip, Select, MenuItem, FormControl, IconButton, Typography, Tooltip } from '@mui/material';
+import { Add as AddIcon, Remove as RemoveIcon, Logout as LogoutIcon } from '@mui/icons-material';
 import { PhotoFilters } from '../types';
 import SearchBar from './SearchBar';
 
@@ -8,9 +8,10 @@ interface ToolbarProps {
     onFilterChange: (filters: Partial<PhotoFilters>) => void;
     columnCount: number;
     onColumnCountChange: (count: number) => void;
+    onLogout: () => void;
 }
 
-function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange }: ToolbarProps) {
+function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange, onLogout }: ToolbarProps) {
     return (
         <Box
             sx={{
@@ -86,6 +87,16 @@ function Toolbar({ filters, onFilterChange, columnCount, onColumnCountChange }: 
                         <AddIcon fontSize="small" />
                     </IconButton>
                 </Stack>
+
+                {/* Spacer */}
+                <Box sx={{ flexGrow: 1 }} />
+
+                {/* Logout */}
+                <Tooltip title="Logout">
+                    <IconButton size="small" onClick={onLogout}>
+                        <LogoutIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
             </Stack>
         </Box>
     );

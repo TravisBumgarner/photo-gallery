@@ -54,12 +54,12 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
     useEffect(() => {
         // Fetch all metadata
         Promise.all([
-            fetch('/api/photos/meta/cameras').then(res => res.json()),
-            fetch('/api/photos/meta/iso-values').then(res => res.json()),
-            fetch('/api/photos/meta/aperture-values').then(res => res.json()),
-            fetch('/api/photos/meta/dates').then(res => res.json()),
-            fetch('/api/photos/meta/dates-with-counts').then(res => res.json()),
-            fetch('/api/photos/meta/labels').then(res => res.json()),
+            fetch('/api/photos/meta/cameras', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/iso-values', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/aperture-values', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/dates', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/dates-with-counts', { credentials: 'include' }).then(res => res.json()),
+            fetch('/api/photos/meta/labels', { credentials: 'include' }).then(res => res.json()),
         ])
             .then(([camerasData, isoData, apertureData, datesData, dateCountsData, labelsData]) => {
                 setCameras(camerasData);
