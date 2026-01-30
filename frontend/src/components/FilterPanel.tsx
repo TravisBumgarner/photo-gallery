@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
     Box,
-    TextField,
     Button,
     Stack,
     Typography,
@@ -13,15 +12,12 @@ import {
     ListItemText,
     Chip,
     Rating,
-    Select,
-    MenuItem,
-    FormControl,
     Collapse,
     Slider,
 } from '@mui/material';
 import { ChevronLeft as ChevronLeftIcon, Star as StarIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon, CalendarMonth as CalendarMonthIcon } from '@mui/icons-material';
 import { PhotoFilters } from '../types';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 
 interface FilterPanelProps {
     filters: PhotoFilters;
@@ -44,7 +40,7 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
     const [apertureValues, setApertureValues] = useState<number[]>([]);
     const [dates, setDates] = useState<string[]>([]);
     const [dateCounts, setDateCounts] = useState<Record<string, number>>({});
-    const [labels, setLabels] = useState<string[]>([]);
+    const [, setLabels] = useState<string[]>([]);
     const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
 
     // Local state for slider values during dragging

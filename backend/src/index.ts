@@ -17,6 +17,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust reverse proxy (NearlyFreeSpeech runs Node behind a proxy)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
@@ -43,6 +46,20 @@ app.get('/health', (req, res) => {
 
 // Auth routes (before requireAuth)
 app.use('/api', authRouter);
+
+// Serve frontend static assets in production (before auth barrier so login page is accessible)
+if (process.env.NODE_ENV === 'production') {
+    const frontendDir = path.join(__dirname, '../frontend-dist');
+    app.use(express.static(frontendDir));
+
+    // SPA catch-all: serve index.html for any non-API/asset route
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/images') || req.path.startsWith('/thumbnails') || req.path === '/health') {
+            return next();
+        }
+        res.sendFile(path.join(frontendDir, 'index.html'));
+    });
+}
 
 // Auth barrier — everything below requires authentication
 app.use(requireAuth);

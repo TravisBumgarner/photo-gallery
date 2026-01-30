@@ -61,7 +61,7 @@ async function inspectPhoto(imagePath: string, index: number, total: number) {
     console.log(`Focal Length: ${exif.FocalLength || 'N/A'}`);
     
     // Keywords
-    let keywords = [];
+    let keywords: string[] = [];
     if (exif.Keywords) {
       keywords = Array.isArray(exif.Keywords) ? exif.Keywords : [exif.Keywords];
     } else if (exif.Subject) {
@@ -90,8 +90,8 @@ async function inspectPhoto(imagePath: string, index: number, total: number) {
       'MicrosoftPhoto:Rating', 'IPTC:Urgency'
     ];
     interestingFields.forEach(field => {
-      if (exif[field]) {
-        console.log(`  ${field}: ${exif[field]}`);
+      if ((exif as Record<string, unknown>)[field]) {
+        console.log(`  ${field}: ${(exif as Record<string, unknown>)[field]}`);
       }
     });
     

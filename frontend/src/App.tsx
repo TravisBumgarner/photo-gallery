@@ -10,7 +10,7 @@ import {
     Button,
     useMediaQuery,
 } from '@mui/material';
-import { ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
+import { ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { Photo, PhotosResponse, PhotoFilters } from './types';
 import VirtualPhotoGrid from './components/VirtualPhotoGrid';
 import PhotoViewer from './components/PhotoViewer';

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { photos } from '../db/schema.js';
-import { sql, desc, asc, or, like, and, gte, lte } from 'drizzle-orm';
+import { sql, desc, asc, or, like, and, gte, lte, type AnyColumn } from 'drizzle-orm';
 
 export const router = Router();
 
@@ -100,8 +100,14 @@ router.get('/photos', async (req, res) => {
     }
 
     // Determine sort column and order
-    const sortColumn = photos[sortBy as keyof typeof photos] || photos.dateCaptured;
+    const validSortColumns: Record<string, AnyColumn> = {
+      dateCaptured: photos.dateCaptured,
+      filename: photos.filename,
+      rating: photos.rating,
+      createdAt: photos.createdAt,
+    };
     const orderFn = sortOrder === 'asc' ? asc : desc;
+    const orderByColumn = validSortColumns[sortBy as string] ?? photos.dateCaptured;
 
     // Execute query
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -109,7 +115,7 @@ router.get('/photos', async (req, res) => {
       .select()
       .from(photos)
       .where(whereClause)
-      .orderBy(orderFn(sortColumn))
+      .orderBy(orderFn(orderByColumn))
       .limit(limitNum)
       .offset(offset);
 

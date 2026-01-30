@@ -6,8 +6,11 @@ import { encode } from 'blurhash';
 import { ExifTool } from 'exiftool-vendored';
 import { createHash } from 'crypto';
 import { sql } from 'drizzle-orm';
-import { db } from '../db/index.js';
-import { photos } from '../db/schema.js';
+import { execSync } from 'child_process';
+import os from 'os';
+
+let db: Awaited<typeof import('../db/index.js')>['db'];
+let photos: Awaited<typeof import('../db/schema.js')>['photos'];
 
 const exiftool = new ExifTool({ maxProcs: 10 }); // Increase concurrent exiftool processes
 
@@ -15,6 +18,15 @@ const THUMBNAIL_WIDTH = 200;
 const BLURHASH_COMPONENTS_X = 4;
 const BLURHASH_COMPONENTS_Y = 3;
 const PARALLEL_BATCH_SIZE = 20; // Process 20 images at a time
+
+const SSH_HOST = 'nfs_photo-gallery';
+const REMOTE_ROOT = '/home/protected';
+const REMOTE_IMAGES_DIR = `${REMOTE_ROOT}/public/images`;
+const REMOTE_THUMBNAILS_DIR = `${REMOTE_ROOT}/public/thumbnails`;
+const REMOTE_DB_PATH = `${REMOTE_ROOT}/sqlite.db`;
+
+// Module-scope reference for cleanup on error
+let _tempDbPath: string | null = null;
 
 // Common aspect ratios with tolerance
 const COMMON_ASPECT_RATIOS = [
@@ -31,14 +43,14 @@ const COMMON_ASPECT_RATIOS = [
 function approximateAspectRatio(width: number, height: number): number {
   const rawRatio = width / height;
   const tolerance = 0.05; // 5% tolerance
-  
+
   // Find the closest common aspect ratio
   for (const { ratio } of COMMON_ASPECT_RATIOS) {
     if (Math.abs(rawRatio - ratio) <= tolerance) {
       return ratio;
     }
   }
-  
+
   // If no match found, round to 2 decimal places
   return Math.round(rawRatio * 100) / 100;
 }
@@ -54,6 +66,92 @@ interface ProcessImageOptions {
   inputDir: string;
   outputDir: string;
   thumbnailDir: string;
+}
+
+// --- SSH/SCP/rsync helpers ---
+
+function execCommand(cmd: string): string {
+  console.log(`  [exec] ${cmd}`);
+  return execSync(cmd, { encoding: 'utf-8' }).trim();
+}
+
+function scpFromRemote(remotePath: string, localPath: string): void {
+  execCommand(`scp ${SSH_HOST}:${remotePath} ${localPath}`);
+}
+
+function scpToRemote(localPath: string, remotePath: string): void {
+  execCommand(`scp ${localPath} ${SSH_HOST}:${remotePath}`);
+}
+
+function rsyncToRemote(localDir: string, remoteDir: string): void {
+  execCommand(`rsync -avz ${localDir}/ ${SSH_HOST}:${remoteDir}/`);
+}
+
+function sshListFiles(remoteDir: string): string[] {
+  const output = execCommand(`ssh ${SSH_HOST} "ls ${remoteDir}"`);
+  if (!output) return [];
+  return output.split('\n').filter(Boolean);
+}
+
+// --- Mode initialization ---
+
+async function initializeMode(): Promise<{ mode: 'development' | 'production'; tempDbPath: string | null }> {
+  const answer = await prompt('Development or Production? (d/p) ');
+
+  if (answer === 'p' || answer === 'production') {
+    console.log('\nProduction mode selected.');
+    console.log('Fetching remote database...');
+
+    const tempDbPath = path.join(os.tmpdir(), `photo-gallery-prod-${Date.now()}.db`);
+    scpFromRemote(REMOTE_DB_PATH, tempDbPath);
+    console.log(`Remote DB copied to ${tempDbPath}\n`);
+
+    process.env.DATABASE_URL = tempDbPath;
+
+    const dbModule = await import('../db/index.js');
+    const schemaModule = await import('../db/schema.js');
+    db = dbModule.db;
+    photos = schemaModule.photos;
+
+    return { mode: 'production', tempDbPath };
+  } else {
+    console.log('\nDevelopment mode selected.\n');
+
+    const dbModule = await import('../db/index.js');
+    const schemaModule = await import('../db/schema.js');
+    db = dbModule.db;
+    photos = schemaModule.photos;
+
+    return { mode: 'development', tempDbPath: null };
+  }
+}
+
+// --- Sync to production ---
+
+async function syncToProduction(outputDir: string, thumbnailDir: string, tempDbPath: string): Promise<void> {
+  console.log('\nSyncing to production server...');
+  rsyncToRemote(outputDir, REMOTE_IMAGES_DIR);
+  rsyncToRemote(thumbnailDir, REMOTE_THUMBNAILS_DIR);
+  scpToRemote(tempDbPath, REMOTE_DB_PATH);
+  console.log('Sync complete.');
+}
+
+// --- Temp DB cleanup ---
+
+function cleanupTempDb(tempDbPath: string): void {
+  const filesToDelete = [
+    tempDbPath,
+    `${tempDbPath}-wal`,
+    `${tempDbPath}-shm`,
+  ];
+  for (const f of filesToDelete) {
+    try {
+      require('fs').unlinkSync(f);
+    } catch {
+      // ignore if file doesn't exist
+    }
+  }
+  console.log('Temporary database cleaned up.');
 }
 
 async function generateBlurhash(imagePath: string): Promise<string> {
@@ -88,20 +186,20 @@ async function createThumbnail(
 async function extractExifData(imagePath: string) {
   try {
     const metadata = await exiftool.read(imagePath);
-    
+
     // Extract camera info
     const camera = [metadata.Make, metadata.Model].filter(Boolean).join(' ').trim() || null;
     const lens = metadata.LensModel || metadata.LensID || null;
-    
+
     // Extract date
     const dateCaptured = metadata.DateTimeOriginal || metadata.CreateDate || null;
-    
+
     // Extract exposure settings
     const iso = metadata.ISO || null;
     const shutterSpeed = metadata.ShutterSpeed || metadata.ExposureTime || null;
     const aperture = metadata.FNumber || metadata.Aperture || null;
     const focalLength = metadata.FocalLength ? parseFloat(String(metadata.FocalLength)) : null;
-    
+
     // Extract keywords
     let keywords: string[] = [];
     if (metadata.Keywords) {
@@ -109,11 +207,11 @@ async function extractExifData(imagePath: string) {
     } else if (metadata.Subject) {
       keywords = Array.isArray(metadata.Subject) ? metadata.Subject : [metadata.Subject];
     }
-    
+
     // Extract Lightroom metadata
     const rating = metadata.Rating ? parseInt(String(metadata.Rating)) : null;
     const label = metadata.Label ? String(metadata.Label) : null;
-    
+
     return {
       camera,
       lens,
@@ -251,12 +349,17 @@ async function prompt(question: string): Promise<string> {
   });
 }
 
-async function cleanupOrphanedRows(outputDir: string, thumbnailDir: string): Promise<void> {
-  // Read all image filenames on disk
+async function cleanupOrphanedRows(outputDir: string, thumbnailDir: string, mode: 'development' | 'production'): Promise<void> {
+  // Read all image filenames on disk (or remote server in production)
   let imageFiles: Set<string>;
   try {
-    const entries = await fs.readdir(outputDir);
-    imageFiles = new Set(entries);
+    if (mode === 'production') {
+      const remoteFiles = sshListFiles(REMOTE_IMAGES_DIR);
+      imageFiles = new Set(remoteFiles);
+    } else {
+      const entries = await fs.readdir(outputDir);
+      imageFiles = new Set(entries);
+    }
   } catch {
     // Directory doesn't exist yet — nothing to clean up
     return;
@@ -309,6 +412,10 @@ async function main() {
   const thumbnailDir = path.resolve('./public/thumbnails');
 
   console.log('📸 Photo Processing Script\n');
+
+  const { mode, tempDbPath } = await initializeMode();
+  _tempDbPath = tempDbPath;
+
   console.log(`Input directory: ${inputDir}`);
   console.log(`Output directory: ${outputDir}`);
   console.log(`Thumbnail directory: ${thumbnailDir}\n`);
@@ -318,7 +425,7 @@ async function main() {
   await fs.mkdir(thumbnailDir, { recursive: true });
 
   // Clean up DB rows that reference images no longer on disk
-  await cleanupOrphanedRows(outputDir, thumbnailDir);
+  await cleanupOrphanedRows(outputDir, thumbnailDir, mode);
 
   // Scan for images
   console.log('Scanning for images...');
@@ -329,6 +436,12 @@ async function main() {
     console.log('No images found. Please provide a directory with images.');
     console.log('Usage: npm run process-images [path-to-photos]');
     await exiftool.end();
+
+    if (mode === 'production' && tempDbPath) {
+      await syncToProduction(outputDir, thumbnailDir, tempDbPath);
+      cleanupTempDb(tempDbPath);
+    }
+
     return;
   }
 
@@ -342,9 +455,9 @@ async function main() {
     const batch = imagePaths.slice(i, i + PARALLEL_BATCH_SIZE);
     const batchNum = Math.floor(i / PARALLEL_BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(imagePaths.length / PARALLEL_BATCH_SIZE);
-    
+
     console.log(`\nBatch ${batchNum}/${totalBatches} (${i + 1}-${Math.min(i + batch.length, imagePaths.length)}/${imagePaths.length})`);
-    
+
     const results = await Promise.allSettled(
       batch.map(imagePath => processImage(imagePath, {
         inputDir,
@@ -352,7 +465,7 @@ async function main() {
         thumbnailDir,
       }))
     );
-    
+
     // Count results
     results.forEach((result, idx) => {
       if (result.status === 'fulfilled') {
@@ -362,7 +475,7 @@ async function main() {
         console.error(`  ✗ Failed: ${path.basename(batch[idx])} - ${result.reason}`);
       }
     });
-    
+
     // Show progress
     const elapsed = (Date.now() - startTime) / 1000;
     const rate = processed / elapsed;
@@ -372,16 +485,24 @@ async function main() {
   }
 
   await exiftool.end();
-  
+
   const totalTime = (Date.now() - startTime) / 1000;
   console.log('\n✅ Processing complete!');
   console.log(`   Processed: ${processed}`);
   console.log(`   Failed: ${failed}`);
   console.log(`   Total time: ${Math.ceil(totalTime)}s (${(processed / totalTime).toFixed(1)} images/sec)`);
+
+  if (mode === 'production' && tempDbPath) {
+    await syncToProduction(outputDir, thumbnailDir, tempDbPath);
+    cleanupTempDb(tempDbPath);
+  }
 }
 
 main().catch((error) => {
   console.error('Error:', error);
   exiftool.end();
+  if (_tempDbPath) {
+    cleanupTempDb(_tempDbPath);
+  }
   process.exit(1);
 });

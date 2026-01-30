@@ -5,8 +5,7 @@ import {
     CircularProgress,
     ListSubheader,
     Typography,
-    Box,
-    Chip
+    Box
 } from '@mui/material';
 
 interface SearchBarProps {
