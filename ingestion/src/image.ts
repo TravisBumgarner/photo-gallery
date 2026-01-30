@@ -1,5 +1,5 @@
-import sharp from 'sharp';
 import { encode } from 'blurhash';
+import sharp from 'sharp';
 
 const THUMBNAIL_WIDTH = 300;
 const BLURHASH_COMPONENTS_X = 4;
@@ -43,13 +43,13 @@ export async function generateBlurhash(imagePath: string): Promise<string> {
     info.width,
     info.height,
     BLURHASH_COMPONENTS_X,
-    BLURHASH_COMPONENTS_Y
+    BLURHASH_COMPONENTS_Y,
   );
 }
 
 export async function createThumbnail(
   imagePath: string,
-  outputPath: string
+  outputPath: string,
 ): Promise<{ width: number; height: number }> {
   const { data, info } = await sharp(imagePath, { failOn: 'none' })
     .toColourspace('srgb')
@@ -57,7 +57,7 @@ export async function createThumbnail(
     .jpeg({ quality: 85 })
     .toBuffer({ resolveWithObject: true });
 
-  const fsModule = await import('fs/promises');
+  const fsModule = await import('node:fs/promises');
   await fsModule.writeFile(outputPath, data);
 
   return { width: info.width, height: info.height };

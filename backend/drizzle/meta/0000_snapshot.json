@@ -172,9 +172,7 @@
       "indexes": {
         "photos_uuid_unique": {
           "name": "photos_uuid_unique",
-          "columns": [
-            "uuid"
-          ],
+          "columns": ["uuid"],
           "isUnique": true
         }
       },
@@ -218,9 +216,7 @@
       "indexes": {
         "users_email_unique": {
           "name": "users_email_unique",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": true
         }
       },

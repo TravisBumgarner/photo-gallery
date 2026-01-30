@@ -1,28 +1,35 @@
-import fs from 'fs/promises';
-import path from 'path';
-import sharp from 'sharp';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
-import { config } from './config.js';
-import { approximateAspectRatio, generateBlurhash, createThumbnail } from './image.js';
-import { extractExifData } from './exif.js';
-import { deriveTagsFromPath } from './scan.js';
+import sharp from 'sharp';
+import { config } from '@/config.js';
+import { extractExifData } from '@/exif.js';
+import {
+  approximateAspectRatio,
+  createThumbnail,
+  generateBlurhash,
+} from '@/image.js';
+import { deriveTagsFromPath } from '@/scan.js';
 
 const db = createDb(config.DATABASE_URL);
 
 function generateUUID(filename: string, dateCaptured: Date | null): string {
   const dateStr = dateCaptured ? dateCaptured.toISOString() : 'no-date';
   const uniqueString = `${filename}-${dateStr}`;
-  return createHash('sha256').update(uniqueString).digest('hex').substring(0, 32);
+  return createHash('sha256')
+    .update(uniqueString)
+    .digest('hex')
+    .substring(0, 32);
 }
 
 export async function processImage(
   imagePath: string,
   sourceDir: string,
   outputDir: string,
-  thumbnailDir: string
+  thumbnailDir: string,
 ): Promise<void> {
   const filename = path.basename(imagePath);
 
@@ -64,10 +71,15 @@ export async function processImage(
     const keywords = tags.length > 0 ? JSON.stringify(tags) : null;
 
     // Calculate aspect ratio
-    const aspectRatio = width && height ? approximateAspectRatio(width, height) : 1;
+    const aspectRatio =
+      width && height ? approximateAspectRatio(width, height) : 1;
 
     // Upsert photo record
-    const existing = await db.select().from(photos).where(sql`${photos.uuid} = ${uuid}`).limit(1);
+    const existing = await db
+      .select()
+      .from(photos)
+      .where(sql`${photos.uuid} = ${uuid}`)
+      .limit(1);
 
     const record = {
       filename,
@@ -84,7 +96,8 @@ export async function processImage(
     };
 
     if (existing.length > 0) {
-      await db.update(photos)
+      await db
+        .update(photos)
         .set({ ...record, updatedAt: new Date() })
         .where(sql`${photos.uuid} = ${uuid}`);
     } else {

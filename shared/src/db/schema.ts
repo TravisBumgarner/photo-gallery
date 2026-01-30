@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const photos = sqliteTable('photos', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -31,13 +31,19 @@ export const photos = sqliteTable('photos', {
   fileSize: integer('file_size'),
   mimeType: text('mime_type'),
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(
+    () => new Date(),
+  ),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(
+    () => new Date(),
+  ),
 });
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(
+    () => new Date(),
+  ),
 });

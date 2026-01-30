@@ -4,3 +4,6 @@ dist
 *.db
 *.db-journal
 .DS_Store
+*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js

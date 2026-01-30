@@ -18,14 +18,20 @@ export async function extractExifData(imagePath: string): Promise<ExifData> {
   try {
     const metadata = await exiftool.read(imagePath);
 
-    const camera = [metadata.Make, metadata.Model].filter(Boolean).join(' ').trim() || null;
+    const camera =
+      [metadata.Make, metadata.Model].filter(Boolean).join(' ').trim() || null;
     const lens = metadata.LensModel || metadata.LensID || null;
-    const dateCaptured = metadata.DateTimeOriginal || metadata.CreateDate || null;
+    const dateCaptured =
+      metadata.DateTimeOriginal || metadata.CreateDate || null;
     const iso = metadata.ISO || null;
     const shutterSpeed = metadata.ShutterSpeed || metadata.ExposureTime || null;
     const aperture = metadata.FNumber || metadata.Aperture || null;
-    const focalLength = metadata.FocalLength ? parseFloat(String(metadata.FocalLength)) : null;
-    const rating = metadata.Rating ? parseInt(String(metadata.Rating)) : null;
+    const focalLength = metadata.FocalLength
+      ? parseFloat(String(metadata.FocalLength))
+      : null;
+    const rating = metadata.Rating
+      ? parseInt(String(metadata.Rating), 10)
+      : null;
     const label = metadata.Label ? String(metadata.Label) : null;
 
     return {
