@@ -1,8 +1,19 @@
+import {
+  type AnyColumn,
+  and,
+  asc,
+  desc,
+  gte,
+  like,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { Router } from 'express';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
-import { config } from '../config.js';
-import { sql, desc, asc, or, like, and, gte, lte, type AnyColumn } from 'drizzle-orm';
+import { photoFiltersSchema } from 'shared/schemas';
+import { config } from '@/config.js';
 
 const db = createDb(config.DATABASE_URL);
 
@@ -11,30 +22,37 @@ export const router = Router();
 // Get photos with pagination, filters, and search
 router.get('/photos', async (req, res) => {
   try {
+    const parsed = photoFiltersSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid query parameters',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
     const {
-      page = '1',
-      limit = '20',
-      search = '',
-      camera = '',
-      minIso = '',
-      maxIso = '',
-      minAperture = '',
-      maxAperture = '',
-      startDate = '',
-      endDate = '',
-      aspectRatio = '',
-      rating = '',
-      label = '',
-      keyword = '',
-      folder = '',
-      sortBy = 'dateCaptured',
-      sortOrder = 'desc',
-    } = req.query;
+      page: pageNum,
+      limit: limitNum,
+      search,
+      camera,
+      minIso,
+      maxIso,
+      minAperture,
+      maxAperture,
+      startDate,
+      endDate,
+      aspectRatio,
+      rating,
+      label,
+      keyword,
+      folder,
+      sortBy,
+      sortOrder,
+    } = parsed.data;
 
     console.log('Filter params:', { rating, label, search, camera });
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
     const offset = (pageNum - 1) * limitNum;
 
     // Build where conditions
@@ -46,8 +64,8 @@ router.get('/photos', async (req, res) => {
         or(
           like(photos.filename, `%${search}%`),
           like(photos.keywords, `%${search}%`),
-          like(photos.camera, `%${search}%`)
-        )
+          like(photos.camera, `%${search}%`),
+        ),
       );
     }
 
@@ -57,46 +75,47 @@ router.get('/photos', async (req, res) => {
     }
 
     // Filter by ISO range
-    if (minIso) {
-      conditions.push(gte(photos.iso, parseInt(minIso as string)));
+    if (minIso !== undefined) {
+      conditions.push(gte(photos.iso, minIso));
     }
-    if (maxIso) {
-      conditions.push(lte(photos.iso, parseInt(maxIso as string)));
+    if (maxIso !== undefined) {
+      conditions.push(lte(photos.iso, maxIso));
     }
 
     // Filter by aperture range
-    if (minAperture) {
-      conditions.push(gte(photos.aperture, parseFloat(minAperture as string)));
+    if (minAperture !== undefined) {
+      conditions.push(gte(photos.aperture, minAperture));
     }
-    if (maxAperture) {
-      conditions.push(lte(photos.aperture, parseFloat(maxAperture as string)));
+    if (maxAperture !== undefined) {
+      conditions.push(lte(photos.aperture, maxAperture));
     }
 
     // Filter by date range
     if (startDate) {
-      const startTimestamp = Math.floor(new Date(startDate as string).getTime() / 1000);
+      const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
       conditions.push(sql`${photos.dateCaptured} >= ${startTimestamp}`);
     }
     if (endDate) {
-      const endTimestamp = Math.floor(new Date(endDate as string).getTime() / 1000) + 86399; // Add 23:59:59
+      const endTimestamp =
+        Math.floor(new Date(endDate).getTime() / 1000) + 86399; // Add 23:59:59
       conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
     }
 
     // Filter by aspect ratio
     if (aspectRatio) {
-      const ratio = parseFloat(aspectRatio as string);
+      const ratio = parseFloat(aspectRatio);
       const tolerance = 0.1; // Allow some variance for common aspect ratios
       conditions.push(
         and(
           gte(photos.aspectRatio, ratio - tolerance),
-          lte(photos.aspectRatio, ratio + tolerance)
-        )
+          lte(photos.aspectRatio, ratio + tolerance),
+        ),
       );
     }
 
     // Filter by rating
-    if (rating) {
-      conditions.push(sql`${photos.rating} >= ${parseInt(rating as string)}`);
+    if (rating !== undefined) {
+      conditions.push(sql`${photos.rating} >= ${rating}`);
     }
 
     // Filter by label
@@ -111,8 +130,8 @@ router.get('/photos', async (req, res) => {
 
     // Filter by folder path (prefix match on JSON keywords array)
     if (folder) {
-      const segments = (folder as string).split('/');
-      const jsonPrefix = '["' + segments.join('","') + '"';
+      const segments = folder.split('/');
+      const jsonPrefix = `["${segments.join('","')}"`;
       conditions.push(like(photos.keywords, `${jsonPrefix}%`));
     }
 
@@ -124,7 +143,7 @@ router.get('/photos', async (req, res) => {
       createdAt: photos.createdAt,
     };
     const orderFn = sortOrder === 'asc' ? asc : desc;
-    const orderByColumn = validSortColumns[sortBy as string] ?? photos.dateCaptured;
+    const orderByColumn = validSortColumns[sortBy] ?? photos.dateCaptured;
 
     // Execute query
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -180,20 +199,24 @@ router.get('/photos/autocomplete', async (req, res) => {
     const cameraMatches = await db
       .selectDistinct({ value: photos.camera })
       .from(photos)
-      .where(and(
-        sql`${photos.camera} IS NOT NULL`,
-        like(photos.camera, `%${searchTerm}%`)
-      ))
+      .where(
+        and(
+          sql`${photos.camera} IS NOT NULL`,
+          like(photos.camera, `%${searchTerm}%`),
+        ),
+      )
       .limit(5);
 
     // Get matching keywords
     const keywordMatches = await db
       .selectDistinct({ value: photos.keywords })
       .from(photos)
-      .where(and(
-        sql`${photos.keywords} IS NOT NULL`,
-        like(photos.keywords, `%${searchTerm}%`)
-      ))
+      .where(
+        and(
+          sql`${photos.keywords} IS NOT NULL`,
+          like(photos.keywords, `%${searchTerm}%`),
+        ),
+      )
       .limit(10);
 
     // Extract and flatten keywords
@@ -209,7 +232,7 @@ router.get('/photos/autocomplete', async (req, res) => {
               }
             });
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip invalid JSON
         }
       }
@@ -217,10 +240,12 @@ router.get('/photos/autocomplete', async (req, res) => {
 
     // Combine all suggestions
     const suggestions = [
-      ...filenameMatches.map(f => f.value),
-      ...cameraMatches.map(c => c.value),
+      ...filenameMatches.map((f) => f.value),
+      ...cameraMatches.map((c) => c.value),
       ...Array.from(keywords).slice(0, 10),
-    ].filter(Boolean).slice(0, 20);
+    ]
+      .filter(Boolean)
+      .slice(0, 20);
 
     res.json(suggestions);
   } catch (error) {
@@ -230,13 +255,13 @@ router.get('/photos/autocomplete', async (req, res) => {
 });
 
 // Get grouped suggestions for search (when focused)
-router.get('/photos/suggestions', async (req, res) => {
+router.get('/photos/suggestions', async (_req, res) => {
   try {
     // Get top cameras
     const topCameras = await db
       .select({
         value: photos.camera,
-        count: sql<number>`count(*) as count`
+        count: sql<number>`count(*) as count`,
       })
       .from(photos)
       .where(sql`${photos.camera} IS NOT NULL`)
@@ -261,7 +286,7 @@ router.get('/photos/suggestions', async (req, res) => {
               keywordCounts.set(kw, (keywordCounts.get(kw) || 0) + 1);
             });
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip invalid JSON
         }
       }
@@ -280,9 +305,9 @@ router.get('/photos/suggestions', async (req, res) => {
       .limit(6);
 
     res.json({
-      cameras: topCameras.map(c => c.value),
+      cameras: topCameras.map((c) => c.value),
       keywords: topKeywords,
-      files: recentFiles.map(f => f.value),
+      files: recentFiles.map((f) => f.value),
     });
   } catch (error) {
     console.error('Error fetching suggestions:', error);
@@ -291,7 +316,7 @@ router.get('/photos/suggestions', async (req, res) => {
 });
 
 // Get unique cameras
-router.get('/photos/meta/cameras', async (req, res) => {
+router.get('/photos/meta/cameras', async (_req, res) => {
   try {
     const cameras = await db
       .selectDistinct({ camera: photos.camera })
@@ -307,7 +332,7 @@ router.get('/photos/meta/cameras', async (req, res) => {
 });
 
 // Get photo statistics
-router.get('/photos/meta/stats', async (req, res) => {
+router.get('/photos/meta/stats', async (_req, res) => {
   try {
     const stats = await db
       .select({
@@ -329,7 +354,7 @@ router.get('/photos/meta/stats', async (req, res) => {
 });
 
 // Get distinct ISO values
-router.get('/photos/meta/iso-values', async (req, res) => {
+router.get('/photos/meta/iso-values', async (_req, res) => {
   try {
     const isoValues = await db
       .selectDistinct({ iso: photos.iso })
@@ -345,7 +370,7 @@ router.get('/photos/meta/iso-values', async (req, res) => {
 });
 
 // Get distinct aperture values
-router.get('/photos/meta/aperture-values', async (req, res) => {
+router.get('/photos/meta/aperture-values', async (_req, res) => {
   try {
     const apertureValues = await db
       .selectDistinct({ aperture: photos.aperture })
@@ -361,11 +386,11 @@ router.get('/photos/meta/aperture-values', async (req, res) => {
 });
 
 // Get distinct dates (date only, no time)
-router.get('/photos/meta/dates', async (req, res) => {
+router.get('/photos/meta/dates', async (_req, res) => {
   try {
     const dates = await db
       .selectDistinct({
-        date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')`
+        date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')`,
       })
       .from(photos)
       .where(sql`${photos.dateCaptured} IS NOT NULL`)
@@ -379,7 +404,7 @@ router.get('/photos/meta/dates', async (req, res) => {
 });
 
 // Get dates with photo counts (for calendar view)
-router.get('/photos/meta/dates-with-counts', async (req, res) => {
+router.get('/photos/meta/dates-with-counts', async (_req, res) => {
   try {
     const dateGroups = await db
       .select({
@@ -399,7 +424,7 @@ router.get('/photos/meta/dates-with-counts', async (req, res) => {
 });
 
 // Get distinct label values
-router.get('/photos/meta/labels', async (req, res) => {
+router.get('/photos/meta/labels', async (_req, res) => {
   try {
     const labels = await db
       .selectDistinct({ label: photos.label })
@@ -415,7 +440,7 @@ router.get('/photos/meta/labels', async (req, res) => {
 });
 
 // Get distinct keywords
-router.get('/photos/meta/keywords', async (req, res) => {
+router.get('/photos/meta/keywords', async (_req, res) => {
   try {
     const rows = await db
       .select({ keywords: photos.keywords })
@@ -430,7 +455,7 @@ router.get('/photos/meta/keywords', async (req, res) => {
           if (Array.isArray(parsed)) {
             parsed.forEach((kw: string) => keywordSet.add(kw));
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip invalid JSON
         }
       }
@@ -445,7 +470,7 @@ router.get('/photos/meta/keywords', async (req, res) => {
 });
 
 // Get distinct folder paths derived from keywords
-router.get('/photos/meta/folders', async (req, res) => {
+router.get('/photos/meta/folders', async (_req, res) => {
   try {
     const rows = await db
       .select({ keywords: photos.keywords })
@@ -463,7 +488,7 @@ router.get('/photos/meta/folders', async (req, res) => {
               pathSet.add(parsed.slice(0, i).join('/'));
             }
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip invalid JSON
         }
       }

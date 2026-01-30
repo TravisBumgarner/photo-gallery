@@ -1,8 +1,8 @@
-import { Request, Response, NextFunction } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-    if (req.session && req.session.authenticated) {
-        return next();
-    }
-    res.status(401).json({ error: 'Unauthorized' });
+  if (req.session?.authenticated) {
+    return next();
+  }
+  res.status(401).json({ error: 'Unauthorized' });
 }

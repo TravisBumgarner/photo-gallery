@@ -17,7 +17,12 @@
     "db:generate": "npm run db:generate -w backend",
     "db:migrate": "npm run db:migrate -w backend",
     "db:studio": "npm run db:studio -w backend",
-    "ingest": "npm run ingest -w ingestion"
+    "ingest": "npm run ingest -w ingestion",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
   },
   "keywords": [],
   "author": "",
@@ -26,6 +31,7 @@
     "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.13",
     "concurrently": "^8.2.2"
   }
 }
