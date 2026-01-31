@@ -23,6 +23,15 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import type { PhotoFilters } from '@/types';
 
+const aspectRatioOptions = [
+  { label: 'All', value: '' },
+  { label: '1:1', value: '1' },
+  { label: '3:2', value: '1.5' },
+  { label: '16:9', value: '1.78' },
+  { label: '2:3', value: '0.67' },
+  { label: '9:16', value: '0.56' },
+];
+
 interface ToolbarProps {
   filters: PhotoFilters;
   onFilterChange: (filters: Partial<PhotoFilters>) => void;
@@ -442,6 +451,28 @@ function Toolbar({
             />
           </Stack>
         )}
+
+        {/* Aspect Ratio */}
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography variant="caption" fontWeight="600" sx={{ mr: 0.5 }}>
+            Ratio
+          </Typography>
+          {aspectRatioOptions.map((option) => (
+            <Chip
+              key={option.value}
+              label={option.label}
+              size="small"
+              color={
+                filters.aspectRatio === option.value ||
+                (!filters.aspectRatio && option.value === '')
+                  ? 'primary'
+                  : 'default'
+              }
+              onClick={() => onFilterChange({ aspectRatio: option.value })}
+              clickable
+            />
+          ))}
+        </Stack>
       </Stack>
     </Box>
   );

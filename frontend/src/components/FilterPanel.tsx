@@ -36,15 +36,6 @@ interface FilterPanelProps {
   onClose: () => void;
 }
 
-const aspectRatioOptions = [
-  { label: 'All', value: '' },
-  { label: '1:1', value: '1' },
-  { label: '3:2', value: '1.5' },
-  { label: '16:9', value: '1.78' },
-  { label: '2:3', value: '0.67' },
-  { label: '9:16', value: '0.56' },
-];
-
 function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
   const [cameras, setCameras] = useState<string[]>([]);
   const [lenses, setLenses] = useState<string[]>([]);
@@ -230,37 +221,6 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
                 </ListItem>
               ))}
             </List>
-          </Box>
-
-          <Divider />
-
-          {/* Aspect Ratio */}
-          <Box>
-            <Typography
-              variant="caption"
-              fontWeight="600"
-              display="block"
-              mb={0.25}
-            >
-              Aspect Ratio
-            </Typography>
-            <Stack direction="row" spacing={0.25} flexWrap="wrap" useFlexGap>
-              {aspectRatioOptions.map((option) => (
-                <Chip
-                  key={option.value}
-                  label={option.label}
-                  size="small"
-                  color={
-                    filters.aspectRatio === option.value ||
-                    (!filters.aspectRatio && option.value === '')
-                      ? 'primary'
-                      : 'default'
-                  }
-                  onClick={() => onFilterChange({ aspectRatio: option.value })}
-                  clickable
-                />
-              ))}
-            </Stack>
           </Box>
 
           <Divider />
@@ -581,7 +541,6 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
               onFilterChange({
                 search: '',
                 camera: '',
-                aspectRatio: '',
                 minIso: undefined,
                 maxIso: undefined,
                 minAperture: undefined,
