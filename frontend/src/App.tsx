@@ -223,7 +223,7 @@ function App() {
 
   return (
     <AppThemeProvider>
-      <Box sx={{ display: 'flex', minHeight: '100vh', overflow: 'hidden', width: '100vw' }}>
+      <Box sx={{ display: 'flex', minHeight: '100vh', overflowX: 'hidden', width: '100vw' }}>
         {/* Left Sidebar for Filters */}
         <Drawer
           variant={isMobile ? 'temporary' : 'persistent'}
@@ -261,7 +261,6 @@ function App() {
             position: 'relative',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden',
           }}
         >
           {/* Toolbar */}
@@ -274,7 +273,7 @@ function App() {
           />
 
           {/* Photos Grid */}
-          <Box sx={{ flexGrow: 1, position: 'relative' }}>
+          <Box sx={{ flexGrow: 1, minHeight: 0, position: 'relative' }}>
             {/* Toggle button when sidebar is hidden (desktop only) */}
             {!showFilters && !isMobile && (
               <Box
