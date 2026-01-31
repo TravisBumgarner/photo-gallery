@@ -118,6 +118,13 @@ function App() {
         const response = await fetch(`/api/photos?${params}`, {
           credentials: 'include',
         });
+
+        if (response.status === 401) {
+          initialLoadRef.current = false;
+          setIsAuthenticated(false);
+          return;
+        }
+
         const data: PhotosResponse = await response.json();
 
         if (data.photos && data.pagination) {
@@ -186,13 +193,16 @@ function App() {
   };
 
   const handlePhotoNavigate = (direction: 'prev' | 'next') => {
+    if (photos.length === 0) return;
     const currentIndex = photos.findIndex((p) => p.id === selectedPhoto?.id);
     if (currentIndex === -1) return;
 
-    if (direction === 'prev' && currentIndex > 0) {
-      setSelectedPhoto(photos[currentIndex - 1]);
-    } else if (direction === 'next' && currentIndex < photos.length - 1) {
-      setSelectedPhoto(photos[currentIndex + 1]);
+    if (direction === 'prev') {
+      const newIndex = (currentIndex - 1 + photos.length) % photos.length;
+      setSelectedPhoto(photos[newIndex]);
+    } else {
+      const newIndex = (currentIndex + 1) % photos.length;
+      setSelectedPhoto(photos[newIndex]);
     }
   };
 
@@ -309,17 +319,7 @@ function App() {
                   onClick={() => {
                     setFilters({
                       search: '',
-                      camera: '',
-                      aspectRatio: undefined,
-                      orientation: '',
-                      minIso: undefined,
-                      maxIso: undefined,
-                      minAperture: undefined,
-                      maxAperture: undefined,
-                      startDate: '',
-                      endDate: '',
-                      folder: '',
-                      sortBy: 'date',
+                      sortBy: 'dateCaptured',
                       sortOrder: 'desc',
                     });
                   }}
