@@ -9,7 +9,6 @@ import {
   Box,
   Breadcrumbs,
   Chip,
-  FormControl,
   IconButton,
   Link,
   MenuItem,
@@ -196,52 +195,53 @@ function Toolbar({
               })}
             </Breadcrumbs>
             {children.length > 0 && (
-              <FormControl size="small" sx={{ minWidth: 120 }}>
-                <Select
-                  value=""
-                  displayEmpty
-                  onChange={(e) => {
-                    const child = e.target.value;
-                    if (child) {
-                      const newFolder = currentFolder
-                        ? `${currentFolder}/${child}`
-                        : child;
-                      onFilterChange({ folder: newFolder });
-                    }
-                  }}
-                  renderValue={() => (
-                    <Typography variant="body2" color="text.secondary">
-                      Select folder…
-                    </Typography>
-                  )}
-                >
-                  {children.map((child) => (
-                    <MenuItem key={child} value={child}>
-                      {child}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Select
+                value=""
+                displayEmpty
+                variant="standard"
+                disableUnderline
+                onChange={(e) => {
+                  const child = e.target.value;
+                  if (child) {
+                    const newFolder = currentFolder
+                      ? `${currentFolder}/${child}`
+                      : child;
+                    onFilterChange({ folder: newFolder });
+                  }
+                }}
+                renderValue={() => (
+                  <Typography variant="body2" color="text.secondary">
+                    Select folder…
+                  </Typography>
+                )}
+                sx={{ '& .MuiSelect-select': { py: 0, typography: 'body2' } }}
+              >
+                {children.map((child) => (
+                  <MenuItem key={child} value={child}>
+                    {child}
+                  </MenuItem>
+                ))}
+              </Select>
             )}
           </Stack>
 
           {/* Right side controls */}
           <Stack direction="row" spacing={2} alignItems="center">
             {/* Sort By */}
-            <FormControl size="small" sx={{ minWidth: 140 }}>
-              <Select
-                value={filters.sortBy || 'dateCaptured'}
-                onChange={(e) => onFilterChange({ sortBy: e.target.value })}
-                displayEmpty
-              >
-                <MenuItem value="dateCaptured">Date Captured</MenuItem>
-                <MenuItem value="createdAt">Date Added</MenuItem>
-                <MenuItem value="filename">Filename</MenuItem>
-                <MenuItem value="camera">Camera</MenuItem>
-                <MenuItem value="iso">ISO</MenuItem>
-                <MenuItem value="aperture">Aperture</MenuItem>
-              </Select>
-            </FormControl>
+            <Select
+              value={filters.sortBy || 'dateCaptured'}
+              onChange={(e) => onFilterChange({ sortBy: e.target.value })}
+              variant="standard"
+              disableUnderline
+              sx={{ '& .MuiSelect-select': { py: 0, typography: 'body2' } }}
+            >
+              <MenuItem value="dateCaptured">Date Captured</MenuItem>
+              <MenuItem value="createdAt">Date Added</MenuItem>
+              <MenuItem value="filename">Filename</MenuItem>
+              <MenuItem value="camera">Camera</MenuItem>
+              <MenuItem value="iso">ISO</MenuItem>
+              <MenuItem value="aperture">Aperture</MenuItem>
+            </Select>
 
             {/* Order */}
             <Stack direction="row" spacing={0.5}>
