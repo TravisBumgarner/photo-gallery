@@ -93,7 +93,7 @@ tasks:
       - Dividers removed (background styling provides separation)
     depends_on: []
     effort: 2
-    status: scoped
+    status: completed
 
   - id: 5
     github_issue: 13
@@ -116,7 +116,7 @@ tasks:
       - Hide/Show filters button at bottom-right of main content area
     depends_on: []
     effort: 2
-    status: scoped
+    status: completed
 
   - id: 6
     github_issue: 14
@@ -134,4 +134,4 @@ tasks:
       - Second row filters always visible
     depends_on: []
     effort: 1
-    status: scoped
+    status: cancelled

@@ -1,15 +1,12 @@
 import {
   CalendarMonth as CalendarMonthIcon,
-  ChevronLeft as ChevronLeftIcon,
   ExpandLess as ExpandLessIcon,
   ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import {
   Box,
-  Button,
   Chip,
   Collapse,
-  Divider,
   IconButton,
   List,
   ListItem,
@@ -30,13 +27,19 @@ import { useEffect, useState } from 'react';
 import SearchBar from '@/components/SearchBar';
 import type { PhotoFilters } from '@/types';
 
+const sectionSx = {
+  flexGrow: 1,
+  bgcolor: 'action.hover',
+  borderRadius: 1,
+  p: 1,
+};
+
 interface FilterPanelProps {
   filters: PhotoFilters;
   onFilterChange: (filters: Partial<PhotoFilters>) => void;
-  onClose: () => void;
 }
 
-function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
+function FilterPanel({ filters, onFilterChange }: FilterPanelProps) {
   const [cameras, setCameras] = useState<string[]>([]);
   const [lenses, setLenses] = useState<string[]>([]);
   const [dates, setDates] = useState<string[]>([]);
@@ -93,31 +96,10 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'background.paper',
-        borderRight: 1,
-        borderColor: 'divider',
       }}
     >
-      {/* Header with close button */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          p: 0.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Typography variant="body2" fontWeight="bold">
-          Filters
-        </Typography>
-        <IconButton onClick={onClose} size="small">
-          <ChevronLeftIcon />
-        </IconButton>
-      </Box>
-
       {/* Search */}
-      <Box sx={{ p: 0.75, borderBottom: 1, borderColor: 'divider' }}>
+      <Box sx={{ p: 0.75 }}>
         <SearchBar
           value={filters.search || ''}
           onChange={(search) => onFilterChange({ search })}
@@ -125,10 +107,18 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
       </Box>
 
       {/* Scrollable filter content */}
-      <Box sx={{ overflowY: 'auto', flexGrow: 1, p: 0.75 }}>
-        <Stack spacing={0.75}>
+      <Box
+        sx={{
+          overflowY: 'auto',
+          flexGrow: 1,
+          p: 0.75,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <Stack spacing={0.75} sx={{ flexGrow: 1 }}>
           {/* Camera List */}
-          <Box>
+          <Box sx={sectionSx}>
             <Typography
               variant="caption"
               fontWeight="600"
@@ -174,10 +164,8 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
             </List>
           </Box>
 
-          <Divider />
-
           {/* Lens List */}
-          <Box>
+          <Box sx={sectionSx}>
             <Typography
               variant="caption"
               fontWeight="600"
@@ -223,10 +211,8 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
             </List>
           </Box>
 
-          <Divider />
-
           {/* Date Calendar */}
-          <Box>
+          <Box sx={sectionSx}>
             <Typography
               variant="caption"
               fontWeight="600"
@@ -481,10 +467,8 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
             </Box>
           </Box>
 
-          <Divider />
-
           {/* Tags Filter */}
-          <Box>
+          <Box sx={sectionSx}>
             <Typography
               variant="caption"
               fontWeight="600"
@@ -529,33 +513,6 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
               ))}
             </List>
           </Box>
-
-          <Divider />
-
-          {/* Reset Button */}
-          <Button
-            variant="outlined"
-            size="small"
-            fullWidth
-            onClick={() =>
-              onFilterChange({
-                search: '',
-                camera: '',
-                minIso: undefined,
-                maxIso: undefined,
-                minAperture: undefined,
-                maxAperture: undefined,
-                startDate: '',
-                endDate: '',
-                keyword: '',
-                folder: '',
-                sortBy: 'dateCaptured',
-                sortOrder: 'desc',
-              })
-            }
-          >
-            Reset
-          </Button>
         </Stack>
       </Box>
     </Box>

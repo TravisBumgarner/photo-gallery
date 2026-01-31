@@ -1,4 +1,3 @@
-import { ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -6,6 +5,7 @@ import {
   CssBaseline,
   createTheme,
   Drawer,
+  Stack,
   ThemeProvider,
   Typography,
   useMediaQuery,
@@ -247,14 +247,11 @@ function App() {
               height: '100vh',
               left: 0,
               top: 0,
+              borderRight: 'none',
             },
           }}
         >
-          <FilterPanel
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            onClose={() => setShowFilters(false)}
-          />
+          <FilterPanel filters={filters} onFilterChange={handleFilterChange} />
         </Drawer>
 
         {/* Main Content Area */}
@@ -269,41 +266,18 @@ function App() {
           }}
         >
           {/* Toolbar */}
-          <Toolbar
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            columnCount={columnCount}
-            onColumnCountChange={setColumnCount}
-            onLogout={handleLogout}
-          />
+          {showFilters && (
+            <Toolbar
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              columnCount={columnCount}
+              onColumnCountChange={setColumnCount}
+              onLogout={handleLogout}
+            />
+          )}
 
           {/* Photos Grid */}
           <Box sx={{ flexGrow: 1, position: 'relative' }}>
-            {/* Toggle button when sidebar is hidden */}
-            {!showFilters && (
-              <Box
-                onClick={() => setShowFilters(true)}
-                sx={{
-                  position: 'fixed',
-                  left: 0,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  cursor: 'pointer',
-                  p: 1,
-                  borderTopRightRadius: 8,
-                  borderBottomRightRadius: 8,
-                  zIndex: 1000,
-                  '&:hover': {
-                    bgcolor: 'primary.dark',
-                  },
-                }}
-              >
-                <ChevronRightIcon />
-              </Box>
-            )}
-
             {photos.length === 0 && !loading ? (
               <Box sx={{ textAlign: 'center', mt: 8 }}>
                 <Typography variant="h6" color="text.secondary" mb={2}>
@@ -345,6 +319,54 @@ function App() {
                 columnCount={columnCount}
               />
             )}
+
+            {/* Filter controls */}
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                position: 'fixed',
+                bottom: 16,
+                right: 16,
+                zIndex: 1000,
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+                p: 1,
+              }}
+            >
+              {showFilters && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() =>
+                    handleFilterChange({
+                      search: '',
+                      camera: '',
+                      lens: '',
+                      minIso: undefined,
+                      maxIso: undefined,
+                      minAperture: undefined,
+                      maxAperture: undefined,
+                      startDate: '',
+                      endDate: '',
+                      keyword: '',
+                      folder: '',
+                      sortBy: 'dateCaptured',
+                      sortOrder: 'desc',
+                    })
+                  }
+                >
+                  Reset filters
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setShowFilters((prev) => !prev)}
+              >
+                {showFilters ? 'Hide filters' : 'Show filters'}
+              </Button>
+            </Stack>
           </Box>
         </Box>
 
