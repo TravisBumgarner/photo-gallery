@@ -18,6 +18,8 @@ import {
   Paper,
   Stack,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { Photo } from '@/types';
@@ -30,7 +32,9 @@ interface PhotoViewerProps {
 }
 
 function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
-  const [showMetadata, setShowMetadata] = useState(true);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const [showMetadata, setShowMetadata] = useState(!isMobile);
   const currentIndex = photos.findIndex((p) => p.id === photo.id);
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < photos.length - 1;
@@ -100,12 +104,15 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
       onClose={onClose}
       maxWidth={false}
       fullWidth
+      fullScreen={isMobile}
       PaperProps={{
-        sx: {
-          height: '95vh',
-          maxHeight: '95vh',
-          m: 2,
-        },
+        sx: isMobile
+          ? {}
+          : {
+              height: '95vh',
+              maxHeight: '95vh',
+              m: 2,
+            },
       }}
     >
       <Box sx={{ position: 'relative', height: '100%', display: 'flex' }}>
@@ -131,7 +138,14 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             flexDirection: 'column',
           }}
         >
-          <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              overflow: 'hidden',
+              flexDirection: isMobile ? 'column' : 'row',
+            }}
+          >
             <Box
               sx={{
                 flex: 1,
@@ -156,9 +170,9 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             {showMetadata && (
               <Paper
                 sx={{
-                  width: 350,
+                  width: isMobile ? '100%' : 350,
                   overflowY: 'auto',
-                  p: 3,
+                  p: isMobile ? 2 : 3,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
@@ -323,7 +337,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             <IconButton
               onClick={() => onNavigate('prev')}
               disabled={!hasPrev}
-              size="small"
+              size={isMobile ? 'medium' : 'small'}
             >
               <ArrowBackIcon />
             </IconButton>
@@ -335,7 +349,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             <IconButton
               onClick={() => onNavigate('next')}
               disabled={!hasNext}
-              size="small"
+              size={isMobile ? 'medium' : 'small'}
             >
               <ArrowForwardIcon />
             </IconButton>
@@ -344,7 +358,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
 
             <IconButton
               onClick={() => setShowMetadata(!showMetadata)}
-              size="small"
+              size={isMobile ? 'medium' : 'small'}
               color={showMetadata ? 'primary' : 'default'}
             >
               <InfoOutlinedIcon />

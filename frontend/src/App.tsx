@@ -5,6 +5,8 @@ import {
   CircularProgress,
   Drawer,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import FilterPanel from '@/components/FilterPanel';
@@ -31,6 +33,37 @@ function App() {
   });
   const [showFilters, setShowFilters] = useState(true);
   const [columnCount, setColumnCount] = useState(4);
+  const [columnOverride, setColumnOverride] = useState(false);
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  // Auto-size column count based on screen width
+  useEffect(() => {
+    if (columnOverride) return;
+
+    const updateColumns = () => {
+      const width = window.innerWidth;
+      if (width < 600) setColumnCount(2);
+      else if (width < 960) setColumnCount(3);
+      else if (width < 1280) setColumnCount(4);
+      else setColumnCount(5);
+    };
+
+    updateColumns();
+    window.addEventListener('resize', updateColumns);
+    return () => window.removeEventListener('resize', updateColumns);
+  }, [columnOverride]);
+
+  // Close drawer on mobile by default
+  useEffect(() => {
+    if (isMobile) setShowFilters(false);
+  }, [isMobile]);
+
+  const handleColumnCountChange = (count: number) => {
+    setColumnOverride(true);
+    setColumnCount(count);
+  };
 
   const loadingRef = useRef(false);
   const initialLoadRef = useRef(false);
@@ -190,17 +223,18 @@ function App() {
 
   return (
     <AppThemeProvider>
-      <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      <Box sx={{ display: 'flex', minHeight: '100vh', overflow: 'hidden', width: '100vw' }}>
         {/* Left Sidebar for Filters */}
         <Drawer
-          variant="persistent"
+          variant={isMobile ? 'temporary' : 'persistent'}
           anchor="left"
           open={showFilters}
+          onClose={() => setShowFilters(false)}
           sx={{
-            width: showFilters ? 300 : 0,
+            width: isMobile ? 'auto' : showFilters ? 300 : 0,
             flexShrink: 0,
             '& .MuiDrawer-paper': {
-              width: 300,
+              width: isMobile ? '100%' : 300,
               boxSizing: 'border-box',
               position: 'fixed',
               height: '100vh',
@@ -222,10 +256,12 @@ function App() {
           component="main"
           sx={{
             flexGrow: 1,
+            minWidth: 0,
             height: '100vh',
             position: 'relative',
             display: 'flex',
             flexDirection: 'column',
+            overflow: 'hidden',
           }}
         >
           {/* Toolbar */}
@@ -233,13 +269,14 @@ function App() {
             filters={filters}
             onFilterChange={handleFilterChange}
             columnCount={columnCount}
-            onColumnCountChange={setColumnCount}
+            onColumnCountChange={handleColumnCountChange}
+            onToggleFilters={() => setShowFilters((prev) => !prev)}
           />
 
           {/* Photos Grid */}
           <Box sx={{ flexGrow: 1, position: 'relative' }}>
-            {/* Toggle button when sidebar is hidden */}
-            {!showFilters && (
+            {/* Toggle button when sidebar is hidden (desktop only) */}
+            {!showFilters && !isMobile && (
               <Box
                 onClick={() => setShowFilters(true)}
                 sx={{

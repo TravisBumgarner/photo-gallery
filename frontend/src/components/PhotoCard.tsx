@@ -20,9 +20,11 @@ const PhotoCard = memo(function PhotoCard({ photo, onClick }: PhotoCardProps) {
       sx={{
         cursor: 'pointer',
         transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
-        '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: 6,
+        '@media (hover: hover)': {
+          '&:hover': {
+            transform: 'translateY(-4px)',
+            boxShadow: 6,
+          },
         },
         position: 'relative',
         willChange: isHovered ? 'transform' : 'auto',
