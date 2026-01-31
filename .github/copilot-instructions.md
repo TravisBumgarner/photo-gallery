@@ -14,6 +14,6 @@
 - [ ] Install dependencies and test
 
 ## Development
-- Backend runs on port 3000
-- Frontend runs on port 5173 (Vite default)
+- Backend runs on port 8084
+- Frontend runs on port 5200 (Vite default)
 - Frontend proxies API requests to backend

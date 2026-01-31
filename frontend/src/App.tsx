@@ -3,54 +3,19 @@ import {
   Box,
   Button,
   CircularProgress,
-  CssBaseline,
-  createTheme,
   Drawer,
-  ThemeProvider,
   Typography,
-  useMediaQuery,
 } from '@mui/material';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import FilterPanel from '@/components/FilterPanel';
 import LoginPage from '@/components/LoginPage';
 import PhotoViewer from '@/components/PhotoViewer';
 import Toolbar from '@/components/Toolbar';
 import VirtualPhotoGrid from '@/components/VirtualPhotoGrid';
+import AppThemeProvider from '@/styles/Theme';
 import type { Photo, PhotoFilters, PhotosResponse } from '@/types';
 
 function App() {
-  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
-
-  const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode: prefersDarkMode ? 'dark' : 'light',
-          primary: {
-            main: '#1976d2',
-          },
-          ...(prefersDarkMode && {
-            background: {
-              default: '#121212',
-              paper: '#1e1e1e',
-            },
-          }),
-        },
-        components: {
-          MuiDialog: {
-            styleOverrides: {
-              paper: {
-                ...(prefersDarkMode && {
-                  backgroundColor: '#1e1e1e',
-                }),
-              },
-            },
-          },
-        },
-      }),
-    [prefersDarkMode],
-  );
-
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -203,8 +168,7 @@ function App() {
 
   if (authLoading) {
     return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
+      <AppThemeProvider>
         <Box
           sx={{
             display: 'flex',
@@ -215,22 +179,20 @@ function App() {
         >
           <CircularProgress />
         </Box>
-      </ThemeProvider>
+      </AppThemeProvider>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
+      <AppThemeProvider>
         <LoginPage onLogin={() => setIsAuthenticated(true)} />
-      </ThemeProvider>
+      </AppThemeProvider>
     );
   }
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <AppThemeProvider>
       <Box sx={{ display: 'flex', minHeight: '100vh' }}>
         {/* Left Sidebar for Filters */}
         <Drawer
@@ -254,6 +216,7 @@ function App() {
             filters={filters}
             onFilterChange={handleFilterChange}
             onClose={() => setShowFilters(false)}
+            onLogout={handleLogout}
           />
         </Drawer>
 
@@ -274,7 +237,6 @@ function App() {
             onFilterChange={handleFilterChange}
             columnCount={columnCount}
             onColumnCountChange={setColumnCount}
-            onLogout={handleLogout}
           />
 
           {/* Photos Grid */}
@@ -357,7 +319,7 @@ function App() {
           />
         )}
       </Box>
-    </ThemeProvider>
+    </AppThemeProvider>
   );
 }
 

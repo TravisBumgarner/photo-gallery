@@ -52,8 +52,6 @@ router.get('/photos', async (req, res) => {
       sortOrder,
     } = parsed.data;
 
-    console.log('Filter params:', { rating, label, search, camera });
-
     const offset = (pageNum - 1) * limitNum;
 
     // Build where conditions
@@ -70,14 +68,26 @@ router.get('/photos', async (req, res) => {
       );
     }
 
-    // Filter by camera
+    // Filter by camera (supports comma-separated multi-select)
     if (camera) {
-      conditions.push(like(photos.camera, `%${camera}%`));
+      const cameras = camera.split(',').filter(Boolean);
+      if (cameras.length === 1) {
+        conditions.push(like(photos.camera, `%${cameras[0]}%`));
+      } else if (cameras.length > 1) {
+        conditions.push(
+          or(...cameras.map((c) => like(photos.camera, `%${c}%`))),
+        );
+      }
     }
 
-    // Filter by lens
+    // Filter by lens (supports comma-separated multi-select)
     if (lens) {
-      conditions.push(like(photos.lens, `%${lens}%`));
+      const lenses = lens.split(',').filter(Boolean);
+      if (lenses.length === 1) {
+        conditions.push(like(photos.lens, `%${lenses[0]}%`));
+      } else if (lenses.length > 1) {
+        conditions.push(or(...lenses.map((l) => like(photos.lens, `%${l}%`))));
+      }
     }
 
     // Filter by ISO range
@@ -107,16 +117,22 @@ router.get('/photos', async (req, res) => {
       conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
     }
 
-    // Filter by aspect ratio
+    // Filter by aspect ratio (supports comma-separated multi-select)
     if (aspectRatio) {
-      const ratio = parseFloat(aspectRatio);
-      const tolerance = 0.1; // Allow some variance for common aspect ratios
-      conditions.push(
-        and(
+      const ratios = aspectRatio.split(',').filter(Boolean);
+      const ratioConditions = ratios.map((r) => {
+        const ratio = parseFloat(r);
+        const tolerance = 0.1;
+        return and(
           gte(photos.aspectRatio, ratio - tolerance),
           lte(photos.aspectRatio, ratio + tolerance),
-        ),
-      );
+        );
+      });
+      if (ratioConditions.length === 1) {
+        conditions.push(ratioConditions[0]);
+      } else if (ratioConditions.length > 1) {
+        conditions.push(or(...ratioConditions));
+      }
     }
 
     // Filter by rating
@@ -129,9 +145,16 @@ router.get('/photos', async (req, res) => {
       conditions.push(sql`${photos.label} = ${label}`);
     }
 
-    // Filter by keyword
+    // Filter by keyword (supports comma-separated multi-select)
     if (keyword) {
-      conditions.push(like(photos.keywords, `%"${keyword}"%`));
+      const keywords = keyword.split(',').filter(Boolean);
+      if (keywords.length === 1) {
+        conditions.push(like(photos.keywords, `%"${keywords[0]}"%`));
+      } else if (keywords.length > 1) {
+        conditions.push(
+          or(...keywords.map((kw) => like(photos.keywords, `%"${kw}"%`))),
+        );
+      }
     }
 
     // Filter by folder path (prefix match on JSON keywords array)

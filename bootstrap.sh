@@ -32,7 +32,7 @@ npm run db:migrate
 
 # Next steps:
 #   1. Edit backend/.env and ingestion/.env with your settings (see README for details)
-#   2. Run 'npm run dev' to start (frontend on :5173, backend on :3000)
+#   2. Run 'npm run dev' to start (frontend on :5200, backend on :8084)
 #   3. See README for ingestion and deployment instructions
 echo ""
 echo "Done! Edit .env files if needed, then run 'npm run dev' to start."
