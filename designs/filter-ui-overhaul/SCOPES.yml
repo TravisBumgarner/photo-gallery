@@ -75,7 +75,7 @@ tasks:
       - FilterPanel Reset no longer resets aspectRatio
     depends_on: []
     effort: 1
-    status: implementing
+    status: completed
 
   - id: 4
     github_issue: 12
