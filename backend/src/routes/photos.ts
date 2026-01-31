@@ -44,6 +44,7 @@ router.get('/photos', async (req, res) => {
       startDate,
       endDate,
       aspectRatio,
+      orientation,
       rating,
       label,
       keyword,
@@ -117,21 +118,55 @@ router.get('/photos', async (req, res) => {
       conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
     }
 
-    // Filter by aspect ratio (supports comma-separated multi-select)
+    // Filter by aspect ratio (supports comma-separated multi-select, matches both orientations)
     if (aspectRatio) {
       const ratios = aspectRatio.split(',').filter(Boolean);
-      const ratioConditions = ratios.map((r) => {
+      const ratioConditions = ratios.flatMap((r) => {
         const ratio = parseFloat(r);
         const tolerance = 0.1;
-        return and(
+        const portraitMatch = and(
           gte(photos.aspectRatio, ratio - tolerance),
           lte(photos.aspectRatio, ratio + tolerance),
         );
+        // For non-square ratios, also match the inverse (other orientation)
+        if (Math.abs(ratio - 1) > tolerance) {
+          const inverse = 1 / ratio;
+          const landscapeMatch = and(
+            gte(photos.aspectRatio, inverse - tolerance),
+            lte(photos.aspectRatio, inverse + tolerance),
+          );
+          return [portraitMatch, landscapeMatch];
+        }
+        return [portraitMatch];
       });
       if (ratioConditions.length === 1) {
         conditions.push(ratioConditions[0]);
       } else if (ratioConditions.length > 1) {
         conditions.push(or(...ratioConditions));
+      }
+    }
+
+    // Filter by orientation (supports comma-separated multi-select)
+    if (orientation) {
+      const orientations = orientation.split(',').filter(Boolean);
+      const squareTolerance = 0.05;
+      const orientationConditions = orientations.map((o) => {
+        if (o === 'square') {
+          return and(
+            gte(photos.aspectRatio, 1 - squareTolerance),
+            lte(photos.aspectRatio, 1 + squareTolerance),
+          );
+        }
+        if (o === 'portrait') {
+          return lte(photos.aspectRatio, 1 - squareTolerance);
+        }
+        // landscape
+        return gte(photos.aspectRatio, 1 + squareTolerance);
+      });
+      if (orientationConditions.length === 1) {
+        conditions.push(orientationConditions[0]);
+      } else if (orientationConditions.length > 1) {
+        conditions.push(or(...orientationConditions));
       }
     }
 

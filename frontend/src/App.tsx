@@ -278,6 +278,7 @@ function App() {
                       search: '',
                       camera: '',
                       aspectRatio: undefined,
+                      orientation: '',
                       minIso: undefined,
                       maxIso: undefined,
                       minAperture: undefined,

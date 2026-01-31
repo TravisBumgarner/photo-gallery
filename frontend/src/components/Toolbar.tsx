@@ -194,7 +194,7 @@ function Toolbar({
             variant="body2"
             sx={{ minWidth: 48, textAlign: 'center' }}
           >
-            {columnCount} {columnCount === 1 ? 'Row' : 'Rows'}
+            {columnCount} {columnCount === 1 ? 'Column' : 'Columns'}
           </Typography>
           <IconButton
             size="small"

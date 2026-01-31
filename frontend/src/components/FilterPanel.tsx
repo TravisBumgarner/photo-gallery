@@ -4,7 +4,6 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ExpandLess as ExpandLessIcon,
   ExpandMore as ExpandMoreIcon,
-  FiberManualRecord as DotIcon,
   Logout as LogoutIcon,
   Star as StarIcon,
 } from '@mui/icons-material';
@@ -50,12 +49,17 @@ const sectionSx = {
 };
 
 const aspectRatioOptions = [
-  { label: '1:1', value: '1' },
-  { label: '3:2', value: '1.5' },
-  { label: '16:9', value: '1.78' },
-  { label: '2:3', value: '0.67' },
-  { label: '9:16', value: '0.56' },
-  { label: '4:3', value: '1.33' },
+  { label: '1x1', value: '1' },
+  { label: '2x3', value: '0.67' },
+  { label: '4x5', value: '0.8' },
+  { label: '5x7', value: '0.71' },
+  { label: '9x16', value: '0.56' },
+];
+
+const orientationOptions = [
+  { label: 'Landscape', value: 'landscape' },
+  { label: 'Portrait', value: 'portrait' },
+  { label: 'Square', value: 'square' },
 ];
 
 type AccordionSection =
@@ -88,12 +92,14 @@ function SectionHeader({
   expandedSection,
   onToggle,
   hasActiveFilter,
+  onClear,
 }: {
   label: string;
   section: AccordionSection;
   expandedSection: AccordionSection | null;
   onToggle: (section: AccordionSection) => void;
   hasActiveFilter: boolean;
+  onClear: () => void;
 }) {
   const isExpanded = expandedSection === section;
   return (
@@ -110,19 +116,33 @@ function SectionHeader({
         borderRadius: 0.5,
       }}
     >
+      <Typography variant="caption" fontWeight="600">
+        {label}
+      </Typography>
       <Stack direction="row" spacing={0.5} alignItems="center">
-        <Typography variant="caption" fontWeight="600">
-          {label}
-        </Typography>
         {hasActiveFilter && (
-          <DotIcon sx={{ fontSize: 8, color: 'primary.main' }} />
+          <Typography
+            variant="caption"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClear();
+            }}
+            sx={{
+              cursor: 'pointer',
+              color: 'text.secondary',
+              '&:hover': { color: 'text.primary' },
+              fontSize: '0.65rem',
+            }}
+          >
+            Clear
+          </Typography>
+        )}
+        {isExpanded ? (
+          <ExpandLessIcon sx={{ fontSize: 16 }} />
+        ) : (
+          <ExpandMoreIcon sx={{ fontSize: 16 }} />
         )}
       </Stack>
-      {isExpanded ? (
-        <ExpandLessIcon sx={{ fontSize: 16 }} />
-      ) : (
-        <ExpandMoreIcon sx={{ fontSize: 16 }} />
-      )}
     </Box>
   );
 }
@@ -213,7 +233,7 @@ function FilterPanel({
   );
   const hasCameraFilter = !!filters.camera;
   const hasLensFilter = !!filters.lens;
-  const hasAspectRatioFilter = !!filters.aspectRatio;
+  const hasAspectRatioFilter = !!(filters.aspectRatio || filters.orientation);
   const hasDateFilter = !!(filters.startDate || filters.endDate);
   const hasTagFilter = !!filters.keyword;
 
@@ -308,6 +328,16 @@ function FilterPanel({
               expandedSection={expandedSection}
               onToggle={toggleSection}
               hasActiveFilter={hasGeneralFilter}
+              onClear={() =>
+                onFilterChange({
+                  label: '',
+                  rating: undefined,
+                  minIso: undefined,
+                  maxIso: undefined,
+                  minAperture: undefined,
+                  maxAperture: undefined,
+                })
+              }
             />
             <Collapse in={expandedSection === 'general'}>
               <Stack spacing={1} sx={{ pt: 0.5 }}>
@@ -510,6 +540,7 @@ function FilterPanel({
               expandedSection={expandedSection}
               onToggle={toggleSection}
               hasActiveFilter={hasCameraFilter}
+              onClear={() => onFilterChange({ camera: '' })}
             />
             <Collapse in={expandedSection === 'camera'}>
               <List dense disablePadding sx={{ pt: 0.5 }}>
@@ -562,6 +593,7 @@ function FilterPanel({
               expandedSection={expandedSection}
               onToggle={toggleSection}
               hasActiveFilter={hasLensFilter}
+              onClear={() => onFilterChange({ lens: '' })}
             />
             <Collapse in={expandedSection === 'lens'}>
               <List dense disablePadding sx={{ pt: 0.5 }}>
@@ -614,43 +646,102 @@ function FilterPanel({
               expandedSection={expandedSection}
               onToggle={toggleSection}
               hasActiveFilter={hasAspectRatioFilter}
+              onClear={() =>
+                onFilterChange({ aspectRatio: '', orientation: '' })
+              }
             />
             <Collapse in={expandedSection === 'aspectRatio'}>
-              <Stack
-                direction="row"
-                spacing={0.25}
-                flexWrap="wrap"
-                useFlexGap
-                sx={{ pt: 0.5 }}
-              >
-                <Chip
-                  label="All"
-                  size="small"
-                  color={!filters.aspectRatio ? 'primary' : 'default'}
-                  onClick={() => onFilterChange({ aspectRatio: '' })}
-                  clickable
-                />
-                {aspectRatioOptions.map((option) => (
-                  <Chip
-                    key={option.value}
-                    label={option.label}
-                    size="small"
-                    color={
-                      isInList(filters.aspectRatio, option.value)
-                        ? 'primary'
-                        : 'default'
-                    }
-                    onClick={() =>
-                      onFilterChange({
-                        aspectRatio: toggleInList(
-                          filters.aspectRatio,
-                          option.value,
-                        ),
-                      })
-                    }
-                    clickable
-                  />
-                ))}
+              <Stack spacing={0.75} sx={{ pt: 0.5 }}>
+                <Box>
+                  <Typography
+                    variant="caption"
+                    fontWeight="600"
+                    display="block"
+                    mb={0.25}
+                  >
+                    Ratio
+                  </Typography>
+                  <Stack
+                    direction="row"
+                    spacing={0.25}
+                    flexWrap="wrap"
+                    useFlexGap
+                  >
+                    <Chip
+                      label="All"
+                      size="small"
+                      color={!filters.aspectRatio ? 'primary' : 'default'}
+                      onClick={() => onFilterChange({ aspectRatio: '' })}
+                      clickable
+                    />
+                    {aspectRatioOptions.map((option) => (
+                      <Chip
+                        key={option.value}
+                        label={option.label}
+                        size="small"
+                        color={
+                          isInList(filters.aspectRatio, option.value)
+                            ? 'primary'
+                            : 'default'
+                        }
+                        onClick={() =>
+                          onFilterChange({
+                            aspectRatio: toggleInList(
+                              filters.aspectRatio,
+                              option.value,
+                            ),
+                          })
+                        }
+                        clickable
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography
+                    variant="caption"
+                    fontWeight="600"
+                    display="block"
+                    mb={0.25}
+                  >
+                    Orientation
+                  </Typography>
+                  <Stack
+                    direction="row"
+                    spacing={0.25}
+                    flexWrap="wrap"
+                    useFlexGap
+                  >
+                    <Chip
+                      label="All"
+                      size="small"
+                      color={!filters.orientation ? 'primary' : 'default'}
+                      onClick={() => onFilterChange({ orientation: '' })}
+                      clickable
+                    />
+                    {orientationOptions.map((option) => (
+                      <Chip
+                        key={option.value}
+                        label={option.label}
+                        size="small"
+                        color={
+                          isInList(filters.orientation, option.value)
+                            ? 'primary'
+                            : 'default'
+                        }
+                        onClick={() =>
+                          onFilterChange({
+                            orientation: toggleInList(
+                              filters.orientation,
+                              option.value,
+                            ),
+                          })
+                        }
+                        clickable
+                      />
+                    ))}
+                  </Stack>
+                </Box>
               </Stack>
             </Collapse>
           </Box>
@@ -663,6 +754,9 @@ function FilterPanel({
               expandedSection={expandedSection}
               onToggle={toggleSection}
               hasActiveFilter={hasDateFilter}
+              onClear={() =>
+                onFilterChange({ startDate: '', endDate: '' })
+              }
             />
             <Collapse in={expandedSection === 'dates'}>
               <Box sx={{ pt: 0.5 }}>
@@ -924,6 +1018,7 @@ function FilterPanel({
               expandedSection={expandedSection}
               onToggle={toggleSection}
               hasActiveFilter={hasTagFilter}
+              onClear={() => onFilterChange({ keyword: '' })}
             />
             <Collapse in={expandedSection === 'tags'}>
               <List dense disablePadding sx={{ pt: 0.5 }}>
@@ -982,6 +1077,7 @@ function FilterPanel({
               camera: '',
               lens: '',
               aspectRatio: '',
+              orientation: '',
               minIso: undefined,
               maxIso: undefined,
               minAperture: undefined,
@@ -997,7 +1093,7 @@ function FilterPanel({
             })
           }
         >
-          Reset
+          Clear Filters
         </Button>
       </Box>
 
