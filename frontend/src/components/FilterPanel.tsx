@@ -5,7 +5,6 @@ import {
 } from '@mui/icons-material';
 import {
   Box,
-  Button,
   Chip,
   Collapse,
   IconButton,
@@ -517,33 +516,6 @@ function FilterPanel({ filters, onFilterChange }: FilterPanelProps) {
             </List>
           </Box>
         </Stack>
-      </Box>
-
-      {/* Reset at bottom-right */}
-      <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={() =>
-            onFilterChange({
-              search: '',
-              camera: '',
-              lens: '',
-              minIso: undefined,
-              maxIso: undefined,
-              minAperture: undefined,
-              maxAperture: undefined,
-              startDate: '',
-              endDate: '',
-              keyword: '',
-              folder: '',
-              sortBy: 'dateCaptured',
-              sortOrder: 'desc',
-            })
-          }
-        >
-          Reset
-        </Button>
       </Box>
     </Box>
   );

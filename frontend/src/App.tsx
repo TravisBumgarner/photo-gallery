@@ -3,6 +3,7 @@ import {
   Button,
   CircularProgress,
   CssBaseline,
+  Stack,
   createTheme,
   Drawer,
   ThemeProvider,
@@ -264,13 +265,15 @@ function App() {
           }}
         >
           {/* Toolbar */}
-          <Toolbar
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            columnCount={columnCount}
-            onColumnCountChange={setColumnCount}
-            onLogout={handleLogout}
-          />
+          {showFilters && (
+            <Toolbar
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              columnCount={columnCount}
+              onColumnCountChange={setColumnCount}
+              onLogout={handleLogout}
+            />
+          )}
 
           {/* Photos Grid */}
           <Box sx={{ flexGrow: 1, position: 'relative' }}>
@@ -316,11 +319,10 @@ function App() {
               />
             )}
 
-            {/* Hide/Show filters toggle */}
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setShowFilters((prev) => !prev)}
+            {/* Filter controls */}
+            <Stack
+              direction="row"
+              spacing={1}
               sx={{
                 position: 'fixed',
                 bottom: 16,
@@ -328,8 +330,39 @@ function App() {
                 zIndex: 1000,
               }}
             >
-              {showFilters ? 'Hide filters' : 'Show filters'}
-            </Button>
+              {showFilters && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() =>
+                    handleFilterChange({
+                      search: '',
+                      camera: '',
+                      lens: '',
+                      minIso: undefined,
+                      maxIso: undefined,
+                      minAperture: undefined,
+                      maxAperture: undefined,
+                      startDate: '',
+                      endDate: '',
+                      keyword: '',
+                      folder: '',
+                      sortBy: 'dateCaptured',
+                      sortOrder: 'desc',
+                    })
+                  }
+                >
+                  Reset filters
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setShowFilters((prev) => !prev)}
+              >
+                {showFilters ? 'Hide filters' : 'Show filters'}
+              </Button>
+            </Stack>
           </Box>
         </Box>
 
