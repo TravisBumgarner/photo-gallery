@@ -1,5 +1,6 @@
 import {
   Add as AddIcon,
+  FilterList as FilterListIcon,
   Folder as FolderIcon,
   Remove as RemoveIcon,
 } from '@mui/icons-material';
@@ -12,6 +13,8 @@ import {
   Select,
   Stack,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import type { PhotoFilters } from '@/types';
@@ -22,6 +25,7 @@ interface ToolbarProps {
   onFilterChange: (filters: Partial<PhotoFilters>) => void;
   columnCount: number;
   onColumnCountChange: (count: number) => void;
+  onToggleFilters: () => void;
 }
 
 function Toolbar({
@@ -29,7 +33,10 @@ function Toolbar({
   onFilterChange,
   columnCount,
   onColumnCountChange,
+  onToggleFilters,
 }: ToolbarProps) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [folders, setFolders] = useState<string[]>([]);
 
   useEffect(() => {
@@ -94,9 +101,28 @@ function Toolbar({
         alignItems="center"
         justifyContent="space-between"
       >
+        {/* Filter toggle button (mobile) */}
+        {isMobile && (
+          <IconButton size="small" onClick={onToggleFilters}>
+            <FilterListIcon fontSize="small" />
+          </IconButton>
+        )}
+
         {/* Folder Browser */}
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <FolderIcon fontSize="small" color="action" />
+        <Stack
+          direction="row"
+          spacing={0.5}
+          alignItems="center"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+            '&::-webkit-scrollbar': { display: 'none' },
+            scrollbarWidth: 'none',
+          }}
+        >
+          <FolderIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
           <Breadcrumbs
             separator="/"
             sx={{
@@ -181,29 +207,31 @@ function Toolbar({
           </Breadcrumbs>
         </Stack>
 
-        {/* Row Count Control */}
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <IconButton
-            size="small"
-            onClick={() => onColumnCountChange(Math.max(1, columnCount - 1))}
-            disabled={columnCount <= 1}
-          >
-            <RemoveIcon fontSize="small" />
-          </IconButton>
-          <Typography
-            variant="body2"
-            sx={{ minWidth: 48, textAlign: 'center' }}
-          >
-            {columnCount} {columnCount === 1 ? 'Column' : 'Columns'}
-          </Typography>
-          <IconButton
-            size="small"
-            onClick={() => onColumnCountChange(Math.min(8, columnCount + 1))}
-            disabled={columnCount >= 8}
-          >
-            <AddIcon fontSize="small" />
-          </IconButton>
-        </Stack>
+        {/* Row Count Control (hidden on mobile) */}
+        {!isMobile && (
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+            <IconButton
+              size="small"
+              onClick={() => onColumnCountChange(Math.max(1, columnCount - 1))}
+              disabled={columnCount <= 1}
+            >
+              <RemoveIcon fontSize="small" />
+            </IconButton>
+            <Typography
+              variant="body2"
+              sx={{ minWidth: 48, textAlign: 'center' }}
+            >
+              {columnCount} {columnCount === 1 ? 'Column' : 'Columns'}
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={() => onColumnCountChange(Math.min(8, columnCount + 1))}
+              disabled={columnCount >= 8}
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+        )}
       </Stack>
     </Box>
   );

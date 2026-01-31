@@ -56,7 +56,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
       <Paper
         component="form"
         onSubmit={handleSubmit}
-        sx={{ p: 4, maxWidth: 400, width: '100%' }}
+        sx={{ p: { xs: 2, sm: 4 }, mx: { xs: 2, sm: 0 }, maxWidth: 400, width: '100%' }}
         elevation={3}
       >
         <Typography variant="h5" mb={3} textAlign="center">
