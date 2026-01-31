@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
+import helmet from 'helmet';
 import { config } from './config.js';
 import { requireAuth } from './middleware/auth.js';
 import { router as apiRouter } from './routes/api.js';
@@ -18,6 +19,9 @@ const PORT = config.PORT;
 // Trust reverse proxy (NearlyFreeSpeech runs Node behind a proxy)
 app.set('trust proxy', 1);
 
+// Security headers
+app.use(helmet());
+
 // Middleware
 app.use(
   cors({
@@ -29,6 +33,7 @@ app.use(express.json());
 
 app.use(
   session({
+    name: '__session',
     secret: config.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,

@@ -82,9 +82,6 @@ function App() {
           }
         });
 
-        console.log('Fetching with filters:', currentFilters);
-        console.log('Query params:', params.toString());
-
         const response = await fetch(`/api/photos?${params}`, {
           credentials: 'include',
         });

@@ -194,7 +194,9 @@ router.get('/photos', async (req, res) => {
 
     // Filter by folder path (prefix match on JSON keywords array)
     if (folder) {
-      const segments = folder.split('/');
+      const escapeLike = (s: string) =>
+        s.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      const segments = folder.split('/').map(escapeLike);
       const jsonPrefix = `["${segments.join('","')}"`;
       conditions.push(like(photos.keywords, `${jsonPrefix}%`));
     }
