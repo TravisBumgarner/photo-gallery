@@ -1,4 +1,3 @@
-import { ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -250,11 +249,7 @@ function App() {
             },
           }}
         >
-          <FilterPanel
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            onClose={() => setShowFilters(false)}
-          />
+          <FilterPanel filters={filters} onFilterChange={handleFilterChange} />
         </Drawer>
 
         {/* Main Content Area */}
@@ -279,31 +274,6 @@ function App() {
 
           {/* Photos Grid */}
           <Box sx={{ flexGrow: 1, position: 'relative' }}>
-            {/* Toggle button when sidebar is hidden */}
-            {!showFilters && (
-              <Box
-                onClick={() => setShowFilters(true)}
-                sx={{
-                  position: 'fixed',
-                  left: 0,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  cursor: 'pointer',
-                  p: 1,
-                  borderTopRightRadius: 8,
-                  borderBottomRightRadius: 8,
-                  zIndex: 1000,
-                  '&:hover': {
-                    bgcolor: 'primary.dark',
-                  },
-                }}
-              >
-                <ChevronRightIcon />
-              </Box>
-            )}
-
             {photos.length === 0 && !loading ? (
               <Box sx={{ textAlign: 'center', mt: 8 }}>
                 <Typography variant="h6" color="text.secondary" mb={2}>
@@ -345,6 +315,21 @@ function App() {
                 columnCount={columnCount}
               />
             )}
+
+            {/* Hide/Show filters toggle */}
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setShowFilters((prev) => !prev)}
+              sx={{
+                position: 'fixed',
+                bottom: 16,
+                right: 16,
+                zIndex: 1000,
+              }}
+            >
+              {showFilters ? 'Hide filters' : 'Show filters'}
+            </Button>
           </Box>
         </Box>
 
