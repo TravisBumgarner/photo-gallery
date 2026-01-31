@@ -36,8 +36,6 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [showMetadata, setShowMetadata] = useState(!isMobile);
   const currentIndex = photos.findIndex((p) => p.id === photo.id);
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < photos.length - 1;
 
   const formatAspectRatio = (ratio: number) => {
     const commonRatios = [
@@ -63,9 +61,9 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
-      } else if (e.key === 'ArrowLeft' && hasPrev) {
+      } else if (e.key === 'ArrowLeft') {
         onNavigate('prev');
-      } else if (e.key === 'ArrowRight' && hasNext) {
+      } else if (e.key === 'ArrowRight') {
         onNavigate('next');
       }
     };
@@ -77,7 +75,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'unset';
     };
-  }, [onClose, onNavigate, hasPrev, hasNext]);
+  }, [onClose, onNavigate]);
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
@@ -149,6 +147,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             <Box
               sx={{
                 flex: 1,
+                minHeight: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -172,133 +171,88 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                 sx={{
                   width: isMobile ? '100%' : 350,
                   overflowY: 'auto',
-                  p: isMobile ? 2 : 3,
+                  flexShrink: 0,
+                  p: isMobile ? 1.5 : 3,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 2,
+                  gap: isMobile ? 1 : 2,
                 }}
                 elevation={3}
               >
-                <Typography variant="h6" noWrap title={photo.filename}>
-                  {photo.filename}
-                </Typography>
-
-                <Divider />
-
-                <Box>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                    <CameraIcon fontSize="small" />
-                    <Typography variant="subtitle2">Camera</Typography>
-                  </Stack>
-                  <Stack spacing={1}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Camera:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.camera || 'N/A'}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Lens:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.lens || 'N/A'}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </Box>
-
-                <Divider />
-
-                <Box>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                    <SettingsIcon fontSize="small" />
-                    <Typography variant="subtitle2">Settings</Typography>
-                  </Stack>
-                  <Stack spacing={1}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        ISO:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.iso || 'N/A'}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Shutter:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.shutterSpeed || 'N/A'}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Aperture:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.aperture ? `f/${photo.aperture}` : 'N/A'}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Focal Length:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.focalLength ? `${photo.focalLength}mm` : 'N/A'}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </Box>
-
-                <Divider />
-
-                <Box>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                    <InfoIcon fontSize="small" />
-                    <Typography variant="subtitle2">Details</Typography>
-                  </Stack>
-                  <Stack spacing={1}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Resolution:
-                      </Typography>
-                      <Typography variant="body2">
-                        {photo.width} × {photo.height}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Aspect Ratio:
-                      </Typography>
-                      <Typography variant="body2">
-                        {formatAspectRatio(photo.aspectRatio)}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        File Size:
-                      </Typography>
-                      <Typography variant="body2">
-                        {formatFileSize(photo.fileSize)}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Date Captured:
-                      </Typography>
-                      <Typography variant="body2">
-                        {formatDate(photo.dateCaptured)}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </Box>
-
-                {keywords.length > 0 && (
+                {isMobile ? (
                   <>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 1,
+                      }}
+                    >
+                      {[
+                        { label: 'Camera', value: photo.camera },
+                        { label: 'Lens', value: photo.lens },
+                        { label: 'ISO', value: photo.iso },
+                        { label: 'Shutter', value: photo.shutterSpeed },
+                        {
+                          label: 'Aperture',
+                          value: photo.aperture
+                            ? `f/${photo.aperture}`
+                            : null,
+                        },
+                        {
+                          label: 'Focal',
+                          value: photo.focalLength
+                            ? `${photo.focalLength}mm`
+                            : null,
+                        },
+                        {
+                          label: 'Resolution',
+                          value: `${photo.width}×${photo.height}`,
+                        },
+                        {
+                          label: 'Ratio',
+                          value: formatAspectRatio(photo.aspectRatio),
+                        },
+                        {
+                          label: 'Size',
+                          value: formatFileSize(photo.fileSize),
+                        },
+                        {
+                          label: 'Date',
+                          value: formatDate(photo.dateCaptured),
+                        },
+                      ].map(({ label, value }) => (
+                        <Box key={label} sx={{ minWidth: 0 }}>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            {label}
+                          </Typography>
+                          <Typography variant="body2" noWrap>
+                            {value || 'N/A'}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                    {keywords.length > 0 && (
+                      <Box
+                        sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}
+                      >
+                        {keywords.map((keyword: string, index: number) => (
+                          <Chip key={index} label={keyword} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="h6" noWrap title={photo.filename}>
+                      {photo.filename}
+                    </Typography>
+
                     <Divider />
+
                     <Box>
                       <Stack
                         direction="row"
@@ -306,15 +260,192 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                         alignItems="center"
                         mb={1}
                       >
-                        <LabelIcon fontSize="small" />
-                        <Typography variant="subtitle2">Keywords</Typography>
+                        <CameraIcon fontSize="small" />
+                        <Typography variant="subtitle2">Camera</Typography>
                       </Stack>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {keywords.map((keyword: string, index: number) => (
-                          <Chip key={index} label={keyword} size="small" />
-                        ))}
-                      </Box>
+                      <Stack spacing={1}>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Camera:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.camera || 'N/A'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Lens:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.lens || 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Stack>
                     </Box>
+
+                    <Divider />
+
+                    <Box>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        mb={1}
+                      >
+                        <SettingsIcon fontSize="small" />
+                        <Typography variant="subtitle2">Settings</Typography>
+                      </Stack>
+                      <Stack spacing={1}>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            ISO:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.iso || 'N/A'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Shutter:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.shutterSpeed || 'N/A'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Aperture:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.aperture ? `f/${photo.aperture}` : 'N/A'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Focal Length:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.focalLength
+                              ? `${photo.focalLength}mm`
+                              : 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    <Divider />
+
+                    <Box>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        mb={1}
+                      >
+                        <InfoIcon fontSize="small" />
+                        <Typography variant="subtitle2">Details</Typography>
+                      </Stack>
+                      <Stack spacing={1}>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Resolution:
+                          </Typography>
+                          <Typography variant="body2">
+                            {photo.width} × {photo.height}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Aspect Ratio:
+                          </Typography>
+                          <Typography variant="body2">
+                            {formatAspectRatio(photo.aspectRatio)}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            File Size:
+                          </Typography>
+                          <Typography variant="body2">
+                            {formatFileSize(photo.fileSize)}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Date Captured:
+                          </Typography>
+                          <Typography variant="body2">
+                            {formatDate(photo.dateCaptured)}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    {keywords.length > 0 && (
+                      <>
+                        <Divider />
+                        <Box>
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            mb={1}
+                          >
+                            <LabelIcon fontSize="small" />
+                            <Typography variant="subtitle2">
+                              Keywords
+                            </Typography>
+                          </Stack>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: 0.5,
+                            }}
+                          >
+                            {keywords.map(
+                              (keyword: string, index: number) => (
+                                <Chip
+                                  key={index}
+                                  label={keyword}
+                                  size="small"
+                                />
+                              ),
+                            )}
+                          </Box>
+                        </Box>
+                      </>
+                    )}
                   </>
                 )}
               </Paper>
@@ -336,19 +467,23 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
           >
             <IconButton
               onClick={() => onNavigate('prev')}
-              disabled={!hasPrev}
+              disabled={photos.length <= 1}
               size={isMobile ? 'medium' : 'small'}
             >
               <ArrowBackIcon />
             </IconButton>
 
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ minWidth: 64, textAlign: 'center' }}
+            >
               {currentIndex + 1} / {photos.length}
             </Typography>
 
             <IconButton
               onClick={() => onNavigate('next')}
-              disabled={!hasNext}
+              disabled={photos.length <= 1}
               size={isMobile ? 'medium' : 'small'}
             >
               <ArrowForwardIcon />
