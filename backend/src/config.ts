@@ -9,7 +9,7 @@ const envSchema = z.object({
   NODE_ENV: z.string(),
   SESSION_SECRET: z.string(),
   APP_PASSWORD: z.string(),
-  CORS_ORIGIN: z.string().optional(),
+  CORS_ORIGIN: z.string(),
 });
 
 export const config = envSchema.parse(process.env);

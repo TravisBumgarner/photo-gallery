@@ -17,12 +17,14 @@
   "license": "ISC",
   "dependencies": {
     "@types/express-session": "^1.18.2",
+    "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.1",
     "drizzle-orm": "^0.36.4",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
     "express-session": "^1.19.0",
-    "better-sqlite3": "^11.7.0",
+    "helmet": "^8.1.0",
     "shared": "*",
     "zod": "^3.22.0"
   },

@@ -1,9 +1,18 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 
 export const router = Router();
 
-router.post('/auth/login', (req, res) => {
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later' },
+});
+
+router.post('/auth/login', loginLimiter, (req, res) => {
   const { password } = req.body;
   const appPassword = process.env.APP_PASSWORD;
 
@@ -17,13 +26,14 @@ router.post('/auth/login', (req, res) => {
     return;
   }
 
-  // Constant-time comparison to prevent timing attacks
-  const passwordBuffer = Buffer.from(password);
-  const appPasswordBuffer = Buffer.from(appPassword);
+  // Hash both values to normalize length, then constant-time compare
+  const passwordHash = crypto.createHash('sha256').update(password).digest();
+  const appPasswordHash = crypto
+    .createHash('sha256')
+    .update(appPassword)
+    .digest();
 
-  const isValid =
-    passwordBuffer.length === appPasswordBuffer.length &&
-    crypto.timingSafeEqual(passwordBuffer, appPasswordBuffer);
+  const isValid = crypto.timingSafeEqual(passwordHash, appPasswordHash);
 
   if (isValid) {
     req.session.authenticated = true;
@@ -39,7 +49,7 @@ router.post('/auth/logout', (req, res) => {
       res.status(500).json({ error: 'Failed to logout' });
       return;
     }
-    res.clearCookie('connect.sid');
+    res.clearCookie('__session');
     res.json({ authenticated: false });
   });
 });
