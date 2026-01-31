@@ -96,12 +96,10 @@ function FilterPanel({ filters, onFilterChange }: FilterPanelProps) {
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'background.paper',
-        borderRight: 1,
-        borderColor: 'divider',
       }}
     >
       {/* Search */}
-      <Box sx={{ p: 0.75, borderBottom: 1, borderColor: 'divider' }}>
+      <Box sx={{ p: 0.75 }}>
         <SearchBar
           value={filters.search || ''}
           onChange={(search) => onFilterChange({ search })}
