@@ -5,32 +5,56 @@ import readline from 'node:readline';
 import { sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
-import { config } from '@/config.js';
+import { loadConfig } from '@/config.js';
 import { endExiftool } from '@/exif.js';
 import { processImage } from '@/process.js';
+import type { PhotoRecord } from '@/process.js';
 import { scanDirectory } from '@/scan.js';
 import {
-  syncFileFromRemote,
+  runRemoteCommand,
   syncFileToRemote,
   syncToRemote,
 } from '@/sync.js';
 
 const PARALLEL_BATCH_SIZE = 20;
 
-function confirm(message: string): Promise<boolean> {
+function prompt(message: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
   return new Promise((resolve) => {
-    rl.question(`${message} (y/n) `, (answer) => {
+    rl.question(message, (answer) => {
       rl.close();
-      resolve(answer.trim().toLowerCase() === 'y');
+      resolve(answer.trim().toLowerCase());
     });
   });
 }
 
+async function confirm(message: string): Promise<boolean> {
+  const answer = await prompt(`${message} (y/n) `);
+  return answer === 'y';
+}
+
+async function chooseEnv(): Promise<'local' | 'production'> {
+  const arg = process.argv[2];
+  if (arg === 'local' || arg === 'production') {
+    return arg;
+  }
+
+  const answer = await prompt('Environment (local/production): ');
+  if (answer === 'local' || answer === 'production') {
+    return answer;
+  }
+
+  console.error('Invalid environment. Must be "local" or "production".');
+  process.exit(1);
+}
+
 async function main() {
+  const env = await chooseEnv();
+  const config = loadConfig(env);
+
   const mode = config.INGEST_MODE;
   const rawSourceDir = config.SOURCE_DIR;
   const sourceDir = rawSourceDir.startsWith('~')
@@ -58,9 +82,11 @@ async function main() {
   const thumbnailDir = path.join(localDir, 'thumbnails');
 
   const dryRun = config.DRY_RUN === 'true';
+  const fileTransferMode = config.FILE_TRANSFER_MODE;
 
   console.log('--- Photo Ingestion ---\n');
   console.log(`  Mode:     ${mode}`);
+  console.log(`  Transfer: ${fileTransferMode}`);
   console.log(`  Dry run:  ${dryRun}`);
   console.log(`  Source:   ${sourceDir}`);
   console.log(`  Output:   ${outputDir}`);
@@ -81,25 +107,12 @@ async function main() {
   await fs.mkdir(outputDir, { recursive: true });
   await fs.mkdir(thumbnailDir, { recursive: true });
 
-  // In production, pull the database from the remote before working with it
-  const dbPath = isProduction
-    ? path.join(localDir, 'sqlite.db')
-    : path.resolve(config.DATABASE_URL!);
-
-  if (isProduction) {
-    syncFileFromRemote(
-      sshHost!,
-      path.join(destinationDir, 'sqlite.db'),
-      dbPath,
-    );
-  }
-
-  const db = createDb(dbPath);
-
   // Scan for images
   console.log('\nScanning for images...');
   const imagePaths = await scanDirectory(sourceDir);
   console.log(`Found ${imagePaths.length} images\n`);
+
+  let records: PhotoRecord[] = [];
 
   if (imagePaths.length === 0) {
     console.log('No images found in SOURCE_DIR.');
@@ -126,13 +139,14 @@ async function main() {
 
       const results = await Promise.allSettled(
         batch.map((imagePath) =>
-          processImage(db, imagePath, sourceDir, outputDir, thumbnailDir),
+          processImage(imagePath, sourceDir, outputDir, thumbnailDir, fileTransferMode),
         ),
       );
 
       results.forEach((result, idx) => {
         if (result.status === 'fulfilled') {
           processed++;
+          records.push(result.value);
         } else {
           failed++;
           console.error(
@@ -160,6 +174,40 @@ async function main() {
   }
 
   await endExiftool();
+
+  if (isProduction) {
+    await runProductionSync(records, localDir, outputDir, thumbnailDir, sshHost!, destinationDir);
+  } else {
+    await runLocalDbSync(records, outputDir, config.DATABASE_URL!);
+  }
+}
+
+async function runLocalDbSync(
+  records: PhotoRecord[],
+  outputDir: string,
+  databaseUrl: string,
+) {
+  const db = createDb(path.resolve(databaseUrl));
+
+  // Upsert photo records into local DB
+  console.log('\nUpserting records into local DB...');
+  for (const record of records) {
+    const { uuid, ...fields } = record;
+    const existing = await db
+      .select()
+      .from(photos)
+      .where(sql`${photos.uuid} = ${uuid}`)
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(photos)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(sql`${photos.uuid} = ${uuid}`);
+    } else {
+      await db.insert(photos).values({ uuid, ...fields });
+    }
+  }
 
   // DB sync: remove stale rows that have no corresponding file on disk
   console.log('\nSyncing DB with images on disk...');
@@ -189,30 +237,55 @@ async function main() {
     console.error('  DB sync failed:', err);
   }
 
-  // Rsync to remote only in production mode
-  if (isProduction) {
-    syncToRemote(
-      outputDir,
-      sshHost!,
-      path.join(destinationDir, 'public/images'),
-    );
-    syncToRemote(
-      thumbnailDir,
-      sshHost!,
-      path.join(destinationDir, 'public/thumbnails'),
-    );
-    syncFileToRemote(
-      dbPath,
-      sshHost!,
-      path.join(destinationDir, 'sqlite.db'),
-    );
+  console.log('\nLocal mode — skipping rsync.');
+}
 
-    console.log('\nCleaning up staging directory...');
-    await fs.rm(localDir, { recursive: true, force: true });
-    console.log('Staging directory removed.');
-  } else {
-    console.log('\nLocal mode — skipping rsync.');
-  }
+async function runProductionSync(
+  records: PhotoRecord[],
+  localDir: string,
+  outputDir: string,
+  thumbnailDir: string,
+  sshHost: string,
+  destinationDir: string,
+) {
+  // Write manifest with all photo metadata for remote DB ingestion
+  const manifestPath = path.join(localDir, 'manifest.json');
+  const serializable = records.map((r) => ({
+    ...r,
+    dateCaptured: r.dateCaptured ? r.dateCaptured.toISOString() : null,
+  }));
+  await fs.writeFile(manifestPath, JSON.stringify(serializable, null, 2));
+  console.log(`\nWrote manifest with ${records.length} records.`);
+
+  // Rsync images and thumbnails to remote
+  syncToRemote(
+    outputDir,
+    sshHost,
+    path.join(destinationDir, 'public/images'),
+  );
+  syncToRemote(
+    thumbnailDir,
+    sshHost,
+    path.join(destinationDir, 'public/thumbnails'),
+  );
+
+  // Rsync manifest to remote
+  syncFileToRemote(
+    manifestPath,
+    sshHost,
+    path.join(destinationDir, 'manifest.json'),
+  );
+
+  // Run remote DB ingestion script
+  runRemoteCommand(
+    sshHost,
+    `cd ${destinationDir} && node dist/db/ingest-manifest.js`,
+  );
+
+  // Clean up local staging
+  console.log('\nCleaning up staging directory...');
+  await fs.rm(localDir, { recursive: true, force: true });
+  console.log('Staging directory removed.');
 }
 
 main().catch((error) => {

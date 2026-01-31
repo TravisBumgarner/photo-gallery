@@ -17,22 +17,6 @@ export function syncToRemote(
   }
 }
 
-export function syncFileFromRemote(
-  sshHost: string,
-  remotePath: string,
-  localPath: string,
-) {
-  console.log(`\nPulling ${sshHost}:${remotePath}...`);
-  try {
-    execSync(`rsync -avz ${sshHost}:${remotePath} ${localPath}`, {
-      stdio: 'inherit',
-    });
-    console.log('Pull complete.');
-  } catch (error) {
-    console.error('Rsync pull failed:', error);
-  }
-}
-
 export function syncFileToRemote(
   localPath: string,
   sshHost: string,
@@ -46,5 +30,16 @@ export function syncFileToRemote(
     console.log('Push complete.');
   } catch (error) {
     console.error('Rsync push failed:', error);
+  }
+}
+
+export function runRemoteCommand(sshHost: string, command: string) {
+  console.log(`\nRunning remote command on ${sshHost}...`);
+  try {
+    execSync(`ssh ${sshHost} "${command}"`, { stdio: 'inherit' });
+    console.log('Remote command complete.');
+  } catch (error) {
+    console.error('Remote command failed:', error);
+    throw error;
   }
 }
