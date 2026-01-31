@@ -3,11 +3,11 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
-import { config } from '@/config.js';
-import { requireAuth } from '@/middleware/auth.js';
-import { router as apiRouter } from '@/routes/api.js';
-import { router as authRouter } from '@/routes/auth.js';
-import { router as photosRouter } from '@/routes/photos.js';
+import { config } from './config.js';
+import { requireAuth } from './middleware/auth.js';
+import { router as apiRouter } from './routes/api.js';
+import { router as authRouter } from './routes/auth.js';
+import { router as photosRouter } from './routes/photos.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

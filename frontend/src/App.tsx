@@ -60,6 +60,7 @@ function App() {
   const [hasMore, setHasMore] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [filters, setFilters] = useState<PhotoFilters>({
+    search: '',
     sortBy: 'dateCaptured',
     sortOrder: 'desc',
   });

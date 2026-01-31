@@ -10,19 +10,57 @@ cd "$SCRIPT_DIR"
 echo "🧱 Building project locally..."
 
 echo "📦 Installing dependencies..."
-(cd backend && npm install)
-(cd frontend && npm install)
+npm install
 
 echo "🎨 Building frontend (React/Vite)..."
-(cd frontend && npm run build)
+npm run build -w frontend
 
 echo "🖥️ Building backend (TypeScript)..."
-(cd backend && npm run build)
+npm run build -w backend
+
+# Generate deployment package.json:
+# - Remove workspace "shared" dep (we sync it manually to node_modules)
+# - Keep all other runtime deps (better-sqlite3 is already in dependencies)
+echo "📋 Preparing deployment package..."
+node -e "
+const fs = require('fs');
+const pkg = JSON.parse(fs.readFileSync('./backend/package.json', 'utf8'));
+const deploy = {
+  name: pkg.name,
+  version: pkg.version,
+  type: pkg.type,
+  dependencies: { ...pkg.dependencies }
+};
+delete deploy.dependencies.shared;
+process.stdout.write(JSON.stringify(deploy, null, 2));
+" > /tmp/deploy-package.json
+
+# Generate production shared package.json with exports pointing to compiled JS
+node -e "
+const fs = require('fs');
+const pkg = JSON.parse(fs.readFileSync('./shared/package.json', 'utf8'));
+const deploy = {
+  name: pkg.name,
+  version: pkg.version,
+  type: pkg.type,
+  exports: {
+    './db': './dist/db/index.js',
+    './db/schema': './dist/db/schema.js',
+    './types': './dist/types.js',
+    './schemas': './dist/schemas.js'
+  },
+  dependencies: pkg.dependencies
+};
+process.stdout.write(JSON.stringify(deploy, null, 2));
+" > /tmp/deploy-shared-package.json
 
 echo "🚀 Syncing backend to NearlyFreeSpeech..."
-rsync -azPh --delete \
-  --timeout=300 \
-  backend/package.json backend/package-lock.json run.sh \
+rsync -azPh --timeout=300 \
+  /tmp/deploy-package.json \
+  "$REMOTE:$REMOTE_DIR/package.json"
+
+rsync -azPh --timeout=300 \
+  package-lock.json run.sh \
   "$REMOTE:$REMOTE_DIR/"
 
 rsync -azPh --delete \
@@ -60,13 +98,28 @@ ssh "$REMOTE" "
   chmod -R 755 dist
   chmod -R 755 frontend-dist
   chmod +x run.sh
+"
 
-  echo '🗄️ Running database migrations...'
+# Sync shared package to node_modules AFTER npm install (so it doesn't get wiped)
+echo "📦 Syncing shared package..."
+ssh "$REMOTE" "mkdir -p $REMOTE_DIR/node_modules/shared"
+
+rsync -azPh --delete \
+  --timeout=300 \
+  shared/dist/ \
+  "$REMOTE:$REMOTE_DIR/node_modules/shared/dist/"
+
+rsync -azPh --timeout=300 \
+  /tmp/deploy-shared-package.json \
+  "$REMOTE:$REMOTE_DIR/node_modules/shared/package.json"
+
+echo "🗄️ Running database migrations..."
+ssh "$REMOTE" "
+  set -euo pipefail
+  cd $REMOTE_DIR
   node dist/db/migrate.js
 "
 
-echo "🖼️ Processing images in production mode..."
-(cd backend && echo "p" | npx tsx src/scripts/processImages.ts ~/Desktop/photos)
-
 echo "✅ Deployment complete!"
+echo "Be sure to run ingestion if needed"
 echo "🌐 Server should now be serving the frontend from built assets"
