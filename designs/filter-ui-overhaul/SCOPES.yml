@@ -1,0 +1,137 @@
+project: Filter Panel & Toolbar UI Overhaul
+repo: TravisBumgarner/photo-gallery
+design_file: n/a  # requirements provided inline
+scoping_date: 2026-01-30
+
+milestones:
+  - number: 1
+    title: "1. Add lens filter backend support"
+    description: Add /meta/lenses endpoint, lens filter param to query, Zod schema, and shared types
+    branch:
+      working: 9-add-lens-filter-backend
+      base: main
+
+  - number: 2
+    title: "2. Filter panel and toolbar UI overhaul"
+    description: Rearrange filter panel layout, move aspect ratio to toolbar, add lens filter UI, visual styling improvements, and sidebar toggle changes
+    branch:
+      working: 10-filter-ui-overhaul
+      base: 9-add-lens-filter-backend
+
+tasks:
+  - id: 1
+    github_issue: 9
+    milestone: 1
+    title: Add lens metadata endpoint and filter support in backend + shared types
+    description: |
+      Add backend support for filtering photos by lens. The `lens` column already
+      exists in the DB schema but has no metadata endpoint or query filter.
+
+      **shared/src/schemas.ts** — Add `lens: z.string().default('')`
+      **shared/src/types.ts** — Add `lens?: string` to `PhotoFilters`
+      **backend/src/routes/photos.ts** — Add `GET /photos/meta/lenses` endpoint
+      (selectDistinct on photos.lens, not null, ordered asc) and add lens filter
+      condition to the /photos query handler.
+    acceptance_criteria:
+      - GET /api/photos/meta/lenses returns JSON array of distinct non-null lens values
+      - GET /api/photos?lens=SomeLens filters results to matching lens
+      - PhotoFilters type includes optional lens field
+      - Zod schema validates the new lens query parameter
+    depends_on: []
+    effort: 1
+    status: testing
+
+  - id: 2
+    github_issue: 10
+    milestone: 2
+    title: Add lens filter list to sidebar
+    description: |
+      Add a Lens filter section to FilterPanel, identical in structure to the
+      Camera filter list. Fetch from `/api/photos/meta/lenses` in the existing
+      Promise.all. Render between Camera and Dates using `listItemButtonSx`.
+    acceptance_criteria:
+      - Lens filter section appears between Camera and Dates in sidebar
+      - Shows "All" plus all distinct lenses from API
+      - Selecting a lens updates filters.lens and triggers re-fetch
+      - Uses existing listItemButtonSx styling
+    depends_on: [1]
+    effort: 1
+    status: scoped
+
+  - id: 3
+    github_issue: 11
+    milestone: 2
+    title: Move aspect ratio filter from sidebar to toolbar second row
+    description: |
+      Move the Aspect Ratio chip filter from FilterPanel to the Toolbar second
+      row alongside Color, Rating, ISO, Aperture. Remove from FilterPanel
+      including the aspectRatioOptions constant and Divider. Add to Toolbar
+      with "Ratio" label and same chip pattern. Remove aspectRatio from
+      FilterPanel Reset handler.
+    acceptance_criteria:
+      - Aspect Ratio chips no longer appear in sidebar
+      - Aspect Ratio chips appear in Toolbar second row
+      - Selection behavior unchanged
+      - FilterPanel Reset no longer resets aspectRatio
+    depends_on: []
+    effort: 1
+    status: scoped
+
+  - id: 4
+    github_issue: 12
+    milestone: 2
+    title: Restyle sidebar with flexGrow, remove header label, add visual separation
+    description: |
+      Remove "Filters" text label from header. Make each filter section flexGrow: 1.
+      Remove Dividers between sections. Add subtle background color (using
+      subtleBackground utility from styleConsts) and padding to each filter section
+      Box for visual separation.
+    acceptance_criteria:
+      - "Filters" text label removed from sidebar header
+      - Each filter section has flexGrow: 1
+      - Each filter section has subtle background color and padding
+      - Dividers removed (background styling provides separation)
+    depends_on: []
+    effort: 2
+    status: scoped
+
+  - id: 5
+    github_issue: 13
+    milestone: 2
+    title: Replace sidebar collapse with bottom-right toggle buttons
+    description: |
+      Remove ChevronLeft close button from sidebar header and floating
+      ChevronRight show button. Add "Reset" button at bottom-right of sidebar.
+      Add "Hide filters" button at bottom-right of main content area.
+      When hidden, show "Show filters" in same position.
+
+      Changes in FilterPanel.tsx: remove onClose prop, remove close button,
+      position Reset at bottom-right.
+      Changes in App.tsx: remove ChevronRight toggle, add Hide/Show filters
+      button at bottom-right of main area.
+    acceptance_criteria:
+      - ChevronLeft close button removed from sidebar header
+      - Floating ChevronRight show button removed
+      - Reset button at bottom-right of sidebar
+      - Hide/Show filters button at bottom-right of main content area
+    depends_on: []
+    effort: 2
+    status: scoped
+
+  - id: 6
+    github_issue: 14
+    milestone: 2
+    title: Collapse file path and sort order dropdowns in toolbar
+    description: |
+      Add local showAdvanced state to Toolbar. Wrap folder breadcrumb browser
+      and sort dropdown + order chips in a Collapse component. Add a toggle
+      button (chip or icon) to show/hide them. Column controls and Logout
+      remain always visible. Second row always visible.
+    acceptance_criteria:
+      - File path breadcrumb and sort controls hidden by default
+      - Toggle button reveals/hides them
+      - Column controls and Logout always visible
+      - Second row filters always visible
+    depends_on: []
+    effort: 1
+    status: scoped

@@ -36,6 +36,7 @@ router.get('/photos', async (req, res) => {
       limit: limitNum,
       search,
       camera,
+      lens,
       minIso,
       maxIso,
       minAperture,
@@ -72,6 +73,11 @@ router.get('/photos', async (req, res) => {
     // Filter by camera
     if (camera) {
       conditions.push(like(photos.camera, `%${camera}%`));
+    }
+
+    // Filter by lens
+    if (lens) {
+      conditions.push(like(photos.lens, `%${lens}%`));
     }
 
     // Filter by ISO range
@@ -328,6 +334,22 @@ router.get('/photos/meta/cameras', async (_req, res) => {
   } catch (error) {
     console.error('Error fetching cameras:', error);
     res.status(500).json({ error: 'Failed to fetch cameras' });
+  }
+});
+
+// Get unique lenses
+router.get('/photos/meta/lenses', async (_req, res) => {
+  try {
+    const lenses = await db
+      .selectDistinct({ lens: photos.lens })
+      .from(photos)
+      .where(sql`${photos.lens} IS NOT NULL`)
+      .orderBy(asc(photos.lens));
+
+    res.json(lenses.map((l) => l.lens));
+  } catch (error) {
+    console.error('Error fetching lenses:', error);
+    res.status(500).json({ error: 'Failed to fetch lenses' });
   }
 });
 
