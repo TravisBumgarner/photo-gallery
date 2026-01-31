@@ -3,9 +3,9 @@ import {
   Button,
   CircularProgress,
   CssBaseline,
-  Stack,
   createTheme,
   Drawer,
+  Stack,
   ThemeProvider,
   Typography,
   useMediaQuery,
@@ -247,6 +247,7 @@ function App() {
               height: '100vh',
               left: 0,
               top: 0,
+              borderRight: 'none',
             },
           }}
         >
@@ -328,6 +329,9 @@ function App() {
                 bottom: 16,
                 right: 16,
                 zIndex: 1000,
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+                p: 1,
               }}
             >
               {showFilters && (
