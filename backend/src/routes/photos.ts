@@ -3,6 +3,7 @@ import {
   and,
   asc,
   desc,
+  getTableColumns,
   gte,
   like,
   lte,
@@ -18,6 +19,17 @@ import { config } from '../config.js';
 const db = createDb(config.DATABASE_URL);
 
 export const router = Router();
+
+// In-memory metadata cache
+let metadataCache: {
+  data: Record<string, unknown>;
+  timestamp: number;
+} | null = null;
+const METADATA_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export function invalidateMetadataCache() {
+  metadataCache = null;
+}
 
 // Get photos with pagination, filters, and search
 router.get('/photos', async (req, res) => {
@@ -211,22 +223,22 @@ router.get('/photos', async (req, res) => {
     const orderFn = sortOrder === 'asc' ? asc : desc;
     const orderByColumn = validSortColumns[sortBy] ?? photos.dateCaptured;
 
-    // Execute query
+    // Execute query with window function to get total count in a single pass
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const allPhotos = await db
-      .select()
+    const rows = await db
+      .select({
+        ...getTableColumns(photos),
+        totalCount: sql<number>`count(*) over()`.as('totalCount'),
+      })
       .from(photos)
       .where(whereClause)
       .orderBy(orderFn(orderByColumn))
       .limit(limitNum)
       .offset(offset);
 
-    // Get total count
-    const countResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(photos)
-      .where(whereClause);
-    const total = countResult[0]?.count || 0;
+    const total = rows.length > 0 ? rows[0].totalCount : 0;
+    // Strip totalCount from response rows
+    const allPhotos = rows.map(({ totalCount: _, ...photo }) => photo);
 
     res.json({
       photos: allPhotos,
@@ -381,95 +393,38 @@ router.get('/photos/suggestions', async (_req, res) => {
   }
 });
 
-// Get unique cameras
-router.get('/photos/meta/cameras', async (_req, res) => {
+// Consolidated metadata endpoint — replaces individual meta/* endpoints
+router.get('/photos/meta', async (_req, res) => {
   try {
+    // Return cached data if still valid
+    if (metadataCache && Date.now() - metadataCache.timestamp < METADATA_CACHE_TTL) {
+      return res.json(metadataCache.data);
+    }
+
     const cameras = await db
       .selectDistinct({ camera: photos.camera })
       .from(photos)
       .where(sql`${photos.camera} IS NOT NULL`)
       .orderBy(asc(photos.camera));
 
-    res.json(cameras.map((c) => c.camera));
-  } catch (error) {
-    console.error('Error fetching cameras:', error);
-    res.status(500).json({ error: 'Failed to fetch cameras' });
-  }
-});
-
-// Get unique lenses
-router.get('/photos/meta/lenses', async (_req, res) => {
-  try {
     const lenses = await db
       .selectDistinct({ lens: photos.lens })
       .from(photos)
       .where(sql`${photos.lens} IS NOT NULL`)
       .orderBy(asc(photos.lens));
 
-    res.json(lenses.map((l) => l.lens));
-  } catch (error) {
-    console.error('Error fetching lenses:', error);
-    res.status(500).json({ error: 'Failed to fetch lenses' });
-  }
-});
-
-// Get photo statistics
-router.get('/photos/meta/stats', async (_req, res) => {
-  try {
-    const stats = await db
-      .select({
-        total: sql<number>`count(*)`,
-        minIso: sql<number>`min(${photos.iso})`,
-        maxIso: sql<number>`max(${photos.iso})`,
-        minAperture: sql<number>`min(${photos.aperture})`,
-        maxAperture: sql<number>`max(${photos.aperture})`,
-        minDate: sql<string>`min(${photos.dateCaptured})`,
-        maxDate: sql<string>`max(${photos.dateCaptured})`,
-      })
-      .from(photos);
-
-    res.json(stats[0]);
-  } catch (error) {
-    console.error('Error fetching stats:', error);
-    res.status(500).json({ error: 'Failed to fetch stats' });
-  }
-});
-
-// Get distinct ISO values
-router.get('/photos/meta/iso-values', async (_req, res) => {
-  try {
     const isoValues = await db
       .selectDistinct({ iso: photos.iso })
       .from(photos)
       .where(sql`${photos.iso} IS NOT NULL`)
       .orderBy(asc(photos.iso));
 
-    res.json(isoValues.map((i) => i.iso));
-  } catch (error) {
-    console.error('Error fetching ISO values:', error);
-    res.status(500).json({ error: 'Failed to fetch ISO values' });
-  }
-});
-
-// Get distinct aperture values
-router.get('/photos/meta/aperture-values', async (_req, res) => {
-  try {
     const apertureValues = await db
       .selectDistinct({ aperture: photos.aperture })
       .from(photos)
       .where(sql`${photos.aperture} IS NOT NULL`)
       .orderBy(asc(photos.aperture));
 
-    res.json(apertureValues.map((a) => a.aperture));
-  } catch (error) {
-    console.error('Error fetching aperture values:', error);
-    res.status(500).json({ error: 'Failed to fetch aperture values' });
-  }
-});
-
-// Get distinct dates (date only, no time)
-router.get('/photos/meta/dates', async (_req, res) => {
-  try {
     const dates = await db
       .selectDistinct({
         date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')`,
@@ -478,16 +433,6 @@ router.get('/photos/meta/dates', async (_req, res) => {
       .where(sql`${photos.dateCaptured} IS NOT NULL`)
       .orderBy(desc(sql`DATE(${photos.dateCaptured}, 'unixepoch')`));
 
-    res.json(dates.map((d) => d.date));
-  } catch (error) {
-    console.error('Error fetching dates:', error);
-    res.status(500).json({ error: 'Failed to fetch dates' });
-  }
-});
-
-// Get dates with photo counts (for calendar view)
-router.get('/photos/meta/dates-with-counts', async (_req, res) => {
-  try {
     const dateGroups = await db
       .select({
         date: sql<string>`DATE(date_captured, 'unixepoch')`,
@@ -498,89 +443,38 @@ router.get('/photos/meta/dates-with-counts', async (_req, res) => {
       .groupBy(sql`DATE(date_captured, 'unixepoch')`)
       .orderBy(desc(sql`DATE(date_captured, 'unixepoch')`));
 
-    res.json(dateGroups);
-  } catch (error) {
-    console.error('Error fetching date counts:', error);
-    res.status(500).json({ error: 'Failed to fetch date counts' });
-  }
-});
+    // Use json_each() to extract keywords in SQL instead of loading all rows
+    const keywordRows = db.$client
+      .prepare('SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL ORDER BY value')
+      .all() as { value: string }[];
 
-// Get distinct label values
-router.get('/photos/meta/labels', async (_req, res) => {
-  try {
     const labels = await db
       .selectDistinct({ label: photos.label })
       .from(photos)
       .where(sql`${photos.label} IS NOT NULL`)
       .orderBy(asc(photos.label));
 
-    res.json(labels.map((l) => l.label));
-  } catch (error) {
-    console.error('Error fetching labels:', error);
-    res.status(500).json({ error: 'Failed to fetch labels' });
-  }
-});
-
-// Get distinct keywords
-router.get('/photos/meta/keywords', async (_req, res) => {
-  try {
-    const rows = await db
-      .select({ keywords: photos.keywords })
-      .from(photos)
-      .where(sql`${photos.keywords} IS NOT NULL`);
-
-    const keywordSet = new Set<string>();
-    rows.forEach((row) => {
-      if (row.keywords) {
-        try {
-          const parsed = JSON.parse(row.keywords);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((kw: string) => keywordSet.add(kw));
-          }
-        } catch (_e) {
-          // Skip invalid JSON
-        }
-      }
+    const dateCounts: Record<string, number> = {};
+    dateGroups.forEach((item) => {
+      dateCounts[item.date] = item.count;
     });
 
-    const sorted = Array.from(keywordSet).sort((a, b) => a.localeCompare(b));
-    res.json(sorted);
+    const data = {
+      cameras: cameras.map((c) => c.camera),
+      lenses: lenses.map((l) => l.lens),
+      isoValues: isoValues.map((i) => i.iso),
+      apertureValues: apertureValues.map((a) => a.aperture),
+      dates: dates.map((d) => d.date),
+      dateCounts,
+      keywords: keywordRows.map((r) => r.value),
+      labels: labels.map((l) => l.label),
+    };
+
+    metadataCache = { data, timestamp: Date.now() };
+    res.json(data);
   } catch (error) {
-    console.error('Error fetching keywords:', error);
-    res.status(500).json({ error: 'Failed to fetch keywords' });
-  }
-});
-
-// Get distinct folder paths derived from keywords
-router.get('/photos/meta/folders', async (_req, res) => {
-  try {
-    const rows = await db
-      .select({ keywords: photos.keywords })
-      .from(photos)
-      .where(sql`${photos.keywords} IS NOT NULL`);
-
-    const pathSet = new Set<string>();
-    rows.forEach((row) => {
-      if (row.keywords) {
-        try {
-          const parsed = JSON.parse(row.keywords);
-          if (Array.isArray(parsed)) {
-            // Build all ancestor paths
-            for (let i = 1; i <= parsed.length; i++) {
-              pathSet.add(parsed.slice(0, i).join('/'));
-            }
-          }
-        } catch (_e) {
-          // Skip invalid JSON
-        }
-      }
-    });
-
-    const sorted = Array.from(pathSet).sort((a, b) => a.localeCompare(b));
-    res.json(sorted);
-  } catch (error) {
-    console.error('Error fetching folders:', error);
-    res.status(500).json({ error: 'Failed to fetch folders' });
+    console.error('Error fetching metadata:', error);
+    res.status(500).json({ error: 'Failed to fetch metadata' });
   }
 });
 

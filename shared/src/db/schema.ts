@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const photos = sqliteTable('photos', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -37,7 +37,18 @@ export const photos = sqliteTable('photos', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(
     () => new Date(),
   ),
-});
+}, (table) => ({
+  dateCapturedIdx: index('idx_photos_date_captured').on(table.dateCaptured),
+  cameraIdx: index('idx_photos_camera').on(table.camera),
+  lensIdx: index('idx_photos_lens').on(table.lens),
+  isoIdx: index('idx_photos_iso').on(table.iso),
+  apertureIdx: index('idx_photos_aperture').on(table.aperture),
+  ratingIdx: index('idx_photos_rating').on(table.rating),
+  labelIdx: index('idx_photos_label').on(table.label),
+  aspectRatioIdx: index('idx_photos_aspect_ratio').on(table.aspectRatio),
+  createdAtIdx: index('idx_photos_created_at').on(table.createdAt),
+  filenameIdx: index('idx_photos_filename').on(table.filename),
+}));
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),

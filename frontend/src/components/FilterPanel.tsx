@@ -169,52 +169,17 @@ function FilterPanel({
     useState<AccordionSection | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/photos/meta/cameras', { credentials: 'include' }).then(
-        (res) => res.json(),
-      ),
-      fetch('/api/photos/meta/lenses', { credentials: 'include' }).then(
-        (res) => res.json(),
-      ),
-      fetch('/api/photos/meta/dates', { credentials: 'include' }).then((res) =>
-        res.json(),
-      ),
-      fetch('/api/photos/meta/dates-with-counts', {
-        credentials: 'include',
-      }).then((res) => res.json()),
-      fetch('/api/photos/meta/keywords', { credentials: 'include' }).then(
-        (res) => res.json(),
-      ),
-      fetch('/api/photos/meta/iso-values', { credentials: 'include' }).then(
-        (res) => res.json(),
-      ),
-      fetch('/api/photos/meta/aperture-values', {
-        credentials: 'include',
-      }).then((res) => res.json()),
-    ])
-      .then(
-        ([
-          camerasData,
-          lensesData,
-          datesData,
-          dateCountsData,
-          keywordsData,
-          isoData,
-          apertureData,
-        ]) => {
-          setCameras(camerasData);
-          setLenses(lensesData);
-          setDates(datesData);
-          const countsMap: Record<string, number> = {};
-          dateCountsData.forEach((item: { date: string; count: number }) => {
-            countsMap[item.date] = item.count;
-          });
-          setDateCounts(countsMap);
-          setKeywords(keywordsData);
-          setIsoValues(isoData);
-          setApertureValues(apertureData);
-        },
-      )
+    fetch('/api/photos/meta', { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        setCameras(data.cameras);
+        setLenses(data.lenses);
+        setDates(data.dates);
+        setDateCounts(data.dateCounts);
+        setKeywords(data.keywords);
+        setIsoValues(data.isoValues);
+        setApertureValues(data.apertureValues);
+      })
       .catch((err) => console.error('Failed to fetch metadata:', err));
   }, []);
 
