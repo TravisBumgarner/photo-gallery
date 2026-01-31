@@ -47,6 +47,7 @@ const aspectRatioOptions = [
 
 function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
   const [cameras, setCameras] = useState<string[]>([]);
+  const [lenses, setLenses] = useState<string[]>([]);
   const [dates, setDates] = useState<string[]>([]);
   const [dateCounts, setDateCounts] = useState<Record<string, number>>({});
   const [keywords, setKeywords] = useState<string[]>([]);
@@ -58,6 +59,9 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
       fetch('/api/photos/meta/cameras', { credentials: 'include' }).then(
         (res) => res.json(),
       ),
+      fetch('/api/photos/meta/lenses', { credentials: 'include' }).then((res) =>
+        res.json(),
+      ),
       fetch('/api/photos/meta/dates', { credentials: 'include' }).then((res) =>
         res.json(),
       ),
@@ -68,17 +72,26 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
         (res) => res.json(),
       ),
     ])
-      .then(([camerasData, datesData, dateCountsData, keywordsData]) => {
-        setCameras(camerasData);
-        setDates(datesData);
-        // Convert array to map
-        const countsMap: Record<string, number> = {};
-        dateCountsData.forEach((item: { date: string; count: number }) => {
-          countsMap[item.date] = item.count;
-        });
-        setDateCounts(countsMap);
-        setKeywords(keywordsData);
-      })
+      .then(
+        ([
+          camerasData,
+          lensesData,
+          datesData,
+          dateCountsData,
+          keywordsData,
+        ]) => {
+          setCameras(camerasData);
+          setLenses(lensesData);
+          setDates(datesData);
+          // Convert array to map
+          const countsMap: Record<string, number> = {};
+          dateCountsData.forEach((item: { date: string; count: number }) => {
+            countsMap[item.date] = item.count;
+          });
+          setDateCounts(countsMap);
+          setKeywords(keywordsData);
+        },
+      )
       .catch((err) => console.error('Failed to fetch metadata:', err));
   }, []);
 
@@ -159,6 +172,55 @@ function FilterPanel({ filters, onFilterChange, onClose }: FilterPanelProps) {
                   >
                     <ListItemText
                       primary={camera}
+                      primaryTypographyProps={{
+                        variant: 'body2',
+                        noWrap: true,
+                      }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+
+          <Divider />
+
+          {/* Lens List */}
+          <Box>
+            <Typography
+              variant="caption"
+              fontWeight="600"
+              display="block"
+              mb={0.25}
+            >
+              Lens
+            </Typography>
+            <List
+              dense
+              disablePadding
+              sx={{ maxHeight: 120, overflowY: 'auto' }}
+            >
+              <ListItem disablePadding>
+                <ListItemButton
+                  sx={{ py: 0.1, px: 0.75 }}
+                  selected={!filters.lens}
+                  onClick={() => onFilterChange({ lens: '' })}
+                >
+                  <ListItemText
+                    primary="All"
+                    primaryTypographyProps={{ variant: 'body2' }}
+                  />
+                </ListItemButton>
+              </ListItem>
+              {lenses.map((lens) => (
+                <ListItem key={lens} disablePadding>
+                  <ListItemButton
+                    sx={{ py: 0.1, px: 0.75 }}
+                    selected={filters.lens === lens}
+                    onClick={() => onFilterChange({ lens })}
+                  >
+                    <ListItemText
+                      primary={lens}
                       primaryTypographyProps={{
                         variant: 'body2',
                         noWrap: true,
