@@ -4,11 +4,13 @@ import {
   Logout as LogoutIcon,
   Remove as RemoveIcon,
   Star as StarIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material';
 import {
   Box,
   Breadcrumbs,
   Chip,
+  Collapse,
   FormControl,
   IconButton,
   Link,
@@ -47,6 +49,7 @@ function Toolbar({
   onColumnCountChange,
   onLogout,
 }: ToolbarProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [folders, setFolders] = useState<string[]>([]);
   const [isoValues, setIsoValues] = useState<number[]>([]);
   const [apertureValues, setApertureValues] = useState<number[]>([]);
@@ -124,141 +127,26 @@ function Toolbar({
         p: 1,
       }}
     >
+      {/* Always visible: toggle, column controls, logout */}
       <Stack
         direction="row"
         spacing={2}
         alignItems="center"
         justifyContent="space-between"
       >
-        {/* Folder Browser */}
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <FolderIcon fontSize="small" color="action" />
-          <Breadcrumbs
-            separator="/"
-            sx={{ '& .MuiBreadcrumbs-separator': { mx: 0.5 } }}
+        <Tooltip
+          title={showAdvanced ? 'Hide folder & sort' : 'Show folder & sort'}
+        >
+          <IconButton
+            size="small"
+            onClick={() => setShowAdvanced((prev) => !prev)}
+            color={showAdvanced ? 'primary' : 'default'}
           >
-            <Link
-              component="button"
-              variant="body2"
-              underline={currentFolder ? 'hover' : 'none'}
-              color={currentFolder ? 'inherit' : 'primary'}
-              fontWeight={currentFolder ? 'normal' : 'bold'}
-              onClick={() => onFilterChange({ folder: '' })}
-              sx={{ cursor: 'pointer' }}
-            >
-              All
-            </Link>
-            {breadcrumbs.map((segment, index) => {
-              const siblings = siblingsAtDepth[index] || [];
-              const parentPath = breadcrumbs.slice(0, index).join('/');
-              if (siblings.length > 1) {
-                return (
-                  <Select
-                    key={index}
-                    value={segment}
-                    variant="standard"
-                    disableUnderline
-                    onChange={(e) => {
-                      const picked = e.target.value;
-                      const newFolder = parentPath
-                        ? `${parentPath}/${picked}`
-                        : picked;
-                      onFilterChange({ folder: newFolder });
-                    }}
-                    sx={{
-                      '& .MuiSelect-select': {
-                        py: 0,
-                        typography: 'body2',
-                        fontWeight: 'bold',
-                      },
-                    }}
-                  >
-                    {siblings.map((sib) => (
-                      <MenuItem key={sib} value={sib}>
-                        {sib}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                );
-              }
-              return (
-                <Typography
-                  key={index}
-                  variant="body2"
-                  fontWeight="bold"
-                  color="primary"
-                >
-                  {segment}
-                </Typography>
-              );
-            })}
-          </Breadcrumbs>
-          {children.length > 0 && (
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <Select
-                value=""
-                displayEmpty
-                onChange={(e) => {
-                  const child = e.target.value;
-                  if (child) {
-                    const newFolder = currentFolder
-                      ? `${currentFolder}/${child}`
-                      : child;
-                    onFilterChange({ folder: newFolder });
-                  }
-                }}
-                renderValue={() => (
-                  <Typography variant="body2" color="text.secondary">
-                    Select folder…
-                  </Typography>
-                )}
-              >
-                {children.map((child) => (
-                  <MenuItem key={child} value={child}>
-                    {child}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-        </Stack>
+            <TuneIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
 
-        {/* Right side controls */}
         <Stack direction="row" spacing={2} alignItems="center">
-          {/* Sort By */}
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <Select
-              value={filters.sortBy || 'dateCaptured'}
-              onChange={(e) => onFilterChange({ sortBy: e.target.value })}
-              displayEmpty
-            >
-              <MenuItem value="dateCaptured">Date Captured</MenuItem>
-              <MenuItem value="createdAt">Date Added</MenuItem>
-              <MenuItem value="filename">Filename</MenuItem>
-              <MenuItem value="camera">Camera</MenuItem>
-              <MenuItem value="iso">ISO</MenuItem>
-              <MenuItem value="aperture">Aperture</MenuItem>
-            </Select>
-          </FormControl>
-
-          {/* Order */}
-          <Stack direction="row" spacing={0.5}>
-            <Chip
-              label="Desc"
-              size="small"
-              color={filters.sortOrder === 'desc' ? 'primary' : 'default'}
-              onClick={() => onFilterChange({ sortOrder: 'desc' })}
-              clickable
-            />
-            <Chip
-              label="Asc"
-              size="small"
-              color={filters.sortOrder === 'asc' ? 'primary' : 'default'}
-              onClick={() => onFilterChange({ sortOrder: 'asc' })}
-              clickable
-            />
-          </Stack>
-
           {/* Column Controls */}
           <Stack direction="row" spacing={0.5} alignItems="center">
             <IconButton
@@ -291,6 +179,145 @@ function Toolbar({
           </Tooltip>
         </Stack>
       </Stack>
+
+      {/* Collapsible: folder browser, sort, order */}
+      <Collapse in={showAdvanced}>
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ mt: 1 }}
+        >
+          {/* Folder Browser */}
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <FolderIcon fontSize="small" color="action" />
+            <Breadcrumbs
+              separator="/"
+              sx={{ '& .MuiBreadcrumbs-separator': { mx: 0.5 } }}
+            >
+              <Link
+                component="button"
+                variant="body2"
+                underline={currentFolder ? 'hover' : 'none'}
+                color={currentFolder ? 'inherit' : 'primary'}
+                fontWeight={currentFolder ? 'normal' : 'bold'}
+                onClick={() => onFilterChange({ folder: '' })}
+                sx={{ cursor: 'pointer' }}
+              >
+                All
+              </Link>
+              {breadcrumbs.map((segment, index) => {
+                const siblings = siblingsAtDepth[index] || [];
+                const parentPath = breadcrumbs.slice(0, index).join('/');
+                if (siblings.length > 1) {
+                  return (
+                    <Select
+                      key={index}
+                      value={segment}
+                      variant="standard"
+                      disableUnderline
+                      onChange={(e) => {
+                        const picked = e.target.value;
+                        const newFolder = parentPath
+                          ? `${parentPath}/${picked}`
+                          : picked;
+                        onFilterChange({ folder: newFolder });
+                      }}
+                      sx={{
+                        '& .MuiSelect-select': {
+                          py: 0,
+                          typography: 'body2',
+                          fontWeight: 'bold',
+                        },
+                      }}
+                    >
+                      {siblings.map((sib) => (
+                        <MenuItem key={sib} value={sib}>
+                          {sib}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  );
+                }
+                return (
+                  <Typography
+                    key={index}
+                    variant="body2"
+                    fontWeight="bold"
+                    color="primary"
+                  >
+                    {segment}
+                  </Typography>
+                );
+              })}
+            </Breadcrumbs>
+            {children.length > 0 && (
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <Select
+                  value=""
+                  displayEmpty
+                  onChange={(e) => {
+                    const child = e.target.value;
+                    if (child) {
+                      const newFolder = currentFolder
+                        ? `${currentFolder}/${child}`
+                        : child;
+                      onFilterChange({ folder: newFolder });
+                    }
+                  }}
+                  renderValue={() => (
+                    <Typography variant="body2" color="text.secondary">
+                      Select folder…
+                    </Typography>
+                  )}
+                >
+                  {children.map((child) => (
+                    <MenuItem key={child} value={child}>
+                      {child}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Stack>
+
+          {/* Sort controls */}
+          <Stack direction="row" spacing={2} alignItems="center">
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <Select
+                value={filters.sortBy || 'dateCaptured'}
+                onChange={(e) => onFilterChange({ sortBy: e.target.value })}
+                displayEmpty
+              >
+                <MenuItem value="dateCaptured">Date Captured</MenuItem>
+                <MenuItem value="createdAt">Date Added</MenuItem>
+                <MenuItem value="filename">Filename</MenuItem>
+                <MenuItem value="camera">Camera</MenuItem>
+                <MenuItem value="iso">ISO</MenuItem>
+                <MenuItem value="aperture">Aperture</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Stack direction="row" spacing={0.5}>
+              <Chip
+                label="Desc"
+                size="small"
+                color={filters.sortOrder === 'desc' ? 'primary' : 'default'}
+                onClick={() => onFilterChange({ sortOrder: 'desc' })}
+                clickable
+              />
+              <Chip
+                label="Asc"
+                size="small"
+                color={filters.sortOrder === 'asc' ? 'primary' : 'default'}
+                onClick={() => onFilterChange({ sortOrder: 'asc' })}
+                clickable
+              />
+            </Stack>
+          </Stack>
+        </Stack>
+      </Collapse>
 
       {/* Second row: Color, Rating, ISO, Aperture */}
       <Stack direction="row" spacing={3} alignItems="center" sx={{ mt: 1 }}>
