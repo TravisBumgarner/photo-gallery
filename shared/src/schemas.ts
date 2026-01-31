@@ -13,6 +13,7 @@ export const photoFiltersSchema = z.object({
   startDate: z.string().default(''),
   endDate: z.string().default(''),
   aspectRatio: z.string().default(''),
+  orientation: z.string().default(''),
   rating: z.coerce.number().int().optional(),
   label: z.string().default(''),
   keyword: z.string().default(''),

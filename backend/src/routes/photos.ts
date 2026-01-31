@@ -44,6 +44,7 @@ router.get('/photos', async (req, res) => {
       startDate,
       endDate,
       aspectRatio,
+      orientation,
       rating,
       label,
       keyword,
@@ -51,8 +52,6 @@ router.get('/photos', async (req, res) => {
       sortBy,
       sortOrder,
     } = parsed.data;
-
-    console.log('Filter params:', { rating, label, search, camera });
 
     const offset = (pageNum - 1) * limitNum;
 
@@ -70,14 +69,26 @@ router.get('/photos', async (req, res) => {
       );
     }
 
-    // Filter by camera
+    // Filter by camera (supports comma-separated multi-select)
     if (camera) {
-      conditions.push(like(photos.camera, `%${camera}%`));
+      const cameras = camera.split(',').filter(Boolean);
+      if (cameras.length === 1) {
+        conditions.push(like(photos.camera, `%${cameras[0]}%`));
+      } else if (cameras.length > 1) {
+        conditions.push(
+          or(...cameras.map((c) => like(photos.camera, `%${c}%`))),
+        );
+      }
     }
 
-    // Filter by lens
+    // Filter by lens (supports comma-separated multi-select)
     if (lens) {
-      conditions.push(like(photos.lens, `%${lens}%`));
+      const lenses = lens.split(',').filter(Boolean);
+      if (lenses.length === 1) {
+        conditions.push(like(photos.lens, `%${lenses[0]}%`));
+      } else if (lenses.length > 1) {
+        conditions.push(or(...lenses.map((l) => like(photos.lens, `%${l}%`))));
+      }
     }
 
     // Filter by ISO range
@@ -107,16 +118,56 @@ router.get('/photos', async (req, res) => {
       conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
     }
 
-    // Filter by aspect ratio
+    // Filter by aspect ratio (supports comma-separated multi-select, matches both orientations)
     if (aspectRatio) {
-      const ratio = parseFloat(aspectRatio);
-      const tolerance = 0.1; // Allow some variance for common aspect ratios
-      conditions.push(
-        and(
+      const ratios = aspectRatio.split(',').filter(Boolean);
+      const ratioConditions = ratios.flatMap((r) => {
+        const ratio = parseFloat(r);
+        const tolerance = 0.1;
+        const portraitMatch = and(
           gte(photos.aspectRatio, ratio - tolerance),
           lte(photos.aspectRatio, ratio + tolerance),
-        ),
-      );
+        );
+        // For non-square ratios, also match the inverse (other orientation)
+        if (Math.abs(ratio - 1) > tolerance) {
+          const inverse = 1 / ratio;
+          const landscapeMatch = and(
+            gte(photos.aspectRatio, inverse - tolerance),
+            lte(photos.aspectRatio, inverse + tolerance),
+          );
+          return [portraitMatch, landscapeMatch];
+        }
+        return [portraitMatch];
+      });
+      if (ratioConditions.length === 1) {
+        conditions.push(ratioConditions[0]);
+      } else if (ratioConditions.length > 1) {
+        conditions.push(or(...ratioConditions));
+      }
+    }
+
+    // Filter by orientation (supports comma-separated multi-select)
+    if (orientation) {
+      const orientations = orientation.split(',').filter(Boolean);
+      const squareTolerance = 0.05;
+      const orientationConditions = orientations.map((o) => {
+        if (o === 'square') {
+          return and(
+            gte(photos.aspectRatio, 1 - squareTolerance),
+            lte(photos.aspectRatio, 1 + squareTolerance),
+          );
+        }
+        if (o === 'portrait') {
+          return lte(photos.aspectRatio, 1 - squareTolerance);
+        }
+        // landscape
+        return gte(photos.aspectRatio, 1 + squareTolerance);
+      });
+      if (orientationConditions.length === 1) {
+        conditions.push(orientationConditions[0]);
+      } else if (orientationConditions.length > 1) {
+        conditions.push(or(...orientationConditions));
+      }
     }
 
     // Filter by rating
@@ -129,9 +180,16 @@ router.get('/photos', async (req, res) => {
       conditions.push(sql`${photos.label} = ${label}`);
     }
 
-    // Filter by keyword
+    // Filter by keyword (supports comma-separated multi-select)
     if (keyword) {
-      conditions.push(like(photos.keywords, `%"${keyword}"%`));
+      const keywords = keyword.split(',').filter(Boolean);
+      if (keywords.length === 1) {
+        conditions.push(like(photos.keywords, `%"${keywords[0]}"%`));
+      } else if (keywords.length > 1) {
+        conditions.push(
+          or(...keywords.map((kw) => like(photos.keywords, `%"${kw}"%`))),
+        );
+      }
     }
 
     // Filter by folder path (prefix match on JSON keywords array)

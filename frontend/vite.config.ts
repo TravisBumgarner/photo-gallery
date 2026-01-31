@@ -11,18 +11,19 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5200,
+    strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8084',
         changeOrigin: true,
       },
       '/images': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8084',
         changeOrigin: true,
       },
       '/thumbnails': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8084',
         changeOrigin: true,
       },
     },

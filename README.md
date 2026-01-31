@@ -12,13 +12,13 @@ Built with React + Vite, Express + Drizzle, and SQLite. Managed via npm workspac
 ./bootstrap.sh
 ```
 
-This installs dependencies, copies `.env.example` files, and runs database migrations. Once done, configure your `.env` files (see below) and run `npm run dev` (frontend on :5173, backend on :3000).
+This installs dependencies, copies `.env.example` files, and runs database migrations. Once done, configure your `.env` files (see below) and run `npm run dev` (frontend on :5200, backend on :8084).
 
 ## Configuration
 
 ### `backend/.env`
 
-- `PORT` - Server port (default `3000`)
+- `PORT` - Server port (default `8084`)
 - `DATABASE_URL` - Path to the SQLite database file
 - `NODE_ENV` - `development` or `production`
 - `SESSION_SECRET` - Secret for signing session cookies (use a strong random value)

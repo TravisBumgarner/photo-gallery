@@ -40,6 +40,7 @@ export interface PhotoFilters {
   startDate?: string;
   endDate?: string;
   aspectRatio?: string;
+  orientation?: string;
   rating?: number;
   label?: string;
   keyword?: string;
