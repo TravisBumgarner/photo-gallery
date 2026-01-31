@@ -5,6 +5,7 @@ export const photoFiltersSchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().default(''),
   camera: z.string().default(''),
+  lens: z.string().default(''),
   minIso: z.coerce.number().optional(),
   maxIso: z.coerce.number().optional(),
   minAperture: z.coerce.number().optional(),

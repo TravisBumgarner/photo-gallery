@@ -32,6 +32,7 @@ export interface PhotosResponse {
 export interface PhotoFilters {
   search?: string;
   camera?: string;
+  lens?: string;
   minIso?: number;
   maxIso?: number;
   minAperture?: number;
