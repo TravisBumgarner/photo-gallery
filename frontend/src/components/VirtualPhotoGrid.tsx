@@ -1,4 +1,4 @@
-import { Box, CircularProgress } from '@mui/material';
+import { Box, Button, CircularProgress } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PhotoCard from '@/components/PhotoCard';
 import type { Photo } from '@/types';
@@ -12,8 +12,9 @@ interface VirtualPhotoGridProps {
   columnCount: number;
 }
 
-const ROW_HEIGHT = 300; // Approximate height of each row
-const OVERSCAN = 2; // Render 2 extra rows above and below viewport
+const GAP = 16; // MUI gap: 2 = theme.spacing(2) = 16px
+const PADDING = 16; // MUI p: 2 = 16px
+const OVERSCAN = 2;
 
 function VirtualPhotoGrid({
   photos,
@@ -26,6 +27,25 @@ function VirtualPhotoGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Measure container width so row height matches actual layout
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0].contentRect.width);
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
+  // Cards are 1:1 aspect ratio, so cell height = cell width
+  const cellSize =
+    containerWidth > 0
+      ? (containerWidth - PADDING * 2 - (columnCount - 1) * GAP) / columnCount
+      : 300;
+  const rowPitch = cellSize + GAP;
 
   // Calculate visible range based on scroll position
   const updateVisibleRange = useCallback(() => {
@@ -35,26 +55,18 @@ function VirtualPhotoGrid({
     const scrollTop = container.scrollTop;
     const viewportHeight = container.clientHeight;
 
-    const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+    const startRow = Math.max(
+      0,
+      Math.floor(scrollTop / rowPitch) - OVERSCAN,
+    );
     const endRow =
-      Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN;
+      Math.ceil((scrollTop + viewportHeight) / rowPitch) + OVERSCAN;
 
     const startIndex = startRow * columnCount;
     const endIndex = Math.min(photos.length, endRow * columnCount);
 
     setVisibleRange({ start: startIndex, end: endIndex });
-  }, [columnCount, photos.length]);
-
-  // Update visible range on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      // Recalculate visible range when window resizes
-      requestAnimationFrame(updateVisibleRange);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [updateVisibleRange]);
+  }, [columnCount, photos.length, rowPitch]);
 
   // Update visible range on scroll
   useEffect(() => {
@@ -71,11 +83,6 @@ function VirtualPhotoGrid({
     return () => container.removeEventListener('scroll', handleScroll);
   }, [updateVisibleRange]);
 
-  // Update visible range when photos or columns change
-  useEffect(() => {
-    updateVisibleRange();
-  }, [updateVisibleRange]);
-
   // Infinite scroll observer
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -84,7 +91,7 @@ function VirtualPhotoGrid({
           loadMore();
         }
       },
-      { threshold: 0.1 },
+      { root: containerRef.current, threshold: 0.1 },
     );
 
     const currentTarget = observerTarget.current;
@@ -100,9 +107,12 @@ function VirtualPhotoGrid({
   }, [hasMore, loading, loadMore]);
 
   const totalRows = Math.ceil(photos.length / columnCount);
-  const totalHeight = totalRows * ROW_HEIGHT;
+  const totalHeight =
+    totalRows > 0
+      ? PADDING * 2 + totalRows * cellSize + (totalRows - 1) * GAP
+      : 0;
   const visiblePhotos = photos.slice(visibleRange.start, visibleRange.end);
-  const offsetY = Math.floor(visibleRange.start / columnCount) * ROW_HEIGHT;
+  const offsetY = Math.floor(visibleRange.start / columnCount) * rowPitch;
 
   return (
     <Box
@@ -139,6 +149,14 @@ function VirtualPhotoGrid({
       {loading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
+        </Box>
+      )}
+
+      {hasMore && !loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+          <Button variant="outlined" onClick={loadMore}>
+            Load More
+          </Button>
         </Box>
       )}
     </Box>
