@@ -13,7 +13,7 @@ import { Router } from 'express';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
 import { photoFiltersSchema } from 'shared/schemas';
-import { config } from '@/config.js';
+import { config } from '../config.js';
 
 const db = createDb(config.DATABASE_URL);
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createDb } from 'shared/db';
 import { users } from 'shared/db/schema';
-import { config } from '@/config.js';
+import { config } from '../config.js';
 
 const db = createDb(config.DATABASE_URL);
 

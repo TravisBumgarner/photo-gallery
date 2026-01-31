@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { sql } from 'drizzle-orm';
-import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
 import sharp from 'sharp';
-import { config } from '@/config.js';
 import { extractExifData } from '@/exif.js';
 import {
   approximateAspectRatio,
@@ -13,8 +12,6 @@ import {
   generateBlurhash,
 } from '@/image.js';
 import { deriveTagsFromPath } from '@/scan.js';
-
-const db = createDb(config.DATABASE_URL);
 
 function generateUUID(filename: string, dateCaptured: Date | null): string {
   const dateStr = dateCaptured ? dateCaptured.toISOString() : 'no-date';
@@ -26,6 +23,7 @@ function generateUUID(filename: string, dateCaptured: Date | null): string {
 }
 
 export async function processImage(
+  db: BetterSQLite3Database,
   imagePath: string,
   sourceDir: string,
   outputDir: string,

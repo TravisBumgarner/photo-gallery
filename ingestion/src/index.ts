@@ -9,11 +9,13 @@ import { config } from '@/config.js';
 import { endExiftool } from '@/exif.js';
 import { processImage } from '@/process.js';
 import { scanDirectory } from '@/scan.js';
-import { syncToRemote } from '@/sync.js';
+import {
+  syncFileFromRemote,
+  syncFileToRemote,
+  syncToRemote,
+} from '@/sync.js';
 
 const PARALLEL_BATCH_SIZE = 20;
-
-const db = createDb(config.DATABASE_URL);
 
 function confirm(message: string): Promise<boolean> {
   const rl = readline.createInterface({
@@ -35,17 +37,25 @@ async function main() {
     ? path.join(os.homedir(), rawSourceDir.slice(1))
     : rawSourceDir;
   const sshHost = config.SSH_HOST;
-  const sshDestDir = config.SSH_DEST_DIR;
+  const destinationDir = config.DESTINATION_DIRECTORY;
 
-  if (mode === 'production' && (!sshHost || !sshDestDir)) {
-    console.error(
-      'Production mode requires SSH_HOST and SSH_DEST_DIR env vars',
-    );
+  const isProduction = mode === 'production';
+
+  if (isProduction && !sshHost) {
+    console.error('Production mode requires SSH_HOST env var');
     process.exit(1);
   }
 
-  const outputDir = path.resolve('../backend/public/images');
-  const thumbnailDir = path.resolve('../backend/public/thumbnails');
+  if (!isProduction && !config.DATABASE_URL) {
+    console.error('Local mode requires DATABASE_URL env var');
+    process.exit(1);
+  }
+
+  const localDir = isProduction
+    ? path.resolve('.staging')
+    : path.resolve(destinationDir);
+  const outputDir = path.join(localDir, 'images');
+  const thumbnailDir = path.join(localDir, 'thumbnails');
 
   const dryRun = config.DRY_RUN === 'true';
 
@@ -54,8 +64,8 @@ async function main() {
   console.log(`  Dry run:  ${dryRun}`);
   console.log(`  Source:   ${sourceDir}`);
   console.log(`  Output:   ${outputDir}`);
-  if (mode === 'production') {
-    console.log(`  Sync:     ${sshHost}:${sshDestDir}`);
+  if (isProduction) {
+    console.log(`  Sync:     ${sshHost}:${destinationDir}`);
   } else {
     console.log(`  Sync:     skipped (local mode)`);
   }
@@ -66,6 +76,25 @@ async function main() {
     console.log('Aborted.');
     process.exit(0);
   }
+
+  // Create output directories
+  await fs.mkdir(outputDir, { recursive: true });
+  await fs.mkdir(thumbnailDir, { recursive: true });
+
+  // In production, pull the database from the remote before working with it
+  const dbPath = isProduction
+    ? path.join(localDir, 'sqlite.db')
+    : path.resolve(config.DATABASE_URL!);
+
+  if (isProduction) {
+    syncFileFromRemote(
+      sshHost!,
+      path.join(destinationDir, 'sqlite.db'),
+      dbPath,
+    );
+  }
+
+  const db = createDb(dbPath);
 
   // Scan for images
   console.log('\nScanning for images...');
@@ -81,10 +110,6 @@ async function main() {
     }
     console.log(`\nTotal: ${imagePaths.length} files`);
   } else {
-    // Create directories
-    await fs.mkdir(outputDir, { recursive: true });
-    await fs.mkdir(thumbnailDir, { recursive: true });
-
     // Process images in parallel batches
     let processed = 0;
     let failed = 0;
@@ -101,7 +126,7 @@ async function main() {
 
       const results = await Promise.allSettled(
         batch.map((imagePath) =>
-          processImage(imagePath, sourceDir, outputDir, thumbnailDir),
+          processImage(db, imagePath, sourceDir, outputDir, thumbnailDir),
         ),
       );
 
@@ -165,18 +190,26 @@ async function main() {
   }
 
   // Rsync to remote only in production mode
-  if (mode === 'production') {
-    const publicDir = path.resolve('./public');
+  if (isProduction) {
     syncToRemote(
-      path.join(publicDir, 'images'),
+      outputDir,
       sshHost!,
-      path.join(sshDestDir!, 'images'),
+      path.join(destinationDir, 'public/images'),
     );
     syncToRemote(
-      path.join(publicDir, 'thumbnails'),
+      thumbnailDir,
       sshHost!,
-      path.join(sshDestDir!, 'thumbnails'),
+      path.join(destinationDir, 'public/thumbnails'),
     );
+    syncFileToRemote(
+      dbPath,
+      sshHost!,
+      path.join(destinationDir, 'sqlite.db'),
+    );
+
+    console.log('\nCleaning up staging directory...');
+    await fs.rm(localDir, { recursive: true, force: true });
+    console.log('Staging directory removed.');
   } else {
     console.log('\nLocal mode — skipping rsync.');
   }
