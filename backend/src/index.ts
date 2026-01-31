@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
@@ -30,6 +31,13 @@ app.use(
   }),
 );
 app.use(express.json());
+app.use(compression({ filter: (req, _res) => {
+  // Only compress API responses, not already-compressed images
+  if (req.path.startsWith('/images') || req.path.startsWith('/thumbnails')) {
+    return false;
+  }
+  return compression.filter(req, _res);
+}}));
 
 app.use(
   session({
@@ -76,11 +84,12 @@ if (config.NODE_ENV === 'production') {
 // Auth barrier — everything below requires authentication
 app.use(requireAuth);
 
-// Serve static files (protected)
-app.use('/images', express.static(path.join(__dirname, '../public/images')));
+// Serve static files (protected) with immutable caching
+const staticCacheOptions = { maxAge: '1y', immutable: true };
+app.use('/images', express.static(path.join(__dirname, '../public/images'), staticCacheOptions));
 app.use(
   '/thumbnails',
-  express.static(path.join(__dirname, '../public/thumbnails')),
+  express.static(path.join(__dirname, '../public/thumbnails'), staticCacheOptions),
 );
 
 // Routes (protected)
