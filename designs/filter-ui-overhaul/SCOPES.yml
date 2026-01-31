@@ -56,7 +56,7 @@ tasks:
       - Uses existing listItemButtonSx styling
     depends_on: [1]
     effort: 1
-    status: implementing
+    status: completed
 
   - id: 3
     github_issue: 11
