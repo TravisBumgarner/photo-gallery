@@ -1,5 +1,6 @@
 import {
   type AnyColumn,
+  type SQL,
   and,
   asc,
   desc,
@@ -13,12 +14,34 @@ import {
 import { Router } from 'express';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
-import { photoFiltersSchema } from 'shared/schemas';
+import { photoFiltersSchema, statsFiltersSchema } from 'shared/schemas';
+import type { StatsResponse } from 'shared/types';
 import { config } from '../config.js';
 
 const db = createDb(config.DATABASE_URL);
 
 export const router = Router();
+
+/** Build WHERE conditions from filter params. Used by /photos and /photos/stats. */
+export function buildFilterConditions(filters: {
+  search?: string;
+  camera?: string;
+  lens?: string;
+  minIso?: number;
+  maxIso?: number;
+  minAperture?: number;
+  maxAperture?: number;
+  startDate?: string;
+  endDate?: string;
+  aspectRatio?: string;
+  orientation?: string;
+  rating?: number;
+  label?: string;
+  keyword?: string;
+  folder?: string;
+}): SQL | undefined {
+  return undefined;
+}
 
 // In-memory metadata cache
 let metadataCache: {
@@ -475,6 +498,40 @@ router.get('/photos/meta', async (_req, res) => {
   } catch (error) {
     console.error('Error fetching metadata:', error);
     res.status(500).json({ error: 'Failed to fetch metadata' });
+  }
+});
+
+// Stats endpoint — aggregated photo statistics with filters
+router.get('/photos/stats', async (req, res) => {
+  try {
+    const parsed = statsFiltersSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid query parameters',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const result: StatsResponse = {
+      totalPhotos: 0,
+      photosOverTime: [],
+      cameraDistribution: [],
+      lensDistribution: [],
+      focalLengthDistribution: [],
+      apertureDistribution: [],
+      isoDistribution: [],
+      aspectRatioDistribution: [],
+      ratingDistribution: [],
+      shutterSpeedDistribution: [],
+      photosByDayOfWeek: [],
+      photosByHourOfDay: [],
+    };
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 
