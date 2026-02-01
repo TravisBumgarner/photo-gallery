@@ -48,3 +48,33 @@ export interface PhotoFilters {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
+
+export interface StatsFilters {
+  camera?: string;
+  lens?: string;
+  minIso?: number;
+  maxIso?: number;
+  minAperture?: number;
+  maxAperture?: number;
+  startDate?: string;
+  endDate?: string;
+  rating?: number;
+  label?: string;
+  keyword?: string;
+  folder?: string;
+}
+
+export interface StatsResponse {
+  totalPhotos: number;
+  photosOverTime: { month: string; count: number }[];
+  cameraDistribution: { camera: string; count: number }[];
+  lensDistribution: { lens: string; count: number }[];
+  focalLengthDistribution: { focalLength: number; count: number }[];
+  apertureDistribution: { aperture: number; count: number }[];
+  isoDistribution: { iso: number; count: number }[];
+  aspectRatioDistribution: { aspectRatio: string; count: number }[];
+  ratingDistribution: { rating: number; count: number }[];
+  shutterSpeedDistribution: { shutterSpeed: string; count: number }[];
+  photosByDayOfWeek: { day: string; count: number }[];
+  photosByHourOfDay: { hour: number; count: number }[];
+}
