@@ -77,7 +77,7 @@ tasks:
       - npm run build passes in frontend
     depends_on: []
     effort: 2
-    status: testing
+    status: implementing
 
   - id: 4
     github_issue: 31
