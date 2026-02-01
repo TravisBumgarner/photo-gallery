@@ -433,6 +433,25 @@ router.get('/photos/meta', async (_req, res) => {
       dateCounts[item.date] = item.count;
     });
 
+    // Build folder paths from keyword arrays (each keyword array represents a folder hierarchy)
+    const folderRows = db.$client
+      .prepare('SELECT keywords FROM photos WHERE keywords IS NOT NULL')
+      .all() as { keywords: string }[];
+    const folderSet = new Set<string>();
+    folderRows.forEach((row) => {
+      try {
+        const parsed = JSON.parse(row.keywords);
+        if (Array.isArray(parsed)) {
+          for (let i = 1; i <= parsed.length; i++) {
+            folderSet.add(parsed.slice(0, i).join('/'));
+          }
+        }
+      } catch {
+        // Skip invalid JSON
+      }
+    });
+    const folders = Array.from(folderSet).sort((a, b) => a.localeCompare(b));
+
     const data = {
       cameras: cameras.map((c) => c.camera),
       lenses: lenses.map((l) => l.lens),
@@ -442,6 +461,7 @@ router.get('/photos/meta', async (_req, res) => {
       dateCounts,
       keywords: keywordRows.map((r) => r.value),
       labels: labels.map((l) => l.label),
+      folders,
     };
 
     metadataCache = { data, timestamp: Date.now() };
