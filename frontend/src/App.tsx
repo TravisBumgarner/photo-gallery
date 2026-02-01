@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import GalleryPage from '@/components/GalleryPage';
 import LoginPage from '@/components/LoginPage';
+import NavMenu from '@/components/NavMenu';
 import StatsPage from '@/components/StatsPage';
 import AppThemeProvider from '@/styles/Theme';
 
@@ -65,6 +66,7 @@ function App() {
   return (
     <AppThemeProvider>
       <BrowserRouter>
+        <NavMenu />
         <Routes>
           <Route path="/" element={<GalleryPage onLogout={handleLogout} />} />
           <Route path="/stats" element={<StatsPage />} />
