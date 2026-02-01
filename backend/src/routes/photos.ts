@@ -1,5 +1,6 @@
 import {
   type AnyColumn,
+  type SQL,
   and,
   asc,
   desc,
@@ -13,12 +14,150 @@ import {
 import { Router } from 'express';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
-import { photoFiltersSchema } from 'shared/schemas';
+import { photoFiltersSchema, statsFiltersSchema } from 'shared/schemas';
+import type { StatsResponse } from 'shared/types';
 import { config } from '../config.js';
 
 const db = createDb(config.DATABASE_URL);
 
 export const router = Router();
+
+/** Build WHERE conditions from filter params. Used by /photos and /photos/stats. */
+export function buildFilterConditions(filters: {
+  search?: string;
+  camera?: string;
+  lens?: string;
+  minIso?: number;
+  maxIso?: number;
+  minAperture?: number;
+  maxAperture?: number;
+  startDate?: string;
+  endDate?: string;
+  aspectRatio?: string;
+  orientation?: string;
+  rating?: number;
+  label?: string;
+  keyword?: string;
+  folder?: string;
+}): SQL | undefined {
+  const conditions: (SQL | undefined)[] = [];
+
+  if (filters.search) {
+    conditions.push(
+      or(
+        like(photos.filename, `%${filters.search}%`),
+        like(photos.keywords, `%${filters.search}%`),
+        like(photos.camera, `%${filters.search}%`),
+      ),
+    );
+  }
+
+  if (filters.camera) {
+    conditions.push(sql`${photos.camera} = ${filters.camera}`);
+  }
+
+  if (filters.lens) {
+    conditions.push(sql`${photos.lens} = ${filters.lens}`);
+  }
+
+  if (filters.minIso !== undefined) {
+    conditions.push(gte(photos.iso, filters.minIso));
+  }
+  if (filters.maxIso !== undefined) {
+    conditions.push(lte(photos.iso, filters.maxIso));
+  }
+
+  if (filters.minAperture !== undefined) {
+    conditions.push(gte(photos.aperture, filters.minAperture));
+  }
+  if (filters.maxAperture !== undefined) {
+    conditions.push(lte(photos.aperture, filters.maxAperture));
+  }
+
+  if (filters.startDate) {
+    const startTimestamp = Math.floor(new Date(filters.startDate).getTime() / 1000);
+    conditions.push(sql`${photos.dateCaptured} >= ${startTimestamp}`);
+  }
+  if (filters.endDate) {
+    const endTimestamp =
+      Math.floor(new Date(filters.endDate).getTime() / 1000) + 86399;
+    conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
+  }
+
+  if (filters.aspectRatio) {
+    const ratios = filters.aspectRatio.split(',').filter(Boolean);
+    const ratioConditions = ratios.flatMap((r) => {
+      const ratio = parseFloat(r);
+      const tolerance = 0.1;
+      const portraitMatch = and(
+        gte(photos.aspectRatio, ratio - tolerance),
+        lte(photos.aspectRatio, ratio + tolerance),
+      );
+      if (Math.abs(ratio - 1) > tolerance) {
+        const inverse = 1 / ratio;
+        const landscapeMatch = and(
+          gte(photos.aspectRatio, inverse - tolerance),
+          lte(photos.aspectRatio, inverse + tolerance),
+        );
+        return [portraitMatch, landscapeMatch];
+      }
+      return [portraitMatch];
+    });
+    if (ratioConditions.length === 1) {
+      conditions.push(ratioConditions[0]);
+    } else if (ratioConditions.length > 1) {
+      conditions.push(or(...ratioConditions));
+    }
+  }
+
+  if (filters.orientation) {
+    const orientations = filters.orientation.split(',').filter(Boolean);
+    const squareTolerance = 0.05;
+    const orientationConditions = orientations.map((o) => {
+      if (o === 'square') {
+        return and(
+          gte(photos.aspectRatio, 1 - squareTolerance),
+          lte(photos.aspectRatio, 1 + squareTolerance),
+        );
+      }
+      if (o === 'portrait') {
+        return lte(photos.aspectRatio, 1 - squareTolerance);
+      }
+      return gte(photos.aspectRatio, 1 + squareTolerance);
+    });
+    if (orientationConditions.length === 1) {
+      conditions.push(orientationConditions[0]);
+    } else if (orientationConditions.length > 1) {
+      conditions.push(or(...orientationConditions));
+    }
+  }
+
+  if (filters.rating !== undefined) {
+    conditions.push(sql`${photos.rating} >= ${filters.rating}`);
+  }
+
+  if (filters.label) {
+    conditions.push(sql`${photos.label} = ${filters.label}`);
+  }
+
+  if (filters.keyword) {
+    conditions.push(like(photos.keywords, `%"${filters.keyword}"%`));
+  }
+
+  if (filters.folder) {
+    const escapeLike = (s: string) =>
+      s.replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const segments = filters.folder.split('/').map(escapeLike);
+    const jsonPrefix = `["${segments.join('","')}"`;
+    conditions.push(like(photos.keywords, `${jsonPrefix}%`));
+  }
+
+  if (conditions.length === 0) {
+    return undefined;
+  }
+
+  return and(...conditions);
+}
 
 // In-memory metadata cache
 let metadataCache: {
@@ -43,175 +182,11 @@ router.get('/photos', async (req, res) => {
       return;
     }
 
-    const {
-      page: pageNum,
-      limit: limitNum,
-      search,
-      camera,
-      lens,
-      minIso,
-      maxIso,
-      minAperture,
-      maxAperture,
-      startDate,
-      endDate,
-      aspectRatio,
-      orientation,
-      rating,
-      label,
-      keyword,
-      folder,
-      sortBy,
-      sortOrder,
-    } = parsed.data;
+    const { page: pageNum, limit: limitNum, sortBy, sortOrder, ...filterParams } = parsed.data;
 
     const offset = (pageNum - 1) * limitNum;
 
-    // Build where conditions
-    const conditions = [];
-
-    // Search in filename and keywords
-    if (search) {
-      conditions.push(
-        or(
-          like(photos.filename, `%${search}%`),
-          like(photos.keywords, `%${search}%`),
-          like(photos.camera, `%${search}%`),
-        ),
-      );
-    }
-
-    // Filter by camera (supports comma-separated multi-select)
-    if (camera) {
-      const cameras = camera.split(',').filter(Boolean);
-      if (cameras.length === 1) {
-        conditions.push(like(photos.camera, `%${cameras[0]}%`));
-      } else if (cameras.length > 1) {
-        conditions.push(
-          or(...cameras.map((c) => like(photos.camera, `%${c}%`))),
-        );
-      }
-    }
-
-    // Filter by lens (supports comma-separated multi-select)
-    if (lens) {
-      const lenses = lens.split(',').filter(Boolean);
-      if (lenses.length === 1) {
-        conditions.push(like(photos.lens, `%${lenses[0]}%`));
-      } else if (lenses.length > 1) {
-        conditions.push(or(...lenses.map((l) => like(photos.lens, `%${l}%`))));
-      }
-    }
-
-    // Filter by ISO range
-    if (minIso !== undefined) {
-      conditions.push(gte(photos.iso, minIso));
-    }
-    if (maxIso !== undefined) {
-      conditions.push(lte(photos.iso, maxIso));
-    }
-
-    // Filter by aperture range
-    if (minAperture !== undefined) {
-      conditions.push(gte(photos.aperture, minAperture));
-    }
-    if (maxAperture !== undefined) {
-      conditions.push(lte(photos.aperture, maxAperture));
-    }
-
-    // Filter by date range
-    if (startDate) {
-      const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
-      conditions.push(sql`${photos.dateCaptured} >= ${startTimestamp}`);
-    }
-    if (endDate) {
-      const endTimestamp =
-        Math.floor(new Date(endDate).getTime() / 1000) + 86399; // Add 23:59:59
-      conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
-    }
-
-    // Filter by aspect ratio (supports comma-separated multi-select, matches both orientations)
-    if (aspectRatio) {
-      const ratios = aspectRatio.split(',').filter(Boolean);
-      const ratioConditions = ratios.flatMap((r) => {
-        const ratio = parseFloat(r);
-        const tolerance = 0.1;
-        const portraitMatch = and(
-          gte(photos.aspectRatio, ratio - tolerance),
-          lte(photos.aspectRatio, ratio + tolerance),
-        );
-        // For non-square ratios, also match the inverse (other orientation)
-        if (Math.abs(ratio - 1) > tolerance) {
-          const inverse = 1 / ratio;
-          const landscapeMatch = and(
-            gte(photos.aspectRatio, inverse - tolerance),
-            lte(photos.aspectRatio, inverse + tolerance),
-          );
-          return [portraitMatch, landscapeMatch];
-        }
-        return [portraitMatch];
-      });
-      if (ratioConditions.length === 1) {
-        conditions.push(ratioConditions[0]);
-      } else if (ratioConditions.length > 1) {
-        conditions.push(or(...ratioConditions));
-      }
-    }
-
-    // Filter by orientation (supports comma-separated multi-select)
-    if (orientation) {
-      const orientations = orientation.split(',').filter(Boolean);
-      const squareTolerance = 0.05;
-      const orientationConditions = orientations.map((o) => {
-        if (o === 'square') {
-          return and(
-            gte(photos.aspectRatio, 1 - squareTolerance),
-            lte(photos.aspectRatio, 1 + squareTolerance),
-          );
-        }
-        if (o === 'portrait') {
-          return lte(photos.aspectRatio, 1 - squareTolerance);
-        }
-        // landscape
-        return gte(photos.aspectRatio, 1 + squareTolerance);
-      });
-      if (orientationConditions.length === 1) {
-        conditions.push(orientationConditions[0]);
-      } else if (orientationConditions.length > 1) {
-        conditions.push(or(...orientationConditions));
-      }
-    }
-
-    // Filter by rating
-    if (rating !== undefined) {
-      conditions.push(sql`${photos.rating} >= ${rating}`);
-    }
-
-    // Filter by label
-    if (label) {
-      conditions.push(sql`${photos.label} = ${label}`);
-    }
-
-    // Filter by keyword (supports comma-separated multi-select)
-    if (keyword) {
-      const keywords = keyword.split(',').filter(Boolean);
-      if (keywords.length === 1) {
-        conditions.push(like(photos.keywords, `%"${keywords[0]}"%`));
-      } else if (keywords.length > 1) {
-        conditions.push(
-          or(...keywords.map((kw) => like(photos.keywords, `%"${kw}"%`))),
-        );
-      }
-    }
-
-    // Filter by folder path (prefix match on JSON keywords array)
-    if (folder) {
-      const escapeLike = (s: string) =>
-        s.replace(/%/g, '\\%').replace(/_/g, '\\_');
-      const segments = folder.split('/').map(escapeLike);
-      const jsonPrefix = `["${segments.join('","')}"`;
-      conditions.push(like(photos.keywords, `${jsonPrefix}%`));
-    }
+    const whereClause = buildFilterConditions(filterParams);
 
     // Determine sort column and order
     const validSortColumns: Record<string, AnyColumn> = {
@@ -224,7 +199,6 @@ router.get('/photos', async (req, res) => {
     const orderByColumn = validSortColumns[sortBy] ?? photos.dateCaptured;
 
     // Execute query with window function to get total count in a single pass
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     const rows = await db
       .select({
         ...getTableColumns(photos),
@@ -475,6 +449,199 @@ router.get('/photos/meta', async (_req, res) => {
   } catch (error) {
     console.error('Error fetching metadata:', error);
     res.status(500).json({ error: 'Failed to fetch metadata' });
+  }
+});
+
+// Stats endpoint — aggregated photo statistics with filters
+router.get('/photos/stats', async (req, res) => {
+  try {
+    const parsed = statsFiltersSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid query parameters',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const whereCondition = buildFilterConditions(parsed.data);
+    const client = db.$client;
+
+    // Use a CTE (Common Table Expression) to apply drizzle-built WHERE once,
+    // then run all aggregation queries against the filtered set.
+    // First, get the filtered IDs using drizzle, then use raw SQL for aggregations.
+    const filteredRows = db
+      .select({ id: photos.id })
+      .from(photos)
+      .where(whereCondition)
+      .all();
+    const filteredIds = filteredRows.map((r) => r.id);
+
+    // If no photos match filters, return empty result
+    if (filteredIds.length === 0 && whereCondition) {
+      const result: StatsResponse = {
+        totalPhotos: 0,
+        photosOverTime: [],
+        cameraDistribution: [],
+        lensDistribution: [],
+        focalLengthDistribution: [],
+        apertureDistribution: [],
+        isoDistribution: [],
+        aspectRatioDistribution: [],
+        ratingDistribution: [],
+        shutterSpeedDistribution: [],
+        photosByDayOfWeek: [],
+        photosByHourOfDay: [],
+      };
+      return res.json(result);
+    }
+
+    // Build a WHERE clause for raw SQL using the filtered IDs
+    const idFilter = whereCondition
+      ? `WHERE id IN (${filteredIds.join(',')})`
+      : '';
+    const idFilterAnd = whereCondition
+      ? `WHERE id IN (${filteredIds.join(',')}) AND`
+      : 'WHERE';
+
+    // 1. Total photos
+    const totalPhotos = filteredIds.length > 0 || !whereCondition
+      ? (whereCondition ? filteredIds.length : (client
+          .prepare('SELECT count(*) as count FROM photos')
+          .get() as { count: number }).count)
+      : 0;
+
+    // 2. Photos over time (by month)
+    const photosOverTime = client
+      .prepare(
+        `SELECT strftime('%Y-%m', date_captured, 'unixepoch') as month, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY month ORDER BY month`
+      )
+      .all() as { month: string; count: number }[];
+
+    // 3. Camera distribution
+    const cameraDistribution = client
+      .prepare(
+        `SELECT camera, count(*) as count FROM photos
+         ${idFilterAnd} camera IS NOT NULL
+         GROUP BY camera ORDER BY count DESC`
+      )
+      .all() as { camera: string; count: number }[];
+
+    // 4. Lens distribution
+    const lensDistribution = client
+      .prepare(
+        `SELECT lens, count(*) as count FROM photos
+         ${idFilterAnd} lens IS NOT NULL
+         GROUP BY lens ORDER BY count DESC`
+      )
+      .all() as { lens: string; count: number }[];
+
+    // 5. Focal length distribution
+    const focalLengthDistribution = client
+      .prepare(
+        `SELECT focal_length as focalLength, count(*) as count FROM photos
+         ${idFilterAnd} focal_length IS NOT NULL
+         GROUP BY focal_length ORDER BY focal_length`
+      )
+      .all() as { focalLength: number; count: number }[];
+
+    // 6. Aperture distribution
+    const apertureDistribution = client
+      .prepare(
+        `SELECT aperture, count(*) as count FROM photos
+         ${idFilterAnd} aperture IS NOT NULL
+         GROUP BY aperture ORDER BY aperture`
+      )
+      .all() as { aperture: number; count: number }[];
+
+    // 7. ISO distribution
+    const isoDistribution = client
+      .prepare(
+        `SELECT iso, count(*) as count FROM photos
+         ${idFilterAnd} iso IS NOT NULL
+         GROUP BY iso ORDER BY iso`
+      )
+      .all() as { iso: number; count: number }[];
+
+    // 8. Aspect ratio distribution (bucketed into named groups)
+    const aspectRatioDistribution = client
+      .prepare(
+        `SELECT
+          CASE
+            WHEN abs(aspect_ratio - 1.0) < 0.05 THEN '1:1'
+            WHEN abs(aspect_ratio - 1.5) < 0.1 OR abs(aspect_ratio - 0.667) < 0.1 THEN '3:2'
+            WHEN abs(aspect_ratio - 1.778) < 0.1 OR abs(aspect_ratio - 0.5625) < 0.1 THEN '16:9'
+            WHEN abs(aspect_ratio - 1.25) < 0.1 OR abs(aspect_ratio - 0.8) < 0.1 THEN '4:5'
+            ELSE 'Other'
+          END as aspectRatio,
+          count(*) as count
+        FROM photos
+        ${idFilter}
+        GROUP BY aspectRatio
+        ORDER BY count DESC`
+      )
+      .all() as { aspectRatio: string; count: number }[];
+
+    // 9. Rating distribution
+    const ratingDistribution = client
+      .prepare(
+        `SELECT rating, count(*) as count FROM photos
+         ${idFilterAnd} rating IS NOT NULL
+         GROUP BY rating ORDER BY rating`
+      )
+      .all() as { rating: number; count: number }[];
+
+    // 10. Shutter speed distribution
+    const shutterSpeedDistribution = client
+      .prepare(
+        `SELECT shutter_speed as shutterSpeed, count(*) as count FROM photos
+         ${idFilterAnd} shutter_speed IS NOT NULL
+         GROUP BY shutter_speed ORDER BY count DESC`
+      )
+      .all() as { shutterSpeed: string; count: number }[];
+
+    // 11. Photos by day of week
+    const photosByDayOfWeek = client
+      .prepare(
+        `SELECT strftime('%w', date_captured, 'unixepoch') as day, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY day ORDER BY day`
+      )
+      .all() as { day: string; count: number }[];
+
+    // 12. Photos by hour of day
+    const photosByHourOfDay = client
+      .prepare(
+        `SELECT CAST(strftime('%H', date_captured, 'unixepoch') AS INTEGER) as hour, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY hour ORDER BY hour`
+      )
+      .all() as { hour: number; count: number }[];
+
+    const result: StatsResponse = {
+      totalPhotos,
+      photosOverTime,
+      cameraDistribution,
+      lensDistribution,
+      focalLengthDistribution,
+      apertureDistribution,
+      isoDistribution,
+      aspectRatioDistribution,
+      ratingDistribution,
+      shutterSpeedDistribution,
+      photosByDayOfWeek,
+      photosByHourOfDay,
+    };
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 
