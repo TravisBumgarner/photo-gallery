@@ -17,8 +17,9 @@ import {
   useTheme,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import type { PhotoFilters } from '@/types';
-import { SPACING } from '@/styles/styleConsts';
+import { PALETTE, SPACING } from '@/styles/styleConsts';
 
 interface ToolbarProps {
   filters: PhotoFilters;
@@ -101,6 +102,37 @@ function Toolbar({
         alignItems="center"
         justifyContent="space-between"
       >
+        {/* Page Navigation */}
+        <Stack direction="row" spacing={0} alignItems="center" sx={{ flexShrink: 0 }}>
+          <NavLink
+            to="/"
+            end
+            style={({ isActive }) => ({
+              textDecoration: 'none',
+              color: isActive ? PALETTE.grayscale[0] : PALETTE.grayscale[400],
+              fontWeight: isActive ? 700 : 400,
+              padding: '4px 12px',
+              borderBottom: isActive ? `2px solid ${PALETTE.grayscale[0]}` : '2px solid transparent',
+              fontSize: '14px',
+            })}
+          >
+            Gallery
+          </NavLink>
+          <NavLink
+            to="/stats"
+            style={({ isActive }) => ({
+              textDecoration: 'none',
+              color: isActive ? PALETTE.grayscale[0] : PALETTE.grayscale[400],
+              fontWeight: isActive ? 700 : 400,
+              padding: '4px 12px',
+              borderBottom: isActive ? `2px solid ${PALETTE.grayscale[0]}` : '2px solid transparent',
+              fontSize: '14px',
+            })}
+          >
+            Stats
+          </NavLink>
+        </Stack>
+
         {/* Filter toggle button (mobile) */}
         {isMobile && (
           <IconButton size="small" onClick={onToggleFilters}>
