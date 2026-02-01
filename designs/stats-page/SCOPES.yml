@@ -96,7 +96,7 @@ tasks:
       - Responsive wrapping on smaller screens
     depends_on: [1]
     effort: 2
-    status: implementing
+    status: completed
 
   - id: 5
     github_issue: 32
