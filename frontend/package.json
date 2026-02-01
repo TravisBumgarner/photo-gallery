@@ -24,7 +24,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.13.0",
     "react-window": "^2.2.5",
-    "react-window-infinite-loader": "^2.0.1"
+    "react-window-infinite-loader": "^2.0.1",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.48",
