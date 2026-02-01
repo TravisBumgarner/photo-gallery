@@ -26,3 +26,18 @@ export const photoFiltersSchema = z.object({
 
 export type PhotoFiltersInput = z.input<typeof photoFiltersSchema>;
 export type PhotoFiltersParsed = z.output<typeof photoFiltersSchema>;
+
+export const statsFiltersSchema = z.object({
+  camera: z.string().default(''),
+  lens: z.string().default(''),
+  minIso: z.coerce.number().optional(),
+  maxIso: z.coerce.number().optional(),
+  minAperture: z.coerce.number().optional(),
+  maxAperture: z.coerce.number().optional(),
+  startDate: z.string().default(''),
+  endDate: z.string().default(''),
+  rating: z.coerce.number().int().optional(),
+  label: z.string().default(''),
+  keyword: z.string().default(''),
+  folder: z.string().default(''),
+});
