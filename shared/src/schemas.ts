@@ -26,3 +26,5 @@ export const photoFiltersSchema = z.object({
 
 export type PhotoFiltersInput = z.input<typeof photoFiltersSchema>;
 export type PhotoFiltersParsed = z.output<typeof photoFiltersSchema>;
+
+export const statsFiltersSchema = z.object({});

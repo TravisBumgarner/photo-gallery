@@ -1,0 +1,128 @@
+project: Stats Page
+repo: TravisBumgarner/photo-gallery
+design_file: designs/stats-page/DESIGN.md
+scoping_date: 2026-01-31
+
+milestones:
+  - number: 3
+    title: "1. Stats Page: Shared Types & Backend API"
+    description: Add shared types, Zod schemas, and the /api/photos/stats endpoint with all aggregation queries
+    branch:
+      working: 28-stats-api
+      base: main
+
+  - number: 4
+    title: "2. Stats Page: Frontend Routing & Stats UI"
+    description: Add react-router-dom, navigation between Gallery/Stats, stats page with 10 charts, filter panel, and responsive layout
+    branch:
+      working: 30-stats-frontend
+      base: 28-stats-api
+
+tasks:
+  - id: 1
+    github_issue: 28
+    milestone: 3
+    title: Add shared types and Zod schema for stats endpoint
+    description: |
+      Add `StatsFilters`, `StatsResponse`, and sub-types to `shared/src/types.ts`.
+      Add `statsFiltersSchema` to `shared/src/schemas.ts` — reuses the filter fields
+      from `photoFiltersSchema` but omits page, limit, sortBy, sortOrder.
+      Re-export new types from `frontend/src/types.ts`.
+    acceptance_criteria:
+      - StatsFilters type exported from shared/src/types.ts
+      - StatsResponse type exported from shared/src/types.ts with all 12 aggregation fields
+      - statsFiltersSchema exported from shared/src/schemas.ts
+      - Frontend re-exports StatsFilters and StatsResponse
+      - npm run build passes in shared and frontend
+    depends_on: []
+    effort: 1
+    status: testing
+
+  - id: 2
+    github_issue: 29
+    milestone: 3
+    title: Add GET /api/photos/stats endpoint with all aggregation queries
+    description: |
+      Add a new route handler at `GET /api/photos/stats` in `backend/src/routes/photos.ts`.
+      Extract the filter condition-building logic from the existing `/photos` handler into
+      a shared helper function. Run 12 aggregation queries (total count, photos over time,
+      camera/lens/focal length/aperture/ISO/aspect ratio/rating/shutter speed distributions,
+      photos by day of week, photos by hour of day) all filtered by the same WHERE clause.
+      Aspect ratio bucketing uses CASE/WHEN to group into named ratios (3:2, 4:5, 1:1, 16:9, other).
+      Use raw SQL via db.$client.prepare() for queries that are awkward in drizzle (CASE, strftime).
+    acceptance_criteria:
+      - GET /api/photos/stats returns all 12 aggregation fields matching StatsResponse
+      - Filter params validated with statsFiltersSchema
+      - Filter condition-building logic extracted into reusable helper used by both /photos and /photos/stats
+      - All aggregation queries respect active filters
+      - npm run build passes in backend
+    depends_on: [1]
+    effort: 3
+    status: scoped
+
+  - id: 3
+    github_issue: 30
+    milestone: 4
+    title: Add react-router-dom and navigation between Gallery and Stats
+    description: |
+      Install react-router-dom. Wrap authenticated content in App.tsx with Routes.
+      Extract current gallery content into a GalleryPage component.
+      Add a StatsPage placeholder. Add Gallery/Stats navigation links to Toolbar.tsx
+      using NavLink with active styling.
+    acceptance_criteria:
+      - react-router-dom installed
+      - "/" renders existing gallery, "/stats" renders stats placeholder
+      - Toolbar has Gallery/Stats navigation with active state indicator
+      - Browser back/forward navigation works
+      - npm run build passes in frontend
+    depends_on: []
+    effort: 2
+    status: scoped
+
+  - id: 4
+    github_issue: 31
+    milestone: 4
+    title: Add stats filter panel component
+    description: |
+      Create StatsFilterBar.tsx with horizontal filter controls: camera multi-select,
+      lens multi-select, date range inputs, ISO range, aperture range, rating selector,
+      and clear-all button. Fetches metadata from /api/photos/meta to populate dropdowns.
+      Uses StatsFilters type. Responsive layout with wrapping.
+    acceptance_criteria:
+      - StatsFilterBar renders all 6 filter controls plus clear button
+      - Camera and lens dropdowns populated from /api/photos/meta
+      - Filter changes call onFilterChange with updated StatsFilters
+      - Clear button resets all filters
+      - Responsive wrapping on smaller screens
+    depends_on: [1]
+    effort: 2
+    status: scoped
+
+  - id: 5
+    github_issue: 32
+    milestone: 4
+    title: Build StatsPage with 10 Recharts visualizations
+    description: |
+      Install recharts. Build the full StatsPage component replacing the placeholder
+      from task 3. Includes: summary cards (total photos, date range, cameras, lenses),
+      StatsFilterBar integration, and 10 charts — Photos Over Time (area), Camera Dist
+      (h-bar), Lens Dist (h-bar), Focal Length (bar with frontend binning), Aperture (bar),
+      ISO (bar), Aspect Ratio (pie), Rating (bar), Shutter Speed (bar), Shooting Time
+      (day-of-week + hour-of-day bars). Fetches /api/photos/stats with filters, debounced
+      re-fetch on change. 2-column grid on desktop, 1-column on mobile. Dark theme styling.
+    acceptance_criteria:
+      - recharts installed
+      - StatsPage fetches from /api/photos/stats with current filters
+      - All 10 charts render correctly with data
+      - Summary cards show total photos, date range, camera count, lens count
+      - Focal length data binned into ranges on frontend
+      - Day-of-week maps numeric (0-6) to names (Sun-Sat)
+      - Charts responsive via ResponsiveContainer
+      - 2-column desktop, 1-column mobile layout
+      - Loading spinner while fetching
+      - Filter changes trigger debounced re-fetch
+      - Dark theme colors from existing palette
+      - npm run build passes
+    depends_on: [2, 3, 4]
+    effort: 3
+    status: scoped
