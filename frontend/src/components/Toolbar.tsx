@@ -219,7 +219,12 @@ function Toolbar({
 
         {/* Row Count Control (hidden on mobile) */}
         {!isMobile && (
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{
+            flexShrink: 0,
+            // Prevent overlapping with navigation
+            paddingRight: '50px'
+
+          }}>
             <IconButton
               size="small"
               onClick={() => onColumnCountChange(Math.max(1, columnCount - 1))}
