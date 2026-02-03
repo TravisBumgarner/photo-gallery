@@ -1,12 +1,16 @@
 import {
   CameraAlt as CameraIcon,
+  Close as CloseIcon,
   DateRange as DateRangeIcon,
+  Fullscreen as FullscreenIcon,
   Lens as LensIcon,
   PhotoLibrary as PhotoIcon,
 } from '@mui/icons-material';
 import {
   Box,
   CircularProgress,
+  Dialog,
+  IconButton,
   Paper,
   Stack,
   Typography,
@@ -22,12 +26,17 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from 'recharts';
 import StatsFilterBar from '@/components/StatsFilterBar';
 import { subtleBackground } from '@/styles/styleConsts';
@@ -178,7 +187,26 @@ function StatsPage() {
             }}
           >
             {/* 1. Photos Over Time - Area */}
-            <ChartCard title="Photos Over Time">
+            <ChartCard
+              title="Photos Over Time"
+              renderExpanded={() => (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={stats.photosOverTime}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                    <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <YAxis tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <Tooltip {...tooltipStyle} />
+                    <Area
+                      type="monotone"
+                      dataKey="count"
+                      stroke="#8884d8"
+                      fill="#8884d8"
+                      fillOpacity={0.3}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            >
               <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={stats.photosOverTime}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
@@ -197,7 +225,30 @@ function StatsPage() {
             </ChartCard>
 
             {/* 2. Camera Distribution - Horizontal Bar */}
-            <ChartCard title="Camera Distribution">
+            <ChartCard
+              title="Camera Distribution"
+              renderExpanded={() => (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={stats.cameraDistribution}
+                    layout="vertical"
+                    margin={{ left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <YAxis
+                      type="category"
+                      dataKey="camera"
+                      tick={{ fontSize: 12 }}
+                      stroke="hsl(0 0% 50%)"
+                      width={200}
+                    />
+                    <Tooltip {...tooltipStyle} />
+                    <Bar dataKey="count" fill="#82ca9d" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            >
               <ResponsiveContainer width="100%" height={Math.max(250, stats.cameraDistribution.length * 35)}>
                 <BarChart
                   data={stats.cameraDistribution}
@@ -221,7 +272,30 @@ function StatsPage() {
             </ChartCard>
 
             {/* 3. Lens Distribution - Horizontal Bar */}
-            <ChartCard title="Lens Distribution">
+            <ChartCard
+              title="Lens Distribution"
+              renderExpanded={() => (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={stats.lensDistribution}
+                    layout="vertical"
+                    margin={{ left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <YAxis
+                      type="category"
+                      dataKey="lens"
+                      tick={{ fontSize: 11 }}
+                      stroke="hsl(0 0% 50%)"
+                      width={220}
+                    />
+                    <Tooltip {...tooltipStyle} />
+                    <Bar dataKey="count" fill="#ffc658" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            >
               <ResponsiveContainer width="100%" height={Math.max(250, stats.lensDistribution.length * 35)}>
                 <BarChart
                   data={stats.lensDistribution}
@@ -352,7 +426,46 @@ function StatsPage() {
             </ChartCard>
 
             {/* 10. Shooting Time - Day of Week + Hour of Day */}
-            <ChartCard title="Shooting Time">
+            <ChartCard
+              title="Shooting Time"
+              renderExpanded={() => (
+                <Stack spacing={3} sx={{ height: '100%' }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ ml: 1, mb: 1 }}>
+                      By Day of Week
+                    </Typography>
+                    <ResponsiveContainer width="100%" height="90%">
+                      <BarChart data={dayOfWeekMapped}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                        <XAxis dataKey="day" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                        <YAxis tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                        <Tooltip {...tooltipStyle} />
+                        <Bar dataKey="count" fill="#8884d8" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ ml: 1, mb: 1 }}>
+                      By Hour of Day
+                    </Typography>
+                    <ResponsiveContainer width="100%" height="90%">
+                      <BarChart data={stats.photosByHourOfDay}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                        <XAxis
+                          dataKey="hour"
+                          tick={{ fontSize: 12 }}
+                          stroke="hsl(0 0% 50%)"
+                          tickFormatter={(v) => `${v}:00`}
+                        />
+                        <YAxis tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                        <Tooltip {...tooltipStyle} />
+                        <Bar dataKey="count" fill="#82ca9d" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Box>
+                </Stack>
+              )}
+            >
               <Stack spacing={2}>
                 <Box>
                   <Typography
@@ -397,6 +510,166 @@ function StatsPage() {
                 </Box>
               </Stack>
             </ChartCard>
+
+            {/* 11. Photos by Year - Bar */}
+            <ChartCard title="Photos by Year">
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={stats.photosByYear}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                  <XAxis dataKey="year" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <Tooltip {...tooltipStyle} />
+                  <Bar dataKey="count" fill="#8884d8">
+                    {stats.photosByYear.map((_, index) => (
+                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            {/* 12. Year-over-Year Comparison - Line */}
+            <ChartCard title="Year-over-Year Comparison">
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={stats.yearOverYear}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                    tickFormatter={(v) => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][v - 1] || v}
+                  />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <Tooltip {...tooltipStyle} />
+                  <Legend />
+                  {stats.photosByYear.map((yearData, index) => (
+                    <Line
+                      key={yearData.year}
+                      type="monotone"
+                      dataKey={yearData.year}
+                      stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            {/* 13. Top 10 Most Productive Days - Horizontal Bar */}
+            <ChartCard title="Top 10 Most Productive Days">
+              <ResponsiveContainer width="100%" height={Math.max(250, stats.topDays.length * 30)}>
+                <BarChart data={stats.topDays} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <YAxis
+                    type="category"
+                    dataKey="date"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                    width={100}
+                  />
+                  <Tooltip {...tooltipStyle} />
+                  <Bar dataKey="count" fill="#00C49F">
+                    {stats.topDays.map((_, index) => (
+                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            {/* 14. Camera + Lens Combinations - Table/Heatmap style */}
+            <ChartCard title="Camera + Lens Combinations">
+              <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+                {stats.cameraLensCombinations.slice(0, 20).map((combo, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      py: 0.5,
+                      borderBottom: '1px solid hsl(0 0% 20%)',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: Math.min(100, (combo.count / stats.cameraLensCombinations[0].count) * 100),
+                        height: 8,
+                        bgcolor: CHART_COLORS[index % CHART_COLORS.length],
+                        borderRadius: 1,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography variant="caption" sx={{ flexGrow: 1, minWidth: 0 }} noWrap>
+                      {combo.camera} + {combo.lens}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                      {combo.count}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </ChartCard>
+
+            {/* 15. Shooting Frequency Calendar Heatmap */}
+            <ChartCard title="Shooting Frequency Calendar">
+              <CalendarHeatmap data={stats.photosByDate} />
+            </ChartCard>
+
+            {/* 16. Equipment Usage Over Time - Camera */}
+            <ChartCard title="Camera Usage Over Time">
+              <EquipmentOverTimeChart
+                data={stats.cameraUsageOverTime}
+                dataKey="camera"
+                tooltipStyle={tooltipStyle}
+              />
+            </ChartCard>
+
+            {/* 17. Equipment Usage Over Time - Lens */}
+            <ChartCard title="Lens Usage Over Time">
+              <EquipmentOverTimeChart
+                data={stats.lensUsageOverTime}
+                dataKey="lens"
+                tooltipStyle={tooltipStyle}
+              />
+            </ChartCard>
+
+            {/* 18. Focal Length vs Aperture Scatter */}
+            <ChartCard title="Focal Length vs Aperture">
+              <ResponsiveContainer width="100%" height={250}>
+                <ScatterChart margin={{ bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                  <XAxis
+                    type="number"
+                    dataKey="focalLength"
+                    name="Focal Length"
+                    unit="mm"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
+                  <YAxis
+                    type="number"
+                    dataKey="aperture"
+                    name="Aperture"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                    tickFormatter={(v) => `f/${v}`}
+                  />
+                  <ZAxis type="number" dataKey="count" range={[20, 400]} name="Count" />
+                  <Tooltip
+                    {...tooltipStyle}
+                    formatter={(value, name) => {
+                      if (name === 'Aperture') return [`f/${value}`, name];
+                      if (name === 'Focal Length') return [`${value}mm`, name];
+                      return [value, name];
+                    }}
+                  />
+                  <Scatter data={stats.focalLengthVsAperture} fill="#8884d8" />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </ChartCard>
           </Box>
         </Box>
       )}
@@ -439,22 +712,239 @@ function SummaryCard({
 function ChartCard({
   title,
   children,
+  renderExpanded,
 }: {
   title: string;
   children: React.ReactNode;
+  renderExpanded?: () => React.ReactNode;
 }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   return (
-    <Paper
-      sx={{
-        p: 2,
-        bgcolor: subtleBackground('slightly'),
-      }}
-    >
-      <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        {title}
-      </Typography>
-      {children}
-    </Paper>
+    <>
+      <Paper
+        sx={{
+          p: 2,
+          bgcolor: subtleBackground('slightly'),
+          maxHeight: '50vh',
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 1,
+          }}
+        >
+          <Typography variant="subtitle2">{title}</Typography>
+          <IconButton
+            size="small"
+            onClick={() => setIsFullscreen(true)}
+            sx={{ color: 'text.secondary' }}
+          >
+            <FullscreenIcon fontSize="small" />
+          </IconButton>
+        </Box>
+        <Box sx={{ flexGrow: 1, minHeight: 0 }}>{children}</Box>
+      </Paper>
+
+      <Dialog
+        open={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+        maxWidth={false}
+        fullWidth
+        PaperProps={{
+          sx: {
+            width: '90vw',
+            height: '90vh',
+            maxWidth: '90vw',
+            bgcolor: subtleBackground('slightly'),
+          },
+        }}
+      >
+        <Box sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 2,
+            }}
+          >
+            <Typography variant="h6">{title}</Typography>
+            <IconButton onClick={() => setIsFullscreen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+            {renderExpanded ? renderExpanded() : children}
+          </Box>
+        </Box>
+      </Dialog>
+    </>
+  );
+}
+
+// Calendar heatmap component (GitHub-style)
+function CalendarHeatmap({ data }: { data: { date: string; count: number }[] }) {
+  const dateMap = new Map(data.map((d) => [d.date, d.count]));
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
+
+  // Get the last 12 months of data
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setMonth(startDate.getMonth() - 11);
+  startDate.setDate(1);
+
+  const weeks: { date: Date; count: number }[][] = [];
+  let currentWeek: { date: Date; count: number }[] = [];
+  const currentDate = new Date(startDate);
+
+  // Pad to start on Sunday
+  const startDay = currentDate.getDay();
+  for (let i = 0; i < startDay; i++) {
+    currentWeek.push({ date: new Date(0), count: -1 });
+  }
+
+  while (currentDate <= today) {
+    const dateStr = currentDate.toISOString().split('T')[0];
+    const count = dateMap.get(dateStr) ?? 0;
+    currentWeek.push({ date: new Date(currentDate), count });
+
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  if (currentWeek.length > 0) {
+    weeks.push(currentWeek);
+  }
+
+  const getColor = (count: number) => {
+    if (count < 0) return 'transparent';
+    if (count === 0) return 'hsl(0 0% 15%)';
+    const intensity = Math.min(count / maxCount, 1);
+    return `hsl(142 ${40 + intensity * 30}% ${20 + intensity * 30}%)`;
+  };
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  return (
+    <Box sx={{ overflow: 'auto' }}>
+      <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5, pl: '20px' }}>
+        {weeks.map((week, i) => {
+          const firstDay = week.find((d) => d.count >= 0);
+          if (firstDay && firstDay.date.getDate() <= 7 && i > 0) {
+            return (
+              <Typography key={i} variant="caption" sx={{ width: 10, fontSize: 9, color: 'text.secondary' }}>
+                {months[firstDay.date.getMonth()]}
+              </Typography>
+            );
+          }
+          return <Box key={i} sx={{ width: 10 }} />;
+        })}
+      </Box>
+      <Box sx={{ display: 'flex', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, pr: 0.5 }}>
+          {['', 'M', '', 'W', '', 'F', ''].map((day, i) => (
+            <Typography key={i} variant="caption" sx={{ height: 10, fontSize: 8, lineHeight: '10px', color: 'text.secondary' }}>
+              {day}
+            </Typography>
+          ))}
+        </Box>
+        {weeks.map((week, weekIdx) => (
+          <Box key={weekIdx} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {week.map((day, dayIdx) => (
+              <Box
+                key={dayIdx}
+                sx={{
+                  width: 10,
+                  height: 10,
+                  bgcolor: getColor(day.count),
+                  borderRadius: 0.5,
+                  cursor: day.count >= 0 ? 'pointer' : 'default',
+                }}
+                title={day.count >= 0 ? `${day.date.toLocaleDateString()}: ${day.count} photos` : ''}
+              />
+            ))}
+          </Box>
+        ))}
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1, justifyContent: 'flex-end' }}>
+        <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary' }}>Less</Typography>
+        {[0, 0.25, 0.5, 0.75, 1].map((intensity) => (
+          <Box
+            key={intensity}
+            sx={{
+              width: 10,
+              height: 10,
+              bgcolor: intensity === 0 ? 'hsl(0 0% 15%)' : `hsl(142 ${40 + intensity * 30}% ${20 + intensity * 30}%)`,
+              borderRadius: 0.5,
+            }}
+          />
+        ))}
+        <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary' }}>More</Typography>
+      </Box>
+    </Box>
+  );
+}
+
+// Equipment usage over time chart
+function EquipmentOverTimeChart({
+  data,
+  dataKey,
+  tooltipStyle,
+}: {
+  data: { month: string; [key: string]: string | number }[];
+  dataKey: 'camera' | 'lens';
+  tooltipStyle: object;
+}) {
+  // Transform data: group by month, with each equipment as a key
+  const equipmentSet = new Set<string>();
+  data.forEach((d) => equipmentSet.add(d[dataKey] as string));
+  const topEquipment = Array.from(equipmentSet).slice(0, 5); // Top 5 only
+
+  const monthMap = new Map<string, Record<string, number>>();
+  data.forEach(({ month, count, ...rest }) => {
+    const equipment = rest[dataKey] as string;
+    if (!topEquipment.includes(equipment)) return;
+    if (!monthMap.has(month)) {
+      monthMap.set(month, {});
+    }
+    monthMap.get(month)![equipment] = count as number;
+  });
+
+  const chartData = Array.from(monthMap.entries())
+    .map(([month, counts]) => ({ month, ...counts }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <AreaChart data={chartData}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+        <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="hsl(0 0% 50%)" />
+        <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+        <Tooltip {...tooltipStyle} />
+        <Legend wrapperStyle={{ fontSize: 10 }} />
+        {topEquipment.map((equipment, index) => (
+          <Area
+            key={equipment}
+            type="monotone"
+            dataKey={equipment}
+            stackId="1"
+            stroke={CHART_COLORS[index % CHART_COLORS.length]}
+            fill={CHART_COLORS[index % CHART_COLORS.length]}
+            fillOpacity={0.6}
+          />
+        ))}
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 
