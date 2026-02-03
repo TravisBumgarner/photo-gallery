@@ -166,6 +166,11 @@ function Toolbar({
                       fontWeight: 'bold',
                     },
                   }}
+                  MenuProps={{
+                    PaperProps: {
+                      sx: { maxHeight: 300 },
+                    },
+                  }}
                 >
                   <MenuItem value="__close__" sx={{ fontStyle: 'italic' }}>
                     Close Folder
@@ -194,6 +199,11 @@ function Toolbar({
                 sx={{
                   '& .MuiSelect-select': {
                     fontWeight: 'bold',
+                  },
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: { maxHeight: 300 },
                   },
                 }}
               >

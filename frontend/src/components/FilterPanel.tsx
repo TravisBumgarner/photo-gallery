@@ -32,7 +32,7 @@ import {
   parseISO,
   startOfMonth,
 } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import SearchBar from '@/components/SearchBar';
 import type { PhotoFilters } from '@/types';
 
@@ -147,12 +147,24 @@ function SectionHeader({
   );
 }
 
-function FilterPanel({
+const propsRef = { filters: null as any, onFilterChange: null as any, onClose: null as any, onLogout: null as any };
+
+const FilterPanel = memo(function FilterPanel({
   filters,
   onFilterChange,
   onClose,
   onLogout,
 }: FilterPanelProps) {
+  const changed = [];
+  if (propsRef.filters !== filters) changed.push('filters');
+  if (propsRef.onFilterChange !== onFilterChange) changed.push('onFilterChange');
+  if (propsRef.onClose !== onClose) changed.push('onClose');
+  if (propsRef.onLogout !== onLogout) changed.push('onLogout');
+  propsRef.filters = filters;
+  propsRef.onFilterChange = onFilterChange;
+  propsRef.onClose = onClose;
+  propsRef.onLogout = onLogout;
+  console.log('[FilterPanel] render, changed props:', changed);
   const [cameras, setCameras] = useState<string[]>([]);
   const [lenses, setLenses] = useState<string[]>([]);
   const [dates, setDates] = useState<string[]>([]);
@@ -240,11 +252,20 @@ function FilterPanel({
         />
       </Box>
 
-      {/* Scrollable filter content */}
-      <Box sx={{ overflowY: 'auto', flexGrow: 1, p: 0.75 }}>
-        <Stack spacing={0.75}>
+      {/* Filter content - flex column, expanded section fills remaining space */}
+      <Box
+        sx={{
+          flexGrow: 1,
+          p: 0.75,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0.75,
+          overflow: 'hidden',
+        }}
+      >
           {/* Sort - always visible */}
-          <Box sx={sectionSx}>
+          <Box sx={{ ...sectionSx, flexShrink: 0 }}>
             <Typography
               variant="caption"
               fontWeight="600"
@@ -286,7 +307,20 @@ function FilterPanel({
           </Box>
 
           {/* General Section */}
-          <Box sx={sectionSx}>
+          <Box
+            sx={{
+              ...sectionSx,
+              ...(expandedSection === 'general'
+                ? {
+                    flexShrink: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : { flexShrink: 0 }),
+            }}
+          >
             <SectionHeader
               label="General"
               section="general"
@@ -304,8 +338,23 @@ function FilterPanel({
                 })
               }
             />
-            <Collapse in={expandedSection === 'general'}>
-              <Stack spacing={1} sx={{ pt: 0.5 }}>
+            <Collapse
+              in={expandedSection === 'general'}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                },
+              }}
+            >
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pt: 0.5 }}>
+              <Stack spacing={1}>
                 {/* Color */}
                 <Box>
                   <Typography
@@ -445,9 +494,21 @@ function FilterPanel({
                         }}
                         min={Math.min(...isoValues)}
                         max={Math.max(...isoValues)}
-                        valueLabelDisplay="on"
+                        valueLabelDisplay="auto"
                         size="small"
                       />
+                      <Stack
+                        direction="row"
+                        justifyContent="space-between"
+                        sx={{ mt: -0.5 }}
+                      >
+                        <Typography variant="caption" color="text.secondary">
+                          {Math.min(...isoValues)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {Math.max(...isoValues)}
+                        </Typography>
+                      </Stack>
                     </Box>
                   </Box>
                 )}
@@ -486,19 +547,45 @@ function FilterPanel({
                         }}
                         min={Math.min(...apertureValues)}
                         max={Math.max(...apertureValues)}
-                        valueLabelDisplay="on"
+                        valueLabelDisplay="auto"
                         valueLabelFormat={(value) => `f/${value}`}
                         size="small"
                       />
+                      <Stack
+                        direction="row"
+                        justifyContent="space-between"
+                        sx={{ mt: -0.5 }}
+                      >
+                        <Typography variant="caption" color="text.secondary">
+                          f/{Math.min(...apertureValues)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          f/{Math.max(...apertureValues)}
+                        </Typography>
+                      </Stack>
                     </Box>
                   </Box>
                 )}
               </Stack>
+              </Box>
             </Collapse>
           </Box>
 
           {/* Camera Section */}
-          <Box sx={sectionSx}>
+          <Box
+            sx={{
+              ...sectionSx,
+              ...(expandedSection === 'camera'
+                ? {
+                    flexShrink: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : { flexShrink: 0 }),
+            }}
+          >
             <SectionHeader
               label="Camera"
               section="camera"
@@ -507,7 +594,22 @@ function FilterPanel({
               hasActiveFilter={hasCameraFilter}
               onClear={() => onFilterChange({ camera: '' })}
             />
-            <Collapse in={expandedSection === 'camera'}>
+            <Collapse
+              in={expandedSection === 'camera'}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                },
+              }}
+            >
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               <List dense disablePadding sx={{ pt: 0.5 }}>
                 <ListItem disablePadding>
                   <ListItemButton
@@ -547,11 +649,25 @@ function FilterPanel({
                   );
                 })}
               </List>
+              </Box>
             </Collapse>
           </Box>
 
           {/* Lens Section */}
-          <Box sx={sectionSx}>
+          <Box
+            sx={{
+              ...sectionSx,
+              ...(expandedSection === 'lens'
+                ? {
+                    flexShrink: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : { flexShrink: 0 }),
+            }}
+          >
             <SectionHeader
               label="Lens"
               section="lens"
@@ -560,7 +676,22 @@ function FilterPanel({
               hasActiveFilter={hasLensFilter}
               onClear={() => onFilterChange({ lens: '' })}
             />
-            <Collapse in={expandedSection === 'lens'}>
+            <Collapse
+              in={expandedSection === 'lens'}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                },
+              }}
+            >
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               <List dense disablePadding sx={{ pt: 0.5 }}>
                 <ListItem disablePadding>
                   <ListItemButton
@@ -600,11 +731,25 @@ function FilterPanel({
                   );
                 })}
               </List>
+              </Box>
             </Collapse>
           </Box>
 
           {/* Aspect Ratio Section */}
-          <Box sx={sectionSx}>
+          <Box
+            sx={{
+              ...sectionSx,
+              ...(expandedSection === 'aspectRatio'
+                ? {
+                    flexShrink: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : { flexShrink: 0 }),
+            }}
+          >
             <SectionHeader
               label="Aspect Ratio"
               section="aspectRatio"
@@ -615,8 +760,23 @@ function FilterPanel({
                 onFilterChange({ aspectRatio: '', orientation: '' })
               }
             />
-            <Collapse in={expandedSection === 'aspectRatio'}>
-              <Stack spacing={0.75} sx={{ pt: 0.5 }}>
+            <Collapse
+              in={expandedSection === 'aspectRatio'}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                },
+              }}
+            >
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pt: 0.5 }}>
+              <Stack spacing={0.75}>
                 <Box>
                   <Typography
                     variant="caption"
@@ -708,11 +868,25 @@ function FilterPanel({
                   </Stack>
                 </Box>
               </Stack>
+              </Box>
             </Collapse>
           </Box>
 
           {/* Dates Section */}
-          <Box sx={sectionSx}>
+          <Box
+            sx={{
+              ...sectionSx,
+              ...(expandedSection === 'dates'
+                ? {
+                    flexShrink: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : { flexShrink: 0 }),
+            }}
+          >
             <SectionHeader
               label="Dates"
               section="dates"
@@ -723,8 +897,22 @@ function FilterPanel({
                 onFilterChange({ startDate: '', endDate: '' })
               }
             />
-            <Collapse in={expandedSection === 'dates'}>
-              <Box sx={{ pt: 0.5 }}>
+            <Collapse
+              in={expandedSection === 'dates'}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                },
+              }}
+            >
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pt: 0.5 }}>
                 <Chip
                   label="All Dates"
                   size="small"
@@ -976,7 +1164,20 @@ function FilterPanel({
           </Box>
 
           {/* Tags Section */}
-          <Box sx={sectionSx}>
+          <Box
+            sx={{
+              ...sectionSx,
+              ...(expandedSection === 'tags'
+                ? {
+                    flexShrink: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : { flexShrink: 0 }),
+            }}
+          >
             <SectionHeader
               label="Tags"
               section="tags"
@@ -985,7 +1186,22 @@ function FilterPanel({
               hasActiveFilter={hasTagFilter}
               onClear={() => onFilterChange({ keyword: '' })}
             />
-            <Collapse in={expandedSection === 'tags'}>
+            <Collapse
+              in={expandedSection === 'tags'}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                },
+              }}
+            >
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               <List dense disablePadding sx={{ pt: 0.5 }}>
                 <ListItem disablePadding>
                   <ListItemButton
@@ -1025,9 +1241,9 @@ function FilterPanel({
                   );
                 })}
               </List>
+              </Box>
             </Collapse>
           </Box>
-        </Stack>
       </Box>
 
       {/* Reset button - always visible */}
@@ -1077,6 +1293,6 @@ function FilterPanel({
       </Box>
     </Box>
   );
-}
+});
 
 export default FilterPanel;
