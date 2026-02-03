@@ -780,7 +780,17 @@ function ChartCard({
               <CloseIcon />
             </IconButton>
           </Box>
-          <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+          <Box
+            sx={{
+              flexGrow: 1,
+              minHeight: 0,
+              height: '100%',
+              // Force ResponsiveContainer to fill fullscreen space
+              '& .recharts-responsive-container': {
+                height: '100% !important',
+              },
+            }}
+          >
             {renderExpanded ? renderExpanded() : children}
           </Box>
         </Box>
