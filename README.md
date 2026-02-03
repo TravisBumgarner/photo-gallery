@@ -2,7 +2,10 @@
 
 Self hosted mobile photo gallery for browsing Lightroom photos quickly.
 
-![Photo Gallery Interface](readme/intro.png)
+![Photo Gallery Grid](readme/grid.png)
+![Photo Detail Single Photo](readme/photo.png)
+![Photo Stats](readme/stats.png)
+
 
 Built with React + Vite, Express + Drizzle, and SQLite. Managed via npm workspaces.
 
