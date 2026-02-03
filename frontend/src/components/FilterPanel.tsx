@@ -172,13 +172,13 @@ const FilterPanel = memo(function FilterPanel({
     fetch('/api/photos/meta', { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
-        setCameras(data.cameras);
-        setLenses(data.lenses);
-        setDates(data.dates);
-        setDateCounts(data.dateCounts);
-        setKeywords(data.keywords);
-        setIsoValues(data.isoValues);
-        setApertureValues(data.apertureValues);
+        setCameras(data.cameras || []);
+        setLenses(data.lenses || []);
+        setDates(data.dates || []);
+        setDateCounts(data.dateCounts || {});
+        setKeywords(data.keywords || []);
+        setIsoValues(data.isoValues || []);
+        setApertureValues(data.apertureValues || []);
       })
       .catch((err) => console.error('Failed to fetch metadata:', err));
   }, []);
