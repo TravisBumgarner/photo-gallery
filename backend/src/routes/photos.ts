@@ -53,11 +53,21 @@ export function buildFilterConditions(filters: {
   }
 
   if (filters.camera) {
-    conditions.push(sql`${photos.camera} = ${filters.camera}`);
+    const cameras = filters.camera.split(',').filter(Boolean);
+    if (cameras.length === 1) {
+      conditions.push(sql`${photos.camera} = ${cameras[0]}`);
+    } else if (cameras.length > 1) {
+      conditions.push(or(...cameras.map((c) => sql`${photos.camera} = ${c}`)));
+    }
   }
 
   if (filters.lens) {
-    conditions.push(sql`${photos.lens} = ${filters.lens}`);
+    const lenses = filters.lens.split(',').filter(Boolean);
+    if (lenses.length === 1) {
+      conditions.push(sql`${photos.lens} = ${lenses[0]}`);
+    } else if (lenses.length > 1) {
+      conditions.push(or(...lenses.map((l) => sql`${photos.lens} = ${l}`)));
+    }
   }
 
   if (filters.minIso !== undefined) {
@@ -137,11 +147,21 @@ export function buildFilterConditions(filters: {
   }
 
   if (filters.label) {
-    conditions.push(sql`${photos.label} = ${filters.label}`);
+    const labels = filters.label.split(',').filter(Boolean);
+    if (labels.length === 1) {
+      conditions.push(sql`${photos.label} = ${labels[0]}`);
+    } else if (labels.length > 1) {
+      conditions.push(or(...labels.map((l) => sql`${photos.label} = ${l}`)));
+    }
   }
 
   if (filters.keyword) {
-    conditions.push(like(photos.keywords, `%"${filters.keyword}"%`));
+    const keywords = filters.keyword.split(',').filter(Boolean);
+    if (keywords.length === 1) {
+      conditions.push(like(photos.keywords, `%"${keywords[0]}"%`));
+    } else if (keywords.length > 1) {
+      conditions.push(or(...keywords.map((k) => like(photos.keywords, `%"${k}"%`))));
+    }
   }
 
   if (filters.folder) {

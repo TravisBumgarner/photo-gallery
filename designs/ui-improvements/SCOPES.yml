@@ -1,0 +1,125 @@
+project: UI Improvements
+repo: travisbumgarner/photo-gallery
+design_file: null  # User request, no formal design doc
+scoping_date: 2026-02-03
+
+milestones:
+  - number: 5
+    title: "1. UI Polish: Sliders, Folders, and Metadata"
+    description: All UI improvements - slider labels, folder dropdown height, PhotoViewer metadata, sticky headers, and photo preloading
+    branch:
+      working: 39-ui-improvements
+      base: main
+
+tasks:
+  - id: 1
+    github_issue: 39
+    milestone: 5
+    title: Improve ISO and Aperture range slider labels
+    description: |
+      The ISO and Aperture range sliders in FilterPanel don't display their labels well.
+      The floating value labels can overlap or be hard to read. Add static min/max labels
+      at the ends of each slider to provide clear context for the range boundaries.
+
+      Files: frontend/src/components/FilterPanel.tsx (lines 414-495)
+    acceptance_criteria:
+      - ISO slider shows min/max values at left/right ends (e.g., "100" and "6400")
+      - Aperture slider shows min/max values with f/ prefix (e.g., "f/1.4" and "f/22")
+      - Labels styled consistently with existing caption typography
+      - Labels don't interfere with slider thumbs or floating value labels
+    depends_on: []
+    effort: 1
+    status: completed
+
+  - id: 2
+    github_issue: 40
+    milestone: 5
+    title: Cap scroll height of folder dropdown menus
+    description: |
+      The folder navigation dropdowns in Toolbar can become very long when there are
+      many folders at a given level. Add a max height to the dropdown menus so they
+      don't overflow the viewport.
+
+      Files: frontend/src/components/Toolbar.tsx (lines 149-206, the Select components)
+    acceptance_criteria:
+      - Folder segment Select dropdowns have max height (e.g., 300px)
+      - "Select folder..." dropdown also has same max height
+      - Dropdowns scroll internally when content exceeds max height
+      - Scrollbar visible when content overflows
+    depends_on: []
+    effort: 1
+    status: completed
+
+  - id: 3
+    github_issue: 41
+    milestone: 5
+    title: Add rating and color label to PhotoViewer metadata
+    description: |
+      The PhotoViewer shows camera settings and file details but is missing the rating
+      (stars) and color label metadata that are available in the database and shown in
+      the sidebar filters. Add these fields to both desktop and mobile metadata views.
+
+      - Rating: 0-5 stars using MUI Rating component (read-only)
+      - Label: colored Chip matching FilterPanel colors (Red, Yellow, Green, Blue, Purple)
+
+      Files: frontend/src/components/PhotoViewer.tsx
+    acceptance_criteria:
+      - Rating displayed using MUI Rating component (read-only, 0-5 stars)
+      - Color label displayed as colored Chip (Red, Yellow, Green, Blue, Purple)
+      - Both fields show "N/A" or are hidden when not set
+      - Fields added to both desktop and mobile metadata views
+    depends_on: []
+    effort: 2
+    status: completed
+
+  - id: 4
+    github_issue: 42
+    milestone: 5
+    title: Make FilterPanel section headers sticky
+    description: |
+      Currently when scrolling the FilterPanel sidebar, all content scrolls together
+      and section headers disappear off-screen. Make section headers sticky so users
+      can always see which sections exist and quickly navigate between them.
+
+      Use CSS position: sticky with appropriate top values. May need to restructure
+      the Box/Collapse hierarchy for sticky positioning to work correctly. Consider
+      z-index and visual distinction (shadow/border) when headers are stuck.
+
+      Files: frontend/src/components/FilterPanel.tsx
+    acceptance_criteria:
+      - All section headers (Sort, General, Camera, Lens, Aspect Ratio, Dates, Tags) remain visible
+      - Headers stick to top as their section scrolls, stacking appropriately
+      - Only expanded section's content scrolls beneath sticky headers
+      - Visual distinction (shadow or border) when a header is stuck
+      - Works with existing accordion (one-section-open) behavior
+      - Responsive on both desktop and mobile sidebar views
+    depends_on: []
+    effort: 3
+    status: completed
+
+  - id: 5
+    github_issue: 43
+    milestone: 5
+    title: Implement progressive photo preloading in PhotoViewer
+    description: |
+      The PhotoViewer currently loads images on-demand, causing noticeable delay when
+      navigating between photos. Implement progressive preloading:
+
+      1. When a photo is selected, immediately preload prev and next photos
+      2. Once those are loaded, preload one more in each direction (prev-1 and next+1)
+
+      Use new Image() to preload images. Track loaded state to trigger second-level
+      preloading after first level completes. Handle edge cases: less than 5 photos,
+      viewer closed mid-preload.
+
+      Files: frontend/src/components/GalleryPage.tsx or PhotoViewer.tsx
+    acceptance_criteria:
+      - When PhotoViewer opens or photo changes, prev/next images begin preloading
+      - After prev/next loaded, prev-1 and next+1 begin preloading
+      - Preloading uses full-resolution image path (/images/${photo.originalPath})
+      - Preloading respects circular navigation (wraps at array boundaries)
+      - Preloaded images cached by browser (no re-fetch on navigation)
+      - Preloading cancelled/reset when viewer closes or photo list changes
+    depends_on: []
+    effort: 2
+    status: completed

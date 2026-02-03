@@ -3,10 +3,12 @@ import {
   ArrowForward as ArrowForwardIcon,
   CameraAlt as CameraIcon,
   Close as CloseIcon,
+  Grade as GradeIcon,
   Info as InfoIcon,
   InfoOutlined as InfoOutlinedIcon,
   Label as LabelIcon,
   Settings as SettingsIcon,
+  Star as StarIcon,
 } from '@mui/icons-material';
 import {
   Box,
@@ -16,12 +18,13 @@ import {
   Divider,
   IconButton,
   Paper,
+  Rating,
   Stack,
   Typography,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Photo } from '@/types';
 
 interface PhotoViewerProps {
@@ -77,6 +80,49 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
     };
   }, [onClose, onNavigate]);
 
+  // Progressive photo preloading
+  const preloadedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (photos.length <= 1) return;
+
+    const getPhotoAtOffset = (offset: number) => {
+      const index =
+        (currentIndex + offset + photos.length) % photos.length;
+      return photos[index];
+    };
+
+    const preloadImage = (p: Photo): Promise<void> => {
+      const src = `/images/${p.originalPath}`;
+      if (preloadedRef.current.has(src)) {
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          preloadedRef.current.add(src);
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = src;
+      });
+    };
+
+    // Level 1: Preload prev and next
+    const prev = getPhotoAtOffset(-1);
+    const next = getPhotoAtOffset(1);
+
+    Promise.all([preloadImage(prev), preloadImage(next)]).then(() => {
+      // Level 2: Preload prev-1 and next+1 (if we have enough photos)
+      if (photos.length > 3) {
+        const prevPrev = getPhotoAtOffset(-2);
+        const nextNext = getPhotoAtOffset(2);
+        preloadImage(prevPrev);
+        preloadImage(nextNext);
+      }
+    });
+  }, [photo.id, photos, currentIndex]);
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -95,6 +141,14 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
   };
 
   const keywords = photo.keywords ? JSON.parse(photo.keywords) : [];
+
+  const labelColors: Record<string, string> = {
+    Red: '#f44336',
+    Yellow: '#ffeb3b',
+    Green: '#4caf50',
+    Blue: '#2196f3',
+    Purple: '#9c27b0',
+  };
 
   return (
     <Dialog
@@ -181,6 +235,51 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
               >
                 {isMobile ? (
                   <>
+                    {/* Rating and Label row */}
+                    <Stack direction="row" spacing={2} alignItems="center">
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">
+                          Rating
+                        </Typography>
+                        <Box>
+                          {photo.rating ? (
+                            <Rating
+                              value={photo.rating}
+                              readOnly
+                              size="small"
+                              emptyIcon={
+                                <StarIcon
+                                  style={{ opacity: 0.3 }}
+                                  fontSize="inherit"
+                                />
+                              }
+                            />
+                          ) : (
+                            <Typography variant="body2">N/A</Typography>
+                          )}
+                        </Box>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">
+                          Label
+                        </Typography>
+                        <Box>
+                          {photo.label && labelColors[photo.label] ? (
+                            <Chip
+                              size="small"
+                              label={photo.label}
+                              sx={{
+                                bgcolor: labelColors[photo.label],
+                                color:
+                                  photo.label === 'Yellow' ? 'black' : 'white',
+                              }}
+                            />
+                          ) : (
+                            <Typography variant="body2">N/A</Typography>
+                          )}
+                        </Box>
+                      </Box>
+                    </Stack>
                     <Box
                       sx={{
                         display: 'grid',
@@ -285,6 +384,72 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           <Typography variant="body2">
                             {photo.lens || 'N/A'}
                           </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    <Divider />
+
+                    <Box>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        mb={1}
+                      >
+                        <GradeIcon fontSize="small" />
+                        <Typography variant="subtitle2">Rating</Typography>
+                      </Stack>
+                      <Stack spacing={1}>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Stars:
+                          </Typography>
+                          <Box>
+                            {photo.rating ? (
+                              <Rating
+                                value={photo.rating}
+                                readOnly
+                                size="small"
+                                emptyIcon={
+                                  <StarIcon
+                                    style={{ opacity: 0.3 }}
+                                    fontSize="inherit"
+                                  />
+                                }
+                              />
+                            ) : (
+                              <Typography variant="body2">N/A</Typography>
+                            )}
+                          </Box>
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Label:
+                          </Typography>
+                          <Box>
+                            {photo.label && labelColors[photo.label] ? (
+                              <Chip
+                                size="small"
+                                label={photo.label}
+                                sx={{
+                                  bgcolor: labelColors[photo.label],
+                                  color:
+                                    photo.label === 'Yellow'
+                                      ? 'black'
+                                      : 'white',
+                                }}
+                              />
+                            ) : (
+                              <Typography variant="body2">N/A</Typography>
+                            )}
+                          </Box>
                         </Box>
                       </Stack>
                     </Box>

@@ -6,7 +6,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface SearchBarProps {
   value: string;
@@ -31,9 +31,15 @@ function SearchBar({ value, onChange }: SearchBarProps) {
   const [groupedOptions, setGroupedOptions] = useState<OptionGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [showGrouped, setShowGrouped] = useState(false);
+  const lastNotifiedRef = useRef(value);
 
   useEffect(() => {
+    // Only notify parent if value actually changed from last notified value
+    if (localValue === lastNotifiedRef.current) {
+      return;
+    }
     const timer = setTimeout(() => {
+      lastNotifiedRef.current = localValue;
       onChange(localValue);
     }, 500);
 

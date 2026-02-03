@@ -65,6 +65,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
   };
 
   const loadingRef = useRef(false);
+  const loadMorePendingRef = useRef(false);
   const initialLoadRef = useRef(false);
   const prevFiltersRef = useRef<string>('');
 
@@ -112,6 +113,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
       } finally {
         setLoading(false);
         loadingRef.current = false;
+        loadMorePendingRef.current = false;
       }
     },
     [],
@@ -135,6 +137,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
         prevFiltersRef.current = filtersString;
         setPage(1);
         setPhotos([]);
+        loadMorePendingRef.current = false;
         fetchPhotos(1, filters, false);
       }
     }
@@ -142,25 +145,34 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
 
   // Handle load more for virtual grid
   const handleLoadMore = useCallback(() => {
-    if (hasMore && !loadingRef.current) {
+    if (hasMore && !loadingRef.current && !loadMorePendingRef.current) {
+      loadMorePendingRef.current = true;
       setPage((prev) => prev + 1);
     }
   }, [hasMore]);
 
   // Handle page changes for pagination
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
   useEffect(() => {
     if (page > 1) {
-      fetchPhotos(page, filters, true);
+      fetchPhotos(page, filtersRef.current, true);
     }
-  }, [page, filters, fetchPhotos]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, fetchPhotos]);
 
-  const handleFilterChange = (newFilters: Partial<PhotoFilters>) => {
+  const handleFilterChange = useCallback((newFilters: Partial<PhotoFilters>) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
-  };
+  }, []);
 
-  const handlePhotoClick = (photo: Photo) => {
+  const handlePhotoClick = useCallback((photo: Photo) => {
     setSelectedPhoto(photo);
-  };
+  }, []);
+
+  const handleCloseFilters = useCallback(() => {
+    setShowFilters(false);
+  }, []);
 
   const handlePhotoNavigate = (direction: 'prev' | 'next') => {
     if (photos.length === 0) return;
@@ -200,7 +212,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
         <FilterPanel
           filters={filters}
           onFilterChange={handleFilterChange}
-          onClose={() => setShowFilters(false)}
+          onClose={handleCloseFilters}
           onLogout={onLogout}
         />
       </Drawer>

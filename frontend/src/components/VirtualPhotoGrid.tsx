@@ -1,5 +1,5 @@
 import { Box, Button, CircularProgress } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import PhotoCard from '@/components/PhotoCard';
 import type { Photo } from '@/types';
 
@@ -16,7 +16,7 @@ const GAP = 16; // MUI gap: 2 = theme.spacing(2) = 16px
 const PADDING = 16; // MUI p: 2 = 16px
 const OVERSCAN = 2;
 
-function VirtualPhotoGrid({
+const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   photos,
   onPhotoClick,
   hasMore,
@@ -65,7 +65,12 @@ function VirtualPhotoGrid({
     const startIndex = startRow * columnCount;
     const endIndex = Math.min(photos.length, endRow * columnCount);
 
-    setVisibleRange({ start: startIndex, end: endIndex });
+    setVisibleRange((prev) => {
+      if (prev.start === startIndex && prev.end === endIndex) {
+        return prev; // Same values, don't trigger re-render
+      }
+      return { start: startIndex, end: endIndex };
+    });
   }, [columnCount, photos.length, rowPitch]);
 
   // Update visible range on scroll
@@ -161,6 +166,6 @@ function VirtualPhotoGrid({
       )}
     </Box>
   );
-}
+});
 
 export default VirtualPhotoGrid;
