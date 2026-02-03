@@ -77,4 +77,13 @@ export interface StatsResponse {
   shutterSpeedDistribution: { shutterSpeed: string; count: number }[];
   photosByDayOfWeek: { day: string; count: number }[];
   photosByHourOfDay: { hour: number; count: number }[];
+  // New stats
+  photosByYear: { year: string; count: number }[];
+  yearOverYear: { month: number; [year: string]: number }[];
+  cameraLensCombinations: { camera: string; lens: string; count: number }[];
+  photosByDate: { date: string; count: number }[];
+  topDays: { date: string; count: number }[];
+  cameraUsageOverTime: { month: string; camera: string; count: number }[];
+  lensUsageOverTime: { month: string; lens: string; count: number }[];
+  focalLengthVsAperture: { focalLength: number; aperture: number; count: number }[];
 }

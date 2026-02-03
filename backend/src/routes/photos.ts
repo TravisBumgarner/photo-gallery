@@ -532,6 +532,14 @@ router.get('/photos/stats', async (req, res) => {
         shutterSpeedDistribution: [],
         photosByDayOfWeek: [],
         photosByHourOfDay: [],
+        photosByYear: [],
+        yearOverYear: [],
+        cameraLensCombinations: [],
+        photosByDate: [],
+        topDays: [],
+        cameraUsageOverTime: [],
+        lensUsageOverTime: [],
+        focalLengthVsAperture: [],
       };
       return res.json(result);
     }
@@ -663,6 +671,112 @@ router.get('/photos/stats', async (req, res) => {
       )
       .all() as { hour: number; count: number }[];
 
+    // 13. Photos by year
+    const photosByYear = client
+      .prepare(
+        `SELECT strftime('%Y', date_captured, 'unixepoch') as year, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY year ORDER BY year`
+      )
+      .all() as { year: string; count: number }[];
+
+    // 14. Year-over-year comparison (photos per month, grouped by year)
+    const yearOverYearRaw = client
+      .prepare(
+        `SELECT
+           CAST(strftime('%m', date_captured, 'unixepoch') AS INTEGER) as month,
+           strftime('%Y', date_captured, 'unixepoch') as year,
+           count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY year, month
+         ORDER BY month, year`
+      )
+      .all() as { month: number; year: string; count: number }[];
+
+    // Transform into format suitable for multi-line chart
+    type YearOverYearEntry = { month: number; [year: string]: number };
+    const yearOverYearMap = new Map<number, YearOverYearEntry>();
+    yearOverYearRaw.forEach(({ month, year, count }) => {
+      if (!yearOverYearMap.has(month)) {
+        yearOverYearMap.set(month, { month });
+      }
+      yearOverYearMap.get(month)![year] = count;
+    });
+    const yearOverYear = Array.from(yearOverYearMap.values()).sort(
+      (a, b) => a.month - b.month
+    );
+
+    // 15. Camera + Lens combinations
+    const cameraLensCombinations = client
+      .prepare(
+        `SELECT camera, lens, count(*) as count
+         FROM photos
+         ${idFilterAnd} camera IS NOT NULL AND lens IS NOT NULL
+         GROUP BY camera, lens
+         ORDER BY count DESC
+         LIMIT 50`
+      )
+      .all() as { camera: string; lens: string; count: number }[];
+
+    // 16. Photos by date (for calendar heatmap)
+    const photosByDate = client
+      .prepare(
+        `SELECT DATE(date_captured, 'unixepoch') as date, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY date
+         ORDER BY date`
+      )
+      .all() as { date: string; count: number }[];
+
+    // 17. Top 10 most productive days
+    const topDays = client
+      .prepare(
+        `SELECT DATE(date_captured, 'unixepoch') as date, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL
+         GROUP BY date
+         ORDER BY count DESC
+         LIMIT 10`
+      )
+      .all() as { date: string; count: number }[];
+
+    // 18. Camera usage over time (monthly)
+    const cameraUsageOverTime = client
+      .prepare(
+        `SELECT strftime('%Y-%m', date_captured, 'unixepoch') as month, camera, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL AND camera IS NOT NULL
+         GROUP BY month, camera
+         ORDER BY month, count DESC`
+      )
+      .all() as { month: string; camera: string; count: number }[];
+
+    // 19. Lens usage over time (monthly)
+    const lensUsageOverTime = client
+      .prepare(
+        `SELECT strftime('%Y-%m', date_captured, 'unixepoch') as month, lens, count(*) as count
+         FROM photos
+         ${idFilterAnd} date_captured IS NOT NULL AND lens IS NOT NULL
+         GROUP BY month, lens
+         ORDER BY month, count DESC`
+      )
+      .all() as { month: string; lens: string; count: number }[];
+
+    // 20. Focal length vs aperture scatter data
+    const focalLengthVsAperture = client
+      .prepare(
+        `SELECT focal_length as focalLength, aperture, count(*) as count
+         FROM photos
+         ${idFilterAnd} focal_length IS NOT NULL AND aperture IS NOT NULL
+         GROUP BY focal_length, aperture
+         ORDER BY count DESC
+         LIMIT 500`
+      )
+      .all() as { focalLength: number; aperture: number; count: number }[];
+
     const result: StatsResponse = {
       totalPhotos,
       photosOverTime,
@@ -676,6 +790,14 @@ router.get('/photos/stats', async (req, res) => {
       shutterSpeedDistribution,
       photosByDayOfWeek,
       photosByHourOfDay,
+      photosByYear,
+      yearOverYear,
+      cameraLensCombinations,
+      photosByDate,
+      topDays,
+      cameraUsageOverTime,
+      lensUsageOverTime,
+      focalLengthVsAperture,
     };
 
     res.json(result);
