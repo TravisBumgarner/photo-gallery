@@ -147,24 +147,12 @@ function SectionHeader({
   );
 }
 
-const propsRef = { filters: null as any, onFilterChange: null as any, onClose: null as any, onLogout: null as any };
-
 const FilterPanel = memo(function FilterPanel({
   filters,
   onFilterChange,
   onClose,
   onLogout,
 }: FilterPanelProps) {
-  const changed = [];
-  if (propsRef.filters !== filters) changed.push('filters');
-  if (propsRef.onFilterChange !== onFilterChange) changed.push('onFilterChange');
-  if (propsRef.onClose !== onClose) changed.push('onClose');
-  if (propsRef.onLogout !== onLogout) changed.push('onLogout');
-  propsRef.filters = filters;
-  propsRef.onFilterChange = onFilterChange;
-  propsRef.onClose = onClose;
-  propsRef.onLogout = onLogout;
-  console.log('[FilterPanel] render, changed props:', changed);
   const [cameras, setCameras] = useState<string[]>([]);
   const [lenses, setLenses] = useState<string[]>([]);
   const [dates, setDates] = useState<string[]>([]);

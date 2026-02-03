@@ -20,7 +20,6 @@ interface GalleryPageProps {
 }
 
 function GalleryPage({ onLogout }: GalleryPageProps) {
-  console.log('[GalleryPage] render');
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -164,8 +163,6 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
   }, [page, fetchPhotos]);
 
   const handleFilterChange = useCallback((newFilters: Partial<PhotoFilters>) => {
-    console.log('[GalleryPage] handleFilterChange called with:', newFilters);
-    console.trace();
     setFilters((prev) => ({ ...prev, ...newFilters }));
   }, []);
 

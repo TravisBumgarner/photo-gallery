@@ -119,9 +119,6 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   const visiblePhotos = photos.slice(visibleRange.start, visibleRange.end);
   const offsetY = Math.floor(visibleRange.start / columnCount) * rowPitch;
 
-  console.log('[VirtualGrid] render', { photosLength: photos.length, containerWidth, visibleRange, loading, hasMore });
-
-
   return (
     <Box
       ref={containerRef}
