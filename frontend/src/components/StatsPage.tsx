@@ -202,7 +202,7 @@ function StatsPage() {
                 <BarChart
                   data={stats.cameraDistribution}
                   layout="vertical"
-                  margin={{ left: 80 }}
+                  margin={{ left: 20 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
                   <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
@@ -211,7 +211,8 @@ function StatsPage() {
                     dataKey="camera"
                     tick={{ fontSize: 11 }}
                     stroke="hsl(0 0% 50%)"
-                    width={75}
+                    width={160}
+                    tickFormatter={(v) => v.length > 22 ? `${v.slice(0, 20)}...` : v}
                   />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#82ca9d" />
@@ -225,7 +226,7 @@ function StatsPage() {
                 <BarChart
                   data={stats.lensDistribution}
                   layout="vertical"
-                  margin={{ left: 120 }}
+                  margin={{ left: 20 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
                   <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
@@ -234,7 +235,8 @@ function StatsPage() {
                     dataKey="lens"
                     tick={{ fontSize: 10 }}
                     stroke="hsl(0 0% 50%)"
-                    width={115}
+                    width={180}
+                    tickFormatter={(v) => v.length > 28 ? `${v.slice(0, 26)}...` : v}
                   />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#ffc658" />
