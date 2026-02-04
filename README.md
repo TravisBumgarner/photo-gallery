@@ -2,6 +2,17 @@
 
 Self-hosted photo gallery for browsing Lightroom photos quickly.
 
+## Features
+
+- Browse thousands of photos without lag
+- Filter by camera, lens, date, rating, color label, and more
+- Navigate by folder structure
+- Search your entire library
+- See stats about your photography habits
+- Works on phone and desktop
+- Password protected
+- Easy Lightroom export workflow
+
 ![Photo Gallery Grid](readme/grid.png)
 ![Photo Detail Single Photo](readme/photo.png)
 ![Photo Stats](readme/stats.png)
