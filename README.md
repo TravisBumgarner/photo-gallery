@@ -1,11 +1,21 @@
 # Photo Gallery
 
-Self hosted mobile photo gallery for browsing Lightroom photos quickly.
+Self-hosted photo gallery for browsing Lightroom photos quickly.
+
+## Features
+
+- Browse thousands of photos without lag
+- Filter by camera, lens, date, rating, color label, and more
+- Navigate by folder structure
+- Search your entire library
+- See stats about your photography habits
+- Works on phone and desktop
+- Password protected
+- Easy Lightroom export workflow
 
 ![Photo Gallery Grid](readme/grid.png)
 ![Photo Detail Single Photo](readme/photo.png)
 ![Photo Stats](readme/stats.png)
-
 
 Built with React + Vite, Express + Drizzle, and SQLite. Managed via npm workspaces.
 
@@ -43,10 +53,10 @@ Ingestion takes photos out of your library, extracts metadata, generates thumbna
 1. Preparing Photos
     - Lightroom:
         1. `File -> Export` and click `Add`. Select the preset in `lightroom-export-presets`.
-        2. Selecting `Export To: Same folder as original photo` will the Photo Gallery to generate a folder structure for ease of navigation. Alternatively select a single folder outside of the library to not take advantage of this feature.
+        2. Selecting `Export To: Same folder as original photo` will allow the Photo Gallery to generate a folder structure for ease of navigation. Alternatively select a single folder outside of the library to not take advantage of this feature.
     - No other apps are currently supported, feel free to reach out if another is wanted.
 
-1. `npm run ingest`
+2. `npm run ingest`
 
 ## Deployment
 
@@ -57,8 +67,8 @@ Ingestion takes photos out of your library, extracts metadata, generates thumbna
 Builds the frontend and backend locally, then syncs everything to the remote NearlyFreeSpeech host (`nfs_photo-gallery`). The script:
 
 1. Installs dependencies and builds both frontend (Vite) and backend (TypeScript)
-1. Rsync's the compiled backend, frontend dist, migrations, and `run.sh` to `/home/protected/`
-1. Installs production dependencies on the remote server and sets permissions
+2. Rsyncs the compiled backend, frontend dist, migrations, and `run.sh` to `/home/protected/`
+3. Installs production dependencies on the remote server and sets permissions
 
 The remote `.env` and `sqlite.db` are **not** overwritten by the deploy — manage those on the server directly. In production the backend serves the frontend dist, so no separate web server is needed for the SPA.
 
