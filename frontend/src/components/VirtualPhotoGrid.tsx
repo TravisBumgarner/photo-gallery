@@ -1,7 +1,10 @@
-import { Box, Button, CircularProgress } from '@mui/material';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
+import { Box, Button, CircularProgress, Typography } from '@mui/material';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PhotoCard from '@/components/PhotoCard';
+import { subtleBackground } from '@/styles/styleConsts';
 import type { Photo } from '@/types';
+import { groupPhotosBySort } from '@/utils/groupPhotos';
 
 interface VirtualPhotoGridProps {
   photos: Photo[];
@@ -10,11 +13,29 @@ interface VirtualPhotoGridProps {
   loadMore: () => void;
   loading: boolean;
   columnCount: number;
+  sortBy?: string;
 }
 
-const GAP = 16; // MUI gap: 2 = theme.spacing(2) = 16px
-const PADDING = 16; // MUI p: 2 = 16px
+const GAP = 16;
+const PADDING = 16;
 const OVERSCAN = 2;
+const SECTION_HEADER_HEIGHT = 44;
+
+type VirtualRow =
+  | {
+      type: 'header';
+      y: number;
+      height: number;
+      sectionKey: string;
+      label: string;
+      photoCount: number;
+    }
+  | {
+      type: 'photos';
+      y: number;
+      height: number;
+      photos: Photo[];
+    };
 
 const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   photos,
@@ -23,11 +44,24 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   loadMore,
   loading,
   columnCount,
+  sortBy,
 }: VirtualPhotoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
   const [containerWidth, setContainerWidth] = useState(0);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // Clear collapsed sections when sort field changes
+  const prevSortByRef = useRef(sortBy);
+  useEffect(() => {
+    if (sortBy !== prevSortByRef.current) {
+      prevSortByRef.current = sortBy;
+      setCollapsedSections(new Set());
+    }
+  }, [sortBy]);
 
   // Measure container width so row height matches actual layout
   useEffect(() => {
@@ -45,33 +79,102 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     containerWidth > 0
       ? (containerWidth - PADDING * 2 - (columnCount - 1) * GAP) / columnCount
       : 300;
-  const rowPitch = cellSize + GAP;
+
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // Build layout with section headers and photo rows
+  const layout = useMemo(() => {
+    if (!sortBy) {
+      const rows: VirtualRow[] = [];
+      const totalPhotoRows = Math.ceil(photos.length / columnCount);
+      let y = PADDING;
+      for (let r = 0; r < totalPhotoRows; r++) {
+        const rowPhotos = photos.slice(
+          r * columnCount,
+          (r + 1) * columnCount,
+        );
+        rows.push({ type: 'photos', y, height: cellSize, photos: rowPhotos });
+        y += cellSize + GAP;
+      }
+      const totalHeight = rows.length > 0 ? y - GAP + PADDING : 0;
+      return { rows, totalHeight };
+    }
+
+    const sections = groupPhotosBySort(photos, sortBy);
+    const rows: VirtualRow[] = [];
+    let y = PADDING;
+
+    for (const section of sections) {
+      rows.push({
+        type: 'header',
+        y,
+        height: SECTION_HEADER_HEIGHT,
+        sectionKey: section.key,
+        label: section.label,
+        photoCount: section.photos.length,
+      });
+      y += SECTION_HEADER_HEIGHT + GAP;
+
+      if (!collapsedSections.has(section.key)) {
+        const photoRowCount = Math.ceil(section.photos.length / columnCount);
+        for (let r = 0; r < photoRowCount; r++) {
+          const rowPhotos = section.photos.slice(
+            r * columnCount,
+            (r + 1) * columnCount,
+          );
+          rows.push({
+            type: 'photos',
+            y,
+            height: cellSize,
+            photos: rowPhotos,
+          });
+          y += cellSize + GAP;
+        }
+      }
+    }
+
+    const totalHeight = rows.length > 0 ? y - GAP + PADDING : 0;
+    return { rows, totalHeight };
+  }, [photos, sortBy, columnCount, cellSize, collapsedSections]);
 
   // Calculate visible range based on scroll position
   const updateVisibleRange = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || layout.rows.length === 0) return;
 
     const scrollTop = container.scrollTop;
     const viewportHeight = container.clientHeight;
+    const overscanPx = OVERSCAN * (cellSize + GAP);
 
-    const startRow = Math.max(
-      0,
-      Math.floor(scrollTop / rowPitch) - OVERSCAN,
-    );
-    const endRow =
-      Math.ceil((scrollTop + viewportHeight) / rowPitch) + OVERSCAN;
+    let start = 0;
+    let end = layout.rows.length;
 
-    const startIndex = startRow * columnCount;
-    const endIndex = Math.min(photos.length, endRow * columnCount);
+    for (let i = 0; i < layout.rows.length; i++) {
+      if (layout.rows[i].y + layout.rows[i].height > scrollTop - overscanPx) {
+        start = i;
+        break;
+      }
+    }
+
+    for (let i = start; i < layout.rows.length; i++) {
+      if (layout.rows[i].y > scrollTop + viewportHeight + overscanPx) {
+        end = i;
+        break;
+      }
+    }
 
     setVisibleRange((prev) => {
-      if (prev.start === startIndex && prev.end === endIndex) {
-        return prev; // Same values, don't trigger re-render
-      }
-      return { start: startIndex, end: endIndex };
+      if (prev.start === start && prev.end === end) return prev;
+      return { start, end };
     });
-  }, [columnCount, photos.length, rowPitch]);
+  }, [layout.rows, cellSize]);
 
   // Update visible range on scroll
   useEffect(() => {
@@ -111,13 +214,7 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     };
   }, [hasMore, loading, loadMore]);
 
-  const totalRows = Math.ceil(photos.length / columnCount);
-  const totalHeight =
-    totalRows > 0
-      ? PADDING * 2 + totalRows * cellSize + (totalRows - 1) * GAP
-      : 0;
-  const visiblePhotos = photos.slice(visibleRange.start, visibleRange.end);
-  const offsetY = Math.floor(visibleRange.start / columnCount) * rowPitch;
+  const visibleRows = layout.rows.slice(visibleRange.start, visibleRange.end);
 
   return (
     <Box
@@ -128,25 +225,79 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
         overflowX: 'hidden',
       }}
     >
-      <Box sx={{ height: totalHeight, position: 'relative' }}>
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
-            gap: 2,
-            p: 2,
-            transform: `translateY(${offsetY}px)`,
-            willChange: 'transform',
-          }}
-        >
-          {visiblePhotos.map((photo) => (
-            <PhotoCard
-              key={photo.id}
-              photo={photo}
-              onClick={() => onPhotoClick(photo)}
-            />
-          ))}
-        </Box>
+      <Box sx={{ height: layout.totalHeight, position: 'relative' }}>
+        {visibleRows.map((row) => {
+          if (row.type === 'header') {
+            const isCollapsed = collapsedSections.has(row.sectionKey);
+            return (
+              <Box
+                key={`header-${row.sectionKey}`}
+                onClick={() => toggleSection(row.sectionKey)}
+                sx={{
+                  position: 'absolute',
+                  top: row.y,
+                  left: PADDING,
+                  right: PADDING,
+                  height: SECTION_HEADER_HEIGHT,
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  bgcolor: subtleBackground('slightly'),
+                  px: 1.5,
+                  userSelect: 'none',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                <ExpandMoreIcon
+                  sx={{
+                    transform: isCollapsed
+                      ? 'rotate(-90deg)'
+                      : 'rotate(0deg)',
+                    transition: 'transform 0.2s',
+                    mr: 1,
+                    fontSize: 16,
+                  }}
+                />
+                <Typography variant="caption" fontWeight="600">
+                  {row.label}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 0.75, fontSize: '0.65rem' }}
+                >
+                  ({row.photoCount})
+                </Typography>
+              </Box>
+            );
+          }
+
+          return (
+            <Box
+              key={`photos-${row.y}`}
+              sx={{
+                position: 'absolute',
+                top: row.y,
+                left: PADDING,
+                right: PADDING,
+                height: row.height,
+                display: 'grid',
+                gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
+                gap: `${GAP}px`,
+              }}
+            >
+              {row.photos.map((photo) => (
+                <PhotoCard
+                  key={photo.id}
+                  photo={photo}
+                  onClick={() => onPhotoClick(photo)}
+                />
+              ))}
+            </Box>
+          );
+        })}
       </Box>
 
       <div ref={observerTarget} style={{ height: '20px' }} />

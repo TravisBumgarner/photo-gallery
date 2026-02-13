@@ -337,6 +337,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
               loadMore={handleLoadMore}
               loading={loading}
               columnCount={columnCount}
+              sortBy={filters.sortBy}
             />
           )}
         </Box>
