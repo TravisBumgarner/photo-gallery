@@ -33,6 +33,8 @@ export function buildFilterConditions(filters: {
   maxAperture?: number;
   startDate?: string;
   endDate?: string;
+  selectedMonths?: string;
+  selectedDates?: string;
   aspectRatio?: string;
   orientation?: string;
   rating?: number;
