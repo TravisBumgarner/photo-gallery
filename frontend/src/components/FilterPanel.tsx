@@ -116,10 +116,10 @@ function SectionHeader({
         borderRadius: 0.5,
       }}
     >
-      <Typography variant="caption" fontWeight="600">
-        {label}
-      </Typography>
-      <Stack direction="row" spacing={0.5} alignItems="center">
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
+        <Typography variant="caption" fontWeight="600">
+          {label}
+        </Typography>
         {hasActiveFilter && (
           <Typography
             variant="caption"
@@ -130,19 +130,24 @@ function SectionHeader({
             sx={{
               cursor: 'pointer',
               color: 'text.secondary',
-              '&:hover': { color: 'text.primary' },
+              '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
               fontSize: '0.65rem',
+              px: 0.75,
+              py: 0.25,
+              borderRadius: 0.5,
+              border: '1px solid',
+              borderColor: 'divider',
             }}
           >
             Clear
           </Typography>
         )}
-        {isExpanded ? (
-          <ExpandLessIcon sx={{ fontSize: 16 }} />
-        ) : (
-          <ExpandMoreIcon sx={{ fontSize: 16 }} />
-        )}
       </Stack>
+      {isExpanded ? (
+        <ExpandLessIcon sx={{ fontSize: 16 }} />
+      ) : (
+        <ExpandMoreIcon sx={{ fontSize: 16 }} />
+      )}
     </Box>
   );
 }

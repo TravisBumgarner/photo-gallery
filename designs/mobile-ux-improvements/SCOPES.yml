@@ -189,7 +189,7 @@ tasks:
       - The layout looks clean and intentional, not just "spaced out"
     depends_on: [4]
     effort: 1
-    status: scoped
+    status: implementing
 
   - id: 7
     milestone: 1
