@@ -1,9 +1,12 @@
-import { ChevronRight as ChevronRightIcon } from '@mui/icons-material';
+import { ChevronRight as ChevronRightIcon, FilterList as FilterListIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
+  Chip,
   CircularProgress,
   Drawer,
+  Fab,
+  Stack,
   Typography,
   useMediaQuery,
   useTheme,
@@ -235,7 +238,6 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
           onFilterChange={handleFilterChange}
           columnCount={columnCount}
           onColumnCountChange={handleColumnCountChange}
-          onToggleFilters={() => setShowFilters((prev) => !prev)}
         />
 
         {/* Photos Grid */}
@@ -266,22 +268,60 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
           )}
 
           {photos.length === 0 && !loading ? (
-            <Box sx={{ textAlign: 'center', mt: 8 }}>
+            <Box sx={{ textAlign: 'center', mt: 8, px: 2 }}>
               <Typography variant="h6" color="text.secondary" mb={2}>
                 No photos found. Try adjusting your filters.
               </Typography>
-              <Button
-                variant="contained"
-                onClick={() => {
-                  setFilters({
-                    search: '',
-                    sortBy: 'dateCaptured',
-                    sortOrder: 'desc',
-                  });
-                }}
-              >
-                Clear All Filters
-              </Button>
+              {(() => {
+                const activeFilters: { label: string; onClear: () => void }[] = [];
+                if (filters.search) activeFilters.push({ label: `Search: ${filters.search}`, onClear: () => handleFilterChange({ search: '' }) });
+                if (filters.camera) activeFilters.push({ label: `Camera: ${filters.camera}`, onClear: () => handleFilterChange({ camera: undefined }) });
+                if (filters.lens) activeFilters.push({ label: `Lens: ${filters.lens}`, onClear: () => handleFilterChange({ lens: undefined }) });
+                if (filters.minIso !== undefined || filters.maxIso !== undefined) activeFilters.push({ label: `ISO: ${filters.minIso ?? ''}–${filters.maxIso ?? ''}`, onClear: () => handleFilterChange({ minIso: undefined, maxIso: undefined }) });
+                if (filters.minAperture !== undefined || filters.maxAperture !== undefined) activeFilters.push({ label: `Aperture: f/${filters.minAperture ?? ''}–f/${filters.maxAperture ?? ''}`, onClear: () => handleFilterChange({ minAperture: undefined, maxAperture: undefined }) });
+                if (filters.startDate || filters.endDate) activeFilters.push({ label: `Date: ${filters.startDate ?? ''}–${filters.endDate ?? ''}`, onClear: () => handleFilterChange({ startDate: undefined, endDate: undefined }) });
+                if (filters.aspectRatio) activeFilters.push({ label: `Aspect: ${filters.aspectRatio}`, onClear: () => handleFilterChange({ aspectRatio: undefined }) });
+                if (filters.orientation) activeFilters.push({ label: `Orientation: ${filters.orientation}`, onClear: () => handleFilterChange({ orientation: undefined }) });
+                if (filters.rating !== undefined) activeFilters.push({ label: `Rating: ${filters.rating}+`, onClear: () => handleFilterChange({ rating: undefined }) });
+                if (filters.label) activeFilters.push({ label: `Label: ${filters.label}`, onClear: () => handleFilterChange({ label: undefined }) });
+                if (filters.keyword) activeFilters.push({ label: `Keyword: ${filters.keyword}`, onClear: () => handleFilterChange({ keyword: undefined }) });
+                if (filters.folder) activeFilters.push({ label: `Folder: ${filters.folder}`, onClear: () => handleFilterChange({ folder: '' }) });
+
+                return activeFilters.length > 0 ? (
+                  <Stack spacing={2} alignItems="center">
+                    <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="center" useFlexGap>
+                      {activeFilters.map((f) => (
+                        <Chip key={f.label} label={f.label} onDelete={f.onClear} size="small" />
+                      ))}
+                    </Stack>
+                    <Button
+                      variant="contained"
+                      onClick={() => {
+                        setFilters({
+                          search: '',
+                          sortBy: 'dateCaptured',
+                          sortOrder: 'desc',
+                        });
+                      }}
+                    >
+                      Clear All Filters
+                    </Button>
+                  </Stack>
+                ) : (
+                  <Button
+                    variant="contained"
+                    onClick={() => {
+                      setFilters({
+                        search: '',
+                        sortBy: 'dateCaptured',
+                        sortOrder: 'desc',
+                      });
+                    }}
+                  >
+                    Clear All Filters
+                  </Button>
+                );
+              })()}
             </Box>
           ) : photos.length === 0 && loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
@@ -307,6 +347,25 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
           onClose={() => setSelectedPhoto(null)}
           onNavigate={handlePhotoNavigate}
         />
+      )}
+
+      {/* Mobile FAB for filter toggle */}
+      {isMobile && !showFilters && (
+        <Fab
+          onClick={() => setShowFilters(true)}
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1000,
+            bgcolor: 'primary.main',
+            color: 'primary.contrastText',
+            '&:hover': { bgcolor: 'primary.dark' },
+            boxShadow: 6,
+          }}
+        >
+          <FilterListIcon />
+        </Fab>
       )}
     </Box>
   );

@@ -79,7 +79,7 @@ tasks:
       - Desktop behavior is completely unchanged
     depends_on: []
     effort: 2
-    status: scoped
+    status: completed
 
   - id: 3
     milestone: 1
@@ -111,7 +111,7 @@ tasks:
       - Desktop breadcrumb folder browser is unchanged
     depends_on: []
     effort: 3
-    status: scoped
+    status: completed
 
   - id: 4
     milestone: 1
@@ -162,7 +162,7 @@ tasks:
       - Sort settings (sortBy, sortOrder) are not shown as filter chips
     depends_on: []
     effort: 2
-    status: scoped
+    status: completed
 
   - id: 6
     milestone: 1
@@ -189,7 +189,7 @@ tasks:
       - The layout looks clean and intentional, not just "spaced out"
     depends_on: [4]
     effort: 1
-    status: scoped
+    status: completed
 
   - id: 7
     milestone: 1
@@ -215,7 +215,7 @@ tasks:
       - Touch targets are at least 44px on mobile
     depends_on: [4]
     effort: 1
-    status: scoped
+    status: completed
 
   # ── Milestone 2: Enhanced Date Picker & Sort Section Headers ───────
 

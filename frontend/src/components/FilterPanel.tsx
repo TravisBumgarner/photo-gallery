@@ -116,10 +116,10 @@ function SectionHeader({
         borderRadius: 0.5,
       }}
     >
-      <Typography variant="caption" fontWeight="600">
-        {label}
-      </Typography>
-      <Stack direction="row" spacing={0.5} alignItems="center">
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
+        <Typography variant="caption" fontWeight="600">
+          {label}
+        </Typography>
         {hasActiveFilter && (
           <Typography
             variant="caption"
@@ -130,19 +130,24 @@ function SectionHeader({
             sx={{
               cursor: 'pointer',
               color: 'text.secondary',
-              '&:hover': { color: 'text.primary' },
+              '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
               fontSize: '0.65rem',
+              px: 0.75,
+              py: 0.25,
+              borderRadius: 0.5,
+              border: '1px solid',
+              borderColor: 'text.secondary',
             }}
           >
             Clear
           </Typography>
         )}
-        {isExpanded ? (
-          <ExpandLessIcon sx={{ fontSize: 16 }} />
-        ) : (
-          <ExpandMoreIcon sx={{ fontSize: 16 }} />
-        )}
       </Stack>
+      {isExpanded ? (
+        <ExpandLessIcon sx={{ fontSize: 16 }} />
+      ) : (
+        <ExpandMoreIcon sx={{ fontSize: 16 }} />
+      )}
     </Box>
   );
 }
@@ -948,56 +953,53 @@ const FilterPanel = memo(function FilterPanel({
                         return (
                           <Box key={monthKey} sx={{ mb: 0.25 }}>
                             <Box
+                              onClick={() => {
+                                const newExpanded = new Set(expandedMonths);
+                                if (isExpanded) {
+                                  newExpanded.delete(monthKey);
+                                } else {
+                                  newExpanded.add(monthKey);
+                                }
+                                setExpandedMonths(newExpanded);
+                              }}
                               sx={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
-                                p: 0.5,
+                                py: { xs: 1, sm: 0.5 },
+                                px: { xs: 1, sm: 0.5 },
                                 bgcolor: isMonthSelected
                                   ? 'primary.main'
                                   : 'action.hover',
                                 color: isMonthSelected ? 'white' : 'inherit',
                                 borderRadius: 0.5,
+                                cursor: 'pointer',
+                                '&:hover': { opacity: 0.8 },
                               }}
                             >
-                              <Box
-                                onClick={() => {
-                                  const newExpanded = new Set(expandedMonths);
-                                  if (isExpanded) {
-                                    newExpanded.delete(monthKey);
-                                  } else {
-                                    newExpanded.add(monthKey);
-                                  }
-                                  setExpandedMonths(newExpanded);
-                                }}
-                                sx={{
-                                  flex: 1,
-                                  cursor: 'pointer',
-                                  '&:hover': { opacity: 0.8 },
-                                }}
-                              >
+                              <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
                                 <Typography variant="caption" fontWeight="600">
                                   {monthLabel} ({totalPhotos})
                                 </Typography>
-                              </Box>
-                              <Stack
-                                direction="row"
-                                spacing={0.25}
-                                alignItems="center"
-                              >
                                 <IconButton
                                   size="small"
-                                  onClick={() =>
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     onFilterChange({
                                       startDate: firstDayOfMonth,
                                       endDate: lastDayOfMonth,
-                                    })
-                                  }
+                                    });
+                                  }}
                                   sx={{
-                                    p: 0.25,
+                                    p: 0.5,
                                     color: isMonthSelected
                                       ? 'white'
                                       : 'inherit',
+                                    border: '1px solid',
+                                    borderColor: isMonthSelected
+                                      ? 'rgba(255,255,255,0.3)'
+                                      : 'text.secondary',
+                                    borderRadius: 0.5,
                                     '&:hover': {
                                       bgcolor: isMonthSelected
                                         ? 'primary.dark'
@@ -1005,33 +1007,14 @@ const FilterPanel = memo(function FilterPanel({
                                     },
                                   }}
                                 >
-                                  <CalendarMonthIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => {
-                                    const newExpanded = new Set(expandedMonths);
-                                    if (isExpanded) {
-                                      newExpanded.delete(monthKey);
-                                    } else {
-                                      newExpanded.add(monthKey);
-                                    }
-                                    setExpandedMonths(newExpanded);
-                                  }}
-                                  sx={{
-                                    p: 0.25,
-                                    color: isMonthSelected
-                                      ? 'white'
-                                      : 'inherit',
-                                  }}
-                                >
-                                  {isExpanded ? (
-                                    <ExpandLessIcon sx={{ fontSize: 16 }} />
-                                  ) : (
-                                    <ExpandMoreIcon sx={{ fontSize: 16 }} />
-                                  )}
+                                  <CalendarMonthIcon sx={{ fontSize: 14 }} />
                                 </IconButton>
                               </Stack>
+                              {isExpanded ? (
+                                <ExpandLessIcon sx={{ fontSize: 16 }} />
+                              ) : (
+                                <ExpandMoreIcon sx={{ fontSize: 16 }} />
+                              )}
                             </Box>
                             <Collapse in={isExpanded}>
                               <Box
