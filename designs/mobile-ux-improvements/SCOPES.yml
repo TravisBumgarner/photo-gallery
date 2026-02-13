@@ -133,7 +133,7 @@ tasks:
       - Desktop header size remains compact (current py: 0.5 or similar)
     depends_on: []
     effort: 1
-    status: implementing
+    status: completed
 
   - id: 5
     milestone: 1
