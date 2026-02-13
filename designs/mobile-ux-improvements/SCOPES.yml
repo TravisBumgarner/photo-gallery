@@ -1,0 +1,332 @@
+project: mobile-ux-improvements
+design_file: n/a (requirements from user)
+scoping_date: 2026-02-12
+
+milestones:
+  - number: 1
+    title: "1. Mobile UX Polish & Touch Target Fixes"
+    description: |
+      All the small-to-medium mobile UX fixes: prevent zoom on input focus,
+      floating filter FAB, mobile folder modal, larger touch targets on filter
+      headers, improved empty state with filter chips, and separating tappable
+      elements that are too close together.
+    branch:
+      working: mobile-ux-polish
+      base: main
+
+  - number: 2
+    title: "2. Enhanced Date Picker & Sort Section Headers"
+    description: |
+      Two larger features: (1) overhaul the date filter to support multi-month
+      selection with a year/month/date hierarchy, and (2) add collapsible
+      section headers to the photo grid that group photos by the current sort
+      field.
+    branch:
+      working: enhanced-filters-and-sort-headers
+      base: mobile-ux-polish
+
+tasks:
+  # ── Milestone 1: Mobile UX Polish ──────────────────────────────────
+
+  - id: 1
+    milestone: 1
+    title: Prevent mobile browser zoom on input focus
+    description: |
+      On iOS Safari and Chrome, tapping a text input with font-size < 16px
+      causes the browser to auto-zoom. This happens on the login page password
+      field (and the search bar in FilterPanel).
+
+      **Files:**
+      - `frontend/index.html` — viewport meta tag (line 6)
+      - `frontend/src/components/LoginPage.tsx` — TextField (line 72)
+      - `frontend/src/components/SearchBar.tsx` — Autocomplete input
+
+      **Fix:**
+      Add `maximum-scale=1` to the viewport meta tag. Also ensure all
+      TextField/input components have a font-size of at least 16px via sx or
+      the theme's component overrides (MuiInputBase).
+    acceptance_criteria:
+      - Viewport meta tag includes `maximum-scale=1`
+      - All text inputs render at >= 16px font-size on mobile
+      - Tapping the login password field or search bar on mobile does not trigger browser zoom
+    depends_on: []
+    effort: 1
+    status: completed
+
+  - id: 2
+    milestone: 1
+    title: Mobile floating action button for filters
+    description: |
+      On mobile, move the filter toggle button out of the toolbar and into a
+      floating action button (FAB) in the bottom-right corner. Desktop filter
+      toggle stays exactly as-is (chevron on left edge).
+
+      **Files:**
+      - `frontend/src/components/Toolbar.tsx` — remove mobile filter button (lines 105-108)
+      - `frontend/src/components/GalleryPage.tsx` — add MUI Fab component for mobile
+
+      **Behavior:**
+      - Position: fixed, bottom-right (e.g. bottom: 24, right: 24)
+      - Use MUI `Fab` component with `FilterListIcon`
+      - Add box-shadow/elevation for drop shadow
+      - Size: `medium` or `large` (larger than current small IconButton)
+      - Only render when `isMobile && !showFilters`
+      - On click: open the filter drawer (same as current behavior)
+    acceptance_criteria:
+      - On mobile, a FAB with filter icon appears at bottom-right with drop shadow
+      - FAB is hidden when the filter drawer is open
+      - The old filter IconButton is removed from the mobile toolbar
+      - Desktop behavior is completely unchanged
+    depends_on: []
+    effort: 2
+    status: scoped
+
+  - id: 3
+    milestone: 1
+    title: Mobile folder explorer modal
+    description: |
+      The breadcrumb-based folder explorer in the Toolbar is hard to use on
+      mobile (horizontal scrolling, tiny select dropdowns). Replace it on
+      mobile with a dialog/modal that shows folders in a vertical list format.
+
+      **Files:**
+      - `frontend/src/components/Toolbar.tsx` — current folder browser (lines 111-218)
+      - New or inline component for the mobile folder modal
+
+      **Behavior:**
+      - On mobile, replace the breadcrumb folder browser with a single button
+        showing the current folder name (or "All Folders")
+      - Tapping it opens a Dialog/modal
+      - Modal shows a vertical list of folders as a tree/hierarchy:
+        - Current path shown at top as breadcrumb trail with tappable segments
+        - List of child folders at current depth, each tappable to navigate deeper
+        - "Back" or parent-level navigation
+      - Selecting a folder updates the filter and closes the modal
+      - Desktop keeps the existing breadcrumb UI unchanged
+    acceptance_criteria:
+      - Mobile toolbar shows a compact folder button instead of breadcrumbs
+      - Tapping the button opens a full-screen or near-full-screen Dialog
+      - Dialog allows navigating the folder hierarchy vertically
+      - Selecting a folder applies the filter and closes the dialog
+      - Desktop breadcrumb folder browser is unchanged
+    depends_on: []
+    effort: 3
+    status: scoped
+
+  - id: 4
+    milestone: 1
+    title: Increase filter section header touch targets on mobile
+    description: |
+      The `SectionHeader` component in FilterPanel has `py: 0.5` (4px vertical
+      padding), making it too small to tap reliably on mobile. Increase the
+      touch target to at least 44px total height (Apple HIG minimum).
+
+      **Files:**
+      - `frontend/src/components/FilterPanel.tsx` — `SectionHeader` (lines 89-148)
+
+      **Fix:**
+      Increase `py` to at least `1.5` (12px each side → 24px padding + text
+      height ≈ 44px+). Can use responsive values: `py: { xs: 1.5, sm: 0.5 }`
+      to only affect mobile.
+    acceptance_criteria:
+      - Filter section headers (General, Camera, Lens, etc.) have at least 44px tap target height on mobile
+      - Desktop header size remains compact (current py: 0.5 or similar)
+    depends_on: []
+    effort: 1
+    status: scoped
+
+  - id: 5
+    milestone: 1
+    title: Show active filter chips on empty state instead of just "Clear All"
+    description: |
+      When "No photos found" appears, instead of only showing a single
+      "Clear All Filters" button, show a grid of chips representing each
+      active filter with an option to clear them individually or all at once.
+
+      **Files:**
+      - `frontend/src/components/GalleryPage.tsx` — empty state (lines 268-285)
+
+      **Behavior:**
+      - Parse the current `filters` object to identify all active filters
+        (non-default values: search, camera, lens, ISO range, aperture range,
+        date range, aspect ratio, orientation, rating, label, keyword, folder)
+      - Render each active filter as a Chip with a delete icon
+      - Clicking the delete icon on a chip clears just that one filter
+      - Keep a "Clear All Filters" button below the chips
+      - If no filters are active besides sort (rare edge case), fall back to
+        the current simple message
+    acceptance_criteria:
+      - Each active filter appears as a labeled Chip (e.g. "Camera: Canon R5", "ISO: 100-400")
+      - Clicking the X on a chip removes only that filter and re-fetches photos
+      - A "Clear All Filters" button is still available
+      - Sort settings (sortBy, sortOrder) are not shown as filter chips
+    depends_on: []
+    effort: 2
+    status: scoped
+
+  - id: 6
+    milestone: 1
+    title: Separate Clear button from expand/collapse in filter section headers
+    description: |
+      In the `SectionHeader` component, the "Clear" text and the
+      expand/collapse chevron icon are right next to each other in a tight
+      `Stack` with `spacing={0.5}`. Users accidentally tap Clear when trying
+      to expand/collapse.
+
+      **Files:**
+      - `frontend/src/components/FilterPanel.tsx` — `SectionHeader` (lines 89-148)
+
+      **Fix:**
+      Move the "Clear" action to the left side of the header (next to the
+      label), or add significantly more spacing between Clear and the chevron.
+      Recommended approach: put the label on the left, the Clear button in the
+      middle (or as a small chip/button with clear visual separation), and the
+      chevron on the far right. Each tappable element should have its own
+      comfortable touch target.
+    acceptance_criteria:
+      - The "Clear" button and expand/collapse chevron have enough separation that accidental taps are unlikely
+      - Both elements remain functional (Clear clears the section filter, chevron toggles expand/collapse)
+      - The layout looks clean and intentional, not just "spaced out"
+    depends_on: [4]
+    effort: 1
+    status: scoped
+
+  - id: 7
+    milestone: 1
+    title: Separate month-select and expand/collapse buttons in date filter
+    description: |
+      In the date section's month header bar, the CalendarMonthIcon button
+      (select entire month) and the expand/collapse chevron are in a tight
+      `Stack` with `spacing={0.25}`. Same accidental-tap problem as task 6.
+
+      **Files:**
+      - `frontend/src/components/FilterPanel.tsx` — month header (lines 983-1034)
+
+      **Fix:**
+      Restructure the month header row: put the month label + photo count on
+      the left as the expand/collapse toggle (clicking the label area
+      toggles), move the calendar/select-month button to be visually distinct
+      (e.g., small chip or icon with its own padding), and keep the
+      expand/collapse chevron on the far right. Increase spacing and ensure
+      each interactive element has a comfortable touch target.
+    acceptance_criteria:
+      - Month-select (calendar icon) and expand/collapse buttons have clear visual and physical separation
+      - Both buttons remain fully functional
+      - Touch targets are at least 44px on mobile
+    depends_on: [4]
+    effort: 1
+    status: scoped
+
+  # ── Milestone 2: Enhanced Date Picker & Sort Section Headers ───────
+
+  - id: 8
+    milestone: 2
+    title: Multi-month selection and year/month/date picker hierarchy
+    description: |
+      Overhaul the date filter section to support:
+      1. Selecting multiple non-contiguous months
+      2. Selecting an entire year
+      3. Selecting individual dates (existing behavior)
+
+      **Current behavior:** Single date range via `startDate`/`endDate` in
+      PhotoFilters. Selecting a month sets startDate to first day and endDate
+      to last day.
+
+      **New behavior:**
+
+      *Frontend (FilterPanel.tsx, date section ~lines 863-1152):*
+      - Add a year-level row above the month rows. Each year shows its label
+        and total photo count. Clicking a year selects/deselects all months in
+        that year.
+      - Month rows gain a checkbox/toggle for multi-select. Clicking a month
+        adds/removes it from the selection (not a single-range replacement).
+      - Individual day selection within an expanded month still works.
+      - The selected state is tracked as a Set of month keys (YYYY-MM) or
+        individual date strings (YYYY-MM-DD).
+      - The filter sent to the API should be translated from the selection
+        into the appropriate query params.
+
+      *Shared types (shared/src/types.ts):*
+      - Add `selectedMonths?: string` to PhotoFilters (comma-separated
+        YYYY-MM values) and `selectedDates?: string` (comma-separated
+        YYYY-MM-DD values).
+      - Keep `startDate`/`endDate` for backward compat but the new date
+        picker will use the new fields.
+
+      *Backend (backend/src/routes/photos.ts, buildFilterConditions):*
+      - Handle `selectedMonths` param: parse comma-separated YYYY-MM values,
+        build OR conditions for each month range.
+      - Handle `selectedDates` param: parse comma-separated YYYY-MM-DD
+        values, build OR conditions for each date.
+      - If both old (startDate/endDate) and new params are present, new
+        params take precedence.
+
+      *Validation (shared/src/schemas.ts):*
+      - Add validation for the new filter fields.
+    acceptance_criteria:
+      - Users can select multiple non-contiguous months and see photos from all selected months
+      - Users can select an entire year with one tap
+      - Individual date selection within expanded months still works
+      - The year/month/date hierarchy is visually clear with proper indentation
+      - Deselecting a month or year updates results immediately
+      - Backend correctly filters with OR conditions for multiple month/date ranges
+    depends_on: [7]
+    effort: 4
+    status: scoped
+
+  - id: 9
+    milestone: 2
+    title: Collapsible sort-field section headers in photo grid
+    description: |
+      When photos are sorted by a field (ISO, date, aperture, camera, etc.),
+      insert collapsible section headers into the photo grid that group photos
+      by the sort field's value.
+
+      **Files:**
+      - `frontend/src/components/VirtualPhotoGrid.tsx` — main grid rendering
+      - `frontend/src/components/GalleryPage.tsx` — passes sort info to grid
+
+      **Behavior:**
+      - When sorted by ISO descending, section headers appear: "ISO 100",
+        "ISO 200", "ISO 400", etc.
+      - When sorted by date, headers show the date (or month grouping).
+      - When sorted by camera, headers show camera names.
+      - Each section header is collapsible: clicking it hides/shows the
+        photos in that section.
+      - Collapsed sections show just the header so users can quickly scroll
+        past uninteresting groups.
+      - Section headers should be visually distinct (different background,
+        sticky within scroll, or similar treatment).
+
+      **Implementation approach:**
+      - Add `sortBy` and `sortOrder` props to VirtualPhotoGrid.
+      - Before rendering, group the flat photo array into sections based on
+        the sort field value. For numeric fields (ISO, aperture), use the
+        actual values. For dates, group by day. For strings (camera, filename),
+        group by value.
+      - Track collapsed section state as a Set of section keys.
+      - The virtual scroll calculation needs to account for section header
+        rows (fixed small height) and collapsed sections (0 photo rows).
+      - Section headers render as full-width rows spanning all grid columns.
+      - Photos within a section render in the normal grid layout.
+
+      **Helper function needed:**
+      A function that takes `(photos, sortBy)` and returns
+      `{key: string, label: string, photos: Photo[]}[]`. The grouping key
+      extraction depends on sortBy:
+      - `iso` → `photo.iso?.toString()`
+      - `aperture` → `photo.aperture?.toString()`
+      - `dateCaptured` → `format(photo.dateCaptured, 'yyyy-MM-dd')`
+      - `createdAt` → `format(photo.createdAt, 'yyyy-MM-dd')`
+      - `camera` → `photo.camera`
+      - `filename` → first letter or similar
+    acceptance_criteria:
+      - Section headers appear between groups of photos when any sort is active
+      - Headers display the sort field value (e.g., "ISO 400", "2024-01-15", "Canon EOS R5")
+      - Clicking a section header collapses/expands that section's photos
+      - Collapsed sections only show the header row, not the photos
+      - Virtual scrolling still works correctly with mixed header/photo rows
+      - Infinite scroll / load-more still functions properly
+    depends_on: []
+    effort: 5
+    status: scoped
