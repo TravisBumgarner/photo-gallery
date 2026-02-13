@@ -1,6 +1,7 @@
 import {
   Add as AddIcon,
   ArrowBack as ArrowBackIcon,
+  Check as CheckIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
   Folder as FolderIcon,
@@ -409,7 +410,13 @@ function Toolbar({
               return (
                 <ListItemButton
                   key={child}
-                  onClick={() => handleSelectFolder(childPath)}
+                  onClick={() => {
+                    if (hasSubfolders) {
+                      setModalBrowsePath(childPath);
+                    } else {
+                      handleSelectFolder(childPath);
+                    }
+                  }}
                   selected={isSelected}
                   sx={{ py: 1.5 }}
                 >
@@ -417,18 +424,28 @@ function Toolbar({
                     <FolderIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText primary={child} />
-                  {hasSubfolders && (
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setModalBrowsePath(childPath);
-                      }}
-                      sx={{ ml: 1 }}
-                    >
-                      <ChevronRightIcon />
-                    </IconButton>
-                  )}
+                  {hasSubfolders ? (
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectFolder(childPath);
+                        }}
+                        sx={{
+                          border: '1px solid',
+                          borderColor: 'text.secondary',
+                          borderRadius: 0.5,
+                          p: 0.5,
+                        }}
+                      >
+                        <CheckIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                      <ChevronRightIcon color="action" />
+                    </Stack>
+                  ) : isSelected ? (
+                    <CheckIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                  ) : null}
                 </ListItemButton>
               );
             })}
