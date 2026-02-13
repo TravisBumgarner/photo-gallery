@@ -280,6 +280,8 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
                 if (filters.minIso !== undefined || filters.maxIso !== undefined) activeFilters.push({ label: `ISO: ${filters.minIso ?? ''}–${filters.maxIso ?? ''}`, onClear: () => handleFilterChange({ minIso: undefined, maxIso: undefined }) });
                 if (filters.minAperture !== undefined || filters.maxAperture !== undefined) activeFilters.push({ label: `Aperture: f/${filters.minAperture ?? ''}–f/${filters.maxAperture ?? ''}`, onClear: () => handleFilterChange({ minAperture: undefined, maxAperture: undefined }) });
                 if (filters.startDate || filters.endDate) activeFilters.push({ label: `Date: ${filters.startDate ?? ''}–${filters.endDate ?? ''}`, onClear: () => handleFilterChange({ startDate: undefined, endDate: undefined }) });
+                if (filters.selectedMonths) activeFilters.push({ label: `Months: ${filters.selectedMonths}`, onClear: () => handleFilterChange({ selectedMonths: '' }) });
+                if (filters.selectedDates) activeFilters.push({ label: `Dates: ${filters.selectedDates}`, onClear: () => handleFilterChange({ selectedDates: '' }) });
                 if (filters.aspectRatio) activeFilters.push({ label: `Aspect: ${filters.aspectRatio}`, onClear: () => handleFilterChange({ aspectRatio: undefined }) });
                 if (filters.orientation) activeFilters.push({ label: `Orientation: ${filters.orientation}`, onClear: () => handleFilterChange({ orientation: undefined }) });
                 if (filters.rating !== undefined) activeFilters.push({ label: `Rating: ${filters.rating}+`, onClear: () => handleFilterChange({ rating: undefined }) });

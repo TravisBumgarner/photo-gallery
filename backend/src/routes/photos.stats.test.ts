@@ -228,6 +228,42 @@ describe('buildFilterConditions', () => {
     expect(rows[0].uuid).toBe('aaa-111');
   });
 
+  it('filters by selectedMonths for non-contiguous months', () => {
+    // Jan 2024 has 2 photos (aaa-111, ccc-333), Jun 2024 has 1 (ddd-444)
+    const condition = buildFilterConditions({ selectedMonths: '2024-01,2024-06' });
+    expect(condition).toBeDefined();
+
+    const rows = db.select().from(photos).where(condition).all();
+    expect(rows.length).toBe(3);
+    const uuids = rows.map((r) => r.uuid).sort();
+    expect(uuids).toEqual(['aaa-111', 'ccc-333', 'ddd-444']);
+  });
+
+  it('filters by selectedDates for specific dates', () => {
+    // 2024-01-15 has 1 photo (aaa-111), 2024-06-15 has 1 (ddd-444)
+    const condition = buildFilterConditions({ selectedDates: '2024-01-15,2024-06-15' });
+    expect(condition).toBeDefined();
+
+    const rows = db.select().from(photos).where(condition).all();
+    expect(rows.length).toBe(2);
+    const uuids = rows.map((r) => r.uuid).sort();
+    expect(uuids).toEqual(['aaa-111', 'ddd-444']);
+  });
+
+  it('selectedMonths takes precedence over startDate/endDate', () => {
+    // startDate/endDate covers all of 2024, but selectedMonths limits to Mar only
+    const condition = buildFilterConditions({
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+      selectedMonths: '2024-03',
+    });
+    expect(condition).toBeDefined();
+
+    const rows = db.select().from(photos).where(condition).all();
+    expect(rows.length).toBe(1);
+    expect(rows[0].uuid).toBe('bbb-222');
+  });
+
   it('combines multiple filters with AND logic', () => {
     const condition = buildFilterConditions({
       camera: 'NIKON Z 6_2',

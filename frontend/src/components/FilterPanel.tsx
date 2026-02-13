@@ -204,7 +204,7 @@ const FilterPanel = memo(function FilterPanel({
   const hasCameraFilter = !!filters.camera;
   const hasLensFilter = !!filters.lens;
   const hasAspectRatioFilter = !!(filters.aspectRatio || filters.orientation);
-  const hasDateFilter = !!(filters.startDate || filters.endDate);
+  const hasDateFilter = !!(filters.startDate || filters.endDate || filters.selectedMonths || filters.selectedDates);
   const hasTagFilter = !!filters.keyword;
 
   return (
@@ -887,7 +887,7 @@ const FilterPanel = memo(function FilterPanel({
               onToggle={toggleSection}
               hasActiveFilter={hasDateFilter}
               onClear={() =>
-                onFilterChange({ startDate: '', endDate: '' })
+                onFilterChange({ startDate: '', endDate: '', selectedMonths: '', selectedDates: '' })
               }
             />
             <Collapse
@@ -910,98 +910,114 @@ const FilterPanel = memo(function FilterPanel({
                   label="All Dates"
                   size="small"
                   color={
-                    !filters.startDate && !filters.endDate
+                    !hasDateFilter
                       ? 'primary'
                       : 'default'
                   }
                   onClick={() =>
-                    onFilterChange({ startDate: '', endDate: '' })
+                    onFilterChange({ startDate: '', endDate: '', selectedMonths: '', selectedDates: '' })
                   }
                   sx={{ mb: 0.5 }}
                 />
                 <Box>
                   {(() => {
-                    const monthGroups: Record<string, string[]> = {};
+                    // Group dates by year then month
+                    const yearGroups: Record<string, Record<string, string[]>> = {};
                     dates.forEach((date) => {
+                      const year = date.substring(0, 4);
                       const monthKey = date.substring(0, 7);
-                      if (!monthGroups[monthKey]) monthGroups[monthKey] = [];
-                      monthGroups[monthKey].push(date);
+                      if (!yearGroups[year]) yearGroups[year] = {};
+                      if (!yearGroups[year][monthKey]) yearGroups[year][monthKey] = [];
+                      yearGroups[year][monthKey].push(date);
                     });
 
-                    return Object.entries(monthGroups)
+                    const selectedMonthSet = new Set(
+                      filters.selectedMonths ? filters.selectedMonths.split(',').filter(Boolean) : [],
+                    );
+                    const selectedDateSet = new Set(
+                      filters.selectedDates ? filters.selectedDates.split(',').filter(Boolean) : [],
+                    );
+
+                    return Object.entries(yearGroups)
                       .sort(([a], [b]) => b.localeCompare(a))
-                      .map(([monthKey, monthDates]) => {
-                        const firstDate = parseISO(monthDates[0]);
-                        const monthLabel = format(firstDate, 'MMMM yyyy');
-                        const isExpanded = expandedMonths.has(monthKey);
-                        const totalPhotos = monthDates.reduce(
-                          (sum, date) => sum + (dateCounts[date] || 0),
+                      .map(([year, months]) => {
+                        const monthKeys = Object.keys(months).sort((a, b) => b.localeCompare(a));
+                        const yearTotal = monthKeys.reduce(
+                          (sum, mk) => sum + months[mk].reduce((s, d) => s + (dateCounts[d] || 0), 0),
                           0,
                         );
-                        const firstDayOfMonth = format(
-                          startOfMonth(firstDate),
-                          'yyyy-MM-dd',
-                        );
-                        const lastDayOfMonth = format(
-                          endOfMonth(firstDate),
-                          'yyyy-MM-dd',
-                        );
-                        const isMonthSelected =
-                          filters.startDate === firstDayOfMonth &&
-                          filters.endDate === lastDayOfMonth;
+                        const allMonthsInYear = monthKeys.every((mk) => selectedMonthSet.has(mk));
+                        const someMonthsInYear = monthKeys.some((mk) => selectedMonthSet.has(mk));
+                        const isYearExpanded = expandedMonths.has(year);
 
                         return (
-                          <Box key={monthKey} sx={{ mb: 0.25 }}>
+                          <Box key={year} sx={{ mb: 0.5 }}>
+                            {/* Year row */}
                             <Box
-                              onClick={() => {
-                                const newExpanded = new Set(expandedMonths);
-                                if (isExpanded) {
-                                  newExpanded.delete(monthKey);
-                                } else {
-                                  newExpanded.add(monthKey);
-                                }
-                                setExpandedMonths(newExpanded);
-                              }}
                               sx={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 py: { xs: 1, sm: 0.5 },
                                 px: { xs: 1, sm: 0.5 },
-                                bgcolor: isMonthSelected
+                                bgcolor: allMonthsInYear
                                   ? 'primary.main'
-                                  : 'action.hover',
-                                color: isMonthSelected ? 'white' : 'inherit',
+                                  : someMonthsInYear
+                                    ? 'action.selected'
+                                    : 'action.hover',
+                                color: allMonthsInYear ? 'white' : 'inherit',
                                 borderRadius: 0.5,
                                 cursor: 'pointer',
                                 '&:hover': { opacity: 0.8 },
                               }}
                             >
-                              <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                alignItems="center"
+                                sx={{ flex: 1 }}
+                                onClick={() => {
+                                  const newExpanded = new Set(expandedMonths);
+                                  if (isYearExpanded) {
+                                    newExpanded.delete(year);
+                                  } else {
+                                    newExpanded.add(year);
+                                  }
+                                  setExpandedMonths(newExpanded);
+                                }}
+                              >
                                 <Typography variant="caption" fontWeight="600">
-                                  {monthLabel} ({totalPhotos})
+                                  {year} ({yearTotal})
                                 </Typography>
+                              </Stack>
+                              <Stack direction="row" spacing={0.5} alignItems="center">
                                 <IconButton
                                   size="small"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    // Toggle all months in this year
+                                    const newMonths = new Set(selectedMonthSet);
+                                    if (allMonthsInYear) {
+                                      monthKeys.forEach((mk) => newMonths.delete(mk));
+                                    } else {
+                                      monthKeys.forEach((mk) => newMonths.add(mk));
+                                    }
                                     onFilterChange({
-                                      startDate: firstDayOfMonth,
-                                      endDate: lastDayOfMonth,
+                                      selectedMonths: Array.from(newMonths).join(','),
+                                      startDate: '',
+                                      endDate: '',
                                     });
                                   }}
                                   sx={{
                                     p: 0.5,
-                                    color: isMonthSelected
-                                      ? 'white'
-                                      : 'inherit',
+                                    color: allMonthsInYear ? 'white' : 'inherit',
                                     border: '1px solid',
-                                    borderColor: isMonthSelected
+                                    borderColor: allMonthsInYear
                                       ? 'rgba(255,255,255,0.3)'
                                       : 'text.secondary',
                                     borderRadius: 0.5,
                                     '&:hover': {
-                                      bgcolor: isMonthSelected
+                                      bgcolor: allMonthsInYear
                                         ? 'primary.dark'
                                         : 'action.selected',
                                     },
@@ -1009,120 +1025,250 @@ const FilterPanel = memo(function FilterPanel({
                                 >
                                   <CalendarMonthIcon sx={{ fontSize: 14 }} />
                                 </IconButton>
+                                <Box
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedMonths);
+                                    if (isYearExpanded) {
+                                      newExpanded.delete(year);
+                                    } else {
+                                      newExpanded.add(year);
+                                    }
+                                    setExpandedMonths(newExpanded);
+                                  }}
+                                >
+                                  {isYearExpanded ? (
+                                    <ExpandLessIcon sx={{ fontSize: 16 }} />
+                                  ) : (
+                                    <ExpandMoreIcon sx={{ fontSize: 16 }} />
+                                  )}
+                                </Box>
                               </Stack>
-                              {isExpanded ? (
-                                <ExpandLessIcon sx={{ fontSize: 16 }} />
-                              ) : (
-                                <ExpandMoreIcon sx={{ fontSize: 16 }} />
-                              )}
                             </Box>
-                            <Collapse in={isExpanded}>
-                              <Box
-                                sx={{
-                                  p: 0.25,
-                                  display: 'grid',
-                                  gridTemplateColumns: 'repeat(7, 1fr)',
-                                  gap: 0.125,
-                                }}
-                              >
-                                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(
-                                  (day, i) => (
-                                    <Box
-                                      key={i}
-                                      sx={{
-                                        textAlign: 'center',
-                                        fontSize: '0.65rem',
-                                        fontWeight: 'bold',
-                                        color: 'text.secondary',
-                                      }}
-                                    >
-                                      {day}
-                                    </Box>
-                                  ),
-                                )}
-                                {(() => {
-                                  const firstOfMonth = startOfMonth(firstDate);
-                                  const lastOfMonth = endOfMonth(firstDate);
-                                  const daysInMonth = eachDayOfInterval({
-                                    start: firstOfMonth,
-                                    end: lastOfMonth,
-                                  });
-                                  const startDay = getDay(firstOfMonth);
 
-                                  const cells = [];
-                                  for (let i = 0; i < startDay; i++) {
-                                    cells.push(<Box key={`empty-${i}`} />);
-                                  }
+                            {/* Months within year */}
+                            <Collapse in={isYearExpanded}>
+                              <Box sx={{ pl: 1.5 }}>
+                                {monthKeys.map((monthKey) => {
+                                  const monthDates = months[monthKey];
+                                  const firstDate = parseISO(monthDates[0]);
+                                  const monthLabel = format(firstDate, 'MMMM');
+                                  const isMonthExpanded = expandedMonths.has(monthKey);
+                                  const totalPhotos = monthDates.reduce(
+                                    (sum, date) => sum + (dateCounts[date] || 0),
+                                    0,
+                                  );
+                                  const isMonthSelected = selectedMonthSet.has(monthKey);
 
-                                  daysInMonth.forEach((day) => {
-                                    const dateStr = format(day, 'yyyy-MM-dd');
-                                    const count = dateCounts[dateStr] || 0;
-                                    const isSelected =
-                                      filters.startDate === dateStr &&
-                                      filters.endDate === dateStr;
-
-                                    cells.push(
+                                  return (
+                                    <Box key={monthKey} sx={{ mb: 0.25 }}>
+                                      {/* Month row */}
                                       <Box
-                                        key={dateStr}
-                                        onClick={() =>
-                                          count > 0
-                                            ? onFilterChange({
-                                                startDate: dateStr,
-                                                endDate: dateStr,
-                                              })
-                                            : null
-                                        }
                                         sx={{
-                                          aspectRatio: '1',
                                           display: 'flex',
-                                          flexDirection: 'column',
                                           alignItems: 'center',
-                                          justifyContent: 'center',
-                                          fontSize: '0.7rem',
-                                          borderRadius: 0.5,
-                                          cursor:
-                                            count > 0 ? 'pointer' : 'default',
-                                          bgcolor: isSelected
+                                          justifyContent: 'space-between',
+                                          py: { xs: 1, sm: 0.5 },
+                                          px: { xs: 1, sm: 0.5 },
+                                          bgcolor: isMonthSelected
                                             ? 'primary.main'
-                                            : count > 0
-                                              ? 'action.hover'
-                                              : 'transparent',
-                                          color: isSelected
-                                            ? 'white'
-                                            : count > 0
-                                              ? 'text.primary'
-                                              : 'text.disabled',
-                                          '&:hover':
-                                            count > 0
-                                              ? {
-                                                  bgcolor: isSelected
-                                                    ? 'primary.dark'
-                                                    : 'action.selected',
-                                                }
-                                              : {},
+                                            : 'action.hover',
+                                          color: isMonthSelected ? 'white' : 'inherit',
+                                          borderRadius: 0.5,
+                                          cursor: 'pointer',
+                                          '&:hover': { opacity: 0.8 },
                                         }}
                                       >
-                                        <Typography
-                                          variant="caption"
-                                          fontSize="0.65rem"
+                                        <Stack
+                                          direction="row"
+                                          spacing={1}
+                                          alignItems="center"
+                                          sx={{ flex: 1 }}
+                                          onClick={() => {
+                                            const newExpanded = new Set(expandedMonths);
+                                            if (isMonthExpanded) {
+                                              newExpanded.delete(monthKey);
+                                            } else {
+                                              newExpanded.add(monthKey);
+                                            }
+                                            setExpandedMonths(newExpanded);
+                                          }}
                                         >
-                                          {format(day, 'd')}
-                                        </Typography>
-                                        {count > 0 && (
-                                          <Typography
-                                            variant="caption"
-                                            fontSize="0.5rem"
-                                            sx={{ opacity: 0.7 }}
-                                          >
-                                            {count}
+                                          <Typography variant="caption" fontWeight="600">
+                                            {monthLabel} ({totalPhotos})
                                           </Typography>
-                                        )}
-                                      </Box>,
-                                    );
-                                  });
+                                        </Stack>
+                                        <Stack direction="row" spacing={0.5} alignItems="center">
+                                          <IconButton
+                                            size="small"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              // Toggle this month in selection
+                                              const newMonths = new Set(selectedMonthSet);
+                                              if (isMonthSelected) {
+                                                newMonths.delete(monthKey);
+                                              } else {
+                                                newMonths.add(monthKey);
+                                              }
+                                              onFilterChange({
+                                                selectedMonths: Array.from(newMonths).join(','),
+                                                startDate: '',
+                                                endDate: '',
+                                              });
+                                            }}
+                                            sx={{
+                                              p: 0.5,
+                                              color: isMonthSelected ? 'white' : 'inherit',
+                                              border: '1px solid',
+                                              borderColor: isMonthSelected
+                                                ? 'rgba(255,255,255,0.3)'
+                                                : 'text.secondary',
+                                              borderRadius: 0.5,
+                                              '&:hover': {
+                                                bgcolor: isMonthSelected
+                                                  ? 'primary.dark'
+                                                  : 'action.selected',
+                                              },
+                                            }}
+                                          >
+                                            <CalendarMonthIcon sx={{ fontSize: 14 }} />
+                                          </IconButton>
+                                          <Box
+                                            onClick={() => {
+                                              const newExpanded = new Set(expandedMonths);
+                                              if (isMonthExpanded) {
+                                                newExpanded.delete(monthKey);
+                                              } else {
+                                                newExpanded.add(monthKey);
+                                              }
+                                              setExpandedMonths(newExpanded);
+                                            }}
+                                          >
+                                            {isMonthExpanded ? (
+                                              <ExpandLessIcon sx={{ fontSize: 16 }} />
+                                            ) : (
+                                              <ExpandMoreIcon sx={{ fontSize: 16 }} />
+                                            )}
+                                          </Box>
+                                        </Stack>
+                                      </Box>
 
-                                  return cells;
-                                })()}
+                                      {/* Calendar grid for individual dates */}
+                                      <Collapse in={isMonthExpanded}>
+                                        <Box
+                                          sx={{
+                                            p: 0.25,
+                                            display: 'grid',
+                                            gridTemplateColumns: 'repeat(7, 1fr)',
+                                            gap: 0.125,
+                                          }}
+                                        >
+                                          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(
+                                            (day, i) => (
+                                              <Box
+                                                key={i}
+                                                sx={{
+                                                  textAlign: 'center',
+                                                  fontSize: '0.65rem',
+                                                  fontWeight: 'bold',
+                                                  color: 'text.secondary',
+                                                }}
+                                              >
+                                                {day}
+                                              </Box>
+                                            ),
+                                          )}
+                                          {(() => {
+                                            const firstOfMonth = startOfMonth(firstDate);
+                                            const lastOfMonth = endOfMonth(firstDate);
+                                            const daysInMonth = eachDayOfInterval({
+                                              start: firstOfMonth,
+                                              end: lastOfMonth,
+                                            });
+                                            const startDay = getDay(firstOfMonth);
+
+                                            const cells = [];
+                                            for (let i = 0; i < startDay; i++) {
+                                              cells.push(<Box key={`empty-${i}`} />);
+                                            }
+
+                                            daysInMonth.forEach((day) => {
+                                              const dateStr = format(day, 'yyyy-MM-dd');
+                                              const count = dateCounts[dateStr] || 0;
+                                              const isSelected = selectedDateSet.has(dateStr);
+
+                                              cells.push(
+                                                <Box
+                                                  key={dateStr}
+                                                  onClick={() => {
+                                                    if (count === 0) return;
+                                                    const newDates = new Set(selectedDateSet);
+                                                    if (isSelected) {
+                                                      newDates.delete(dateStr);
+                                                    } else {
+                                                      newDates.add(dateStr);
+                                                    }
+                                                    onFilterChange({
+                                                      selectedDates: Array.from(newDates).join(','),
+                                                      startDate: '',
+                                                      endDate: '',
+                                                    });
+                                                  }}
+                                                  sx={{
+                                                    aspectRatio: '1',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '0.7rem',
+                                                    borderRadius: 0.5,
+                                                    cursor:
+                                                      count > 0 ? 'pointer' : 'default',
+                                                    bgcolor: isSelected
+                                                      ? 'primary.main'
+                                                      : count > 0
+                                                        ? 'action.hover'
+                                                        : 'transparent',
+                                                    color: isSelected
+                                                      ? 'white'
+                                                      : count > 0
+                                                        ? 'text.primary'
+                                                        : 'text.disabled',
+                                                    '&:hover':
+                                                      count > 0
+                                                        ? {
+                                                            bgcolor: isSelected
+                                                              ? 'primary.dark'
+                                                              : 'action.selected',
+                                                          }
+                                                        : {},
+                                                  }}
+                                                >
+                                                  <Typography
+                                                    variant="caption"
+                                                    fontSize="0.65rem"
+                                                  >
+                                                    {format(day, 'd')}
+                                                  </Typography>
+                                                  {count > 0 && (
+                                                    <Typography
+                                                      variant="caption"
+                                                      fontSize="0.5rem"
+                                                      sx={{ opacity: 0.7 }}
+                                                    >
+                                                      {count}
+                                                    </Typography>
+                                                  )}
+                                                </Box>,
+                                              );
+                                            });
+
+                                            return cells;
+                                          })()}
+                                        </Box>
+                                      </Collapse>
+                                    </Box>
+                                  );
+                                })}
                               </Box>
                             </Collapse>
                           </Box>
@@ -1236,6 +1382,8 @@ const FilterPanel = memo(function FilterPanel({
               maxAperture: undefined,
               startDate: '',
               endDate: '',
+              selectedMonths: '',
+              selectedDates: '',
               keyword: '',
               folder: '',
               label: '',
