@@ -2,6 +2,7 @@ import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PhotoCard from '@/components/PhotoCard';
+import { subtleBackground } from '@/styles/styleConsts';
 import type { Photo } from '@/types';
 import { groupPhotosBySort } from '@/utils/groupPhotos';
 
@@ -241,12 +242,11 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
                   display: 'flex',
                   alignItems: 'center',
                   cursor: 'pointer',
-                  bgcolor: 'grey.100',
-                  borderRadius: 1,
+                  bgcolor: subtleBackground('slightly'),
                   px: 1.5,
                   userSelect: 'none',
                   '&:hover': {
-                    bgcolor: 'grey.200',
+                    bgcolor: 'action.hover',
                   },
                 }}
               >
@@ -257,20 +257,16 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
                       : 'rotate(0deg)',
                     transition: 'transform 0.2s',
                     mr: 1,
-                    fontSize: 20,
-                    color: 'text.secondary',
+                    fontSize: 16,
                   }}
                 />
-                <Typography
-                  variant="subtitle2"
-                  sx={{ fontWeight: 600, fontSize: '0.875rem' }}
-                >
+                <Typography variant="caption" fontWeight="600">
                   {row.label}
                 </Typography>
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ ml: 1 }}
+                  sx={{ ml: 0.75, fontSize: '0.65rem' }}
                 >
                   ({row.photoCount})
                 </Typography>
