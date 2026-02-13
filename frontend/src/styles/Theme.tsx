@@ -127,7 +127,7 @@ const theme = createTheme({
         },
         input: {
           padding: '4px 8px',
-          fontSize: FONT_SIZES.SMALL.PX,
+          fontSize: FONT_SIZES.MEDIUM.PX,
         },
       },
     },
