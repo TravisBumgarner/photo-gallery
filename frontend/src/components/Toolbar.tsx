@@ -1,6 +1,5 @@
 import {
   Add as AddIcon,
-  ArrowBack as ArrowBackIcon,
   Check as CheckIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
@@ -12,12 +11,12 @@ import {
   Box,
   Breadcrumbs,
   Button,
+  Collapse,
   Dialog,
   DialogContent,
   DialogTitle,
   IconButton,
   Link,
-  List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
@@ -31,6 +30,99 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import type { PhotoFilters } from '@/types';
 import { SPACING } from '@/styles/styleConsts';
+
+interface FolderTreeLevelProps {
+  parentPath: string;
+  folders: string[];
+  currentFolder: string;
+  expandedPaths: Set<string>;
+  onToggleExpand: (path: string) => void;
+  onSelect: (folder: string) => void;
+  getChildrenAt: (parentPath: string) => string[];
+  depth: number;
+}
+
+function FolderTreeLevel({
+  parentPath,
+  folders,
+  currentFolder,
+  expandedPaths,
+  onToggleExpand,
+  onSelect,
+  getChildrenAt,
+  depth,
+}: FolderTreeLevelProps) {
+  const items = getChildrenAt(parentPath);
+
+  return (
+    <>
+      {items.map((name) => {
+        const fullPath = parentPath ? `${parentPath}/${name}` : name;
+        const subChildren = getChildrenAt(fullPath);
+        const hasChildren = subChildren.length > 0;
+        const isExpanded = expandedPaths.has(fullPath);
+        const isSelected = currentFolder === fullPath;
+
+        return (
+          <Box key={name}>
+            <ListItemButton
+              onClick={() => onSelect(fullPath)}
+              selected={isSelected}
+              sx={{ py: 1.5, pl: 2 + depth * 3 }}
+            >
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                {isExpanded ? (
+                  <FolderOpenIcon fontSize="small" />
+                ) : (
+                  <FolderIcon fontSize="small" />
+                )}
+              </ListItemIcon>
+              <ListItemText
+                primary={name}
+                primaryTypographyProps={{
+                  fontWeight: isSelected ? 'bold' : 'normal',
+                }}
+              />
+              {isSelected && <CheckIcon fontSize="small" color="primary" />}
+              {hasChildren && (
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleExpand(fullPath);
+                  }}
+                  sx={{ ml: 1 }}
+                >
+                  <ChevronRightIcon
+                    fontSize="small"
+                    sx={{
+                      transform: isExpanded ? 'rotate(90deg)' : 'none',
+                      transition: 'transform 0.2s',
+                    }}
+                  />
+                </IconButton>
+              )}
+            </ListItemButton>
+            {hasChildren && (
+              <Collapse in={isExpanded}>
+                <FolderTreeLevel
+                  parentPath={fullPath}
+                  folders={folders}
+                  currentFolder={currentFolder}
+                  expandedPaths={expandedPaths}
+                  onToggleExpand={onToggleExpand}
+                  onSelect={onSelect}
+                  getChildrenAt={getChildrenAt}
+                  depth={depth + 1}
+                />
+              </Collapse>
+            )}
+          </Box>
+        );
+      })}
+    </>
+  );
+}
 
 interface ToolbarProps {
   filters: PhotoFilters;
@@ -49,7 +141,7 @@ function Toolbar({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [folders, setFolders] = useState<string[]>([]);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
-  const [modalBrowsePath, setModalBrowsePath] = useState('');
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch('/api/photos/meta', { credentials: 'include' })
@@ -95,11 +187,9 @@ function Toolbar({
     return Array.from(childSet).sort((a, b) => a.localeCompare(b));
   }, [folders, currentFolder, breadcrumbs.length]);
 
-  // Compute children for the modal's browse path
-  const modalBrowseSegments = modalBrowsePath ? modalBrowsePath.split('/') : [];
-  const modalChildren = useMemo(() => {
-    const depth = modalBrowseSegments.length;
-    const prefix = modalBrowsePath ? `${modalBrowsePath}/` : '';
+  const getChildrenAt = (parentPath: string) => {
+    const depth = parentPath ? parentPath.split('/').length : 0;
+    const prefix = parentPath ? `${parentPath}/` : '';
     const childSet = new Set<string>();
     folders.forEach((path) => {
       if (prefix ? path.startsWith(prefix) : true) {
@@ -110,16 +200,35 @@ function Toolbar({
       }
     });
     return Array.from(childSet).sort((a, b) => a.localeCompare(b));
-  }, [folders, modalBrowsePath, modalBrowseSegments.length]);
+  };
 
-  // Check if the modal browse path itself is a valid folder (has photos directly)
-  const modalBrowseIsFolder = useMemo(() => {
-    if (!modalBrowsePath) return false;
-    return folders.some((f) => f === modalBrowsePath || f.startsWith(modalBrowsePath + '/'));
-  }, [folders, modalBrowsePath]);
+  const toggleExpanded = (path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        // Collapse this and all children
+        for (const p of prev) {
+          if (p === path || p.startsWith(path + '/')) {
+            next.delete(p);
+          }
+        }
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
 
   const handleOpenFolderModal = () => {
-    setModalBrowsePath(currentFolder);
+    // Pre-expand the path to the currently selected folder
+    const expanded = new Set<string>();
+    if (currentFolder) {
+      const segments = currentFolder.split('/');
+      for (let i = 0; i < segments.length; i++) {
+        expanded.add(segments.slice(0, i + 1).join('/'));
+      }
+    }
+    setExpandedPaths(expanded);
     setFolderModalOpen(true);
   };
 
@@ -322,134 +431,29 @@ function Toolbar({
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ p: 0 }}>
-          {/* Current path breadcrumb */}
-          <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
-            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Typography
-                variant="body2"
-                onClick={() => setModalBrowsePath('')}
-                sx={{
-                  cursor: 'pointer',
-                  fontWeight: !modalBrowsePath ? 'bold' : 'normal',
-                  color: !modalBrowsePath ? 'primary.main' : 'text.secondary',
-                  '&:hover': { color: 'text.primary' },
-                }}
-              >
-                All
-              </Typography>
-              {modalBrowseSegments.map((segment, index) => (
-                <Stack key={index} direction="row" spacing={0.5} alignItems="center">
-                  <Typography variant="body2" color="text.secondary">/</Typography>
-                  <Typography
-                    variant="body2"
-                    onClick={() => setModalBrowsePath(modalBrowseSegments.slice(0, index + 1).join('/'))}
-                    sx={{
-                      cursor: 'pointer',
-                      fontWeight: index === modalBrowseSegments.length - 1 ? 'bold' : 'normal',
-                      color: index === modalBrowseSegments.length - 1 ? 'primary.main' : 'text.secondary',
-                      '&:hover': { color: 'text.primary' },
-                    }}
-                  >
-                    {segment}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
-          </Box>
+          {/* All Folders option */}
+          <ListItemButton
+            selected={!currentFolder}
+            onClick={() => handleSelectFolder('')}
+            sx={{ py: 1.5 }}
+          >
+            <ListItemIcon sx={{ minWidth: 36 }}>
+              <FolderOpenIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="All Folders" primaryTypographyProps={{ fontWeight: !currentFolder ? 'bold' : 'normal' }} />
+          </ListItemButton>
 
-          {/* Back button */}
-          {modalBrowsePath && (
-            <ListItemButton
-              onClick={() => {
-                const parent = modalBrowseSegments.slice(0, -1).join('/');
-                setModalBrowsePath(parent);
-              }}
-              sx={{ py: 1.5 }}
-            >
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                <ArrowBackIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText primary="Back" />
-            </ListItemButton>
-          )}
-
-          {/* Select current folder button */}
-          {modalBrowseIsFolder && (
-            <Box sx={{ px: 2, py: 1 }}>
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={() => handleSelectFolder(modalBrowsePath)}
-                startIcon={<FolderOpenIcon />}
-              >
-                Select "{modalBrowseSegments[modalBrowseSegments.length - 1]}"
-              </Button>
-            </Box>
-          )}
-
-          {/* Select "All Folders" when at root */}
-          {!modalBrowsePath && (
-            <Box sx={{ px: 2, py: 1 }}>
-              <Button
-                variant={!currentFolder ? 'contained' : 'outlined'}
-                fullWidth
-                onClick={() => handleSelectFolder('')}
-                startIcon={<FolderOpenIcon />}
-              >
-                All Folders
-              </Button>
-            </Box>
-          )}
-
-          {/* Child folders list */}
-          <List disablePadding>
-            {modalChildren.map((child) => {
-              const childPath = modalBrowsePath ? `${modalBrowsePath}/${child}` : child;
-              const isSelected = currentFolder === childPath;
-              const hasSubfolders = folders.some((f) => f.startsWith(childPath + '/'));
-              return (
-                <ListItemButton
-                  key={child}
-                  onClick={() => {
-                    if (hasSubfolders) {
-                      setModalBrowsePath(childPath);
-                    } else {
-                      handleSelectFolder(childPath);
-                    }
-                  }}
-                  selected={isSelected}
-                  sx={{ py: 1.5 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <FolderIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText primary={child} />
-                  {hasSubfolders ? (
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectFolder(childPath);
-                        }}
-                        sx={{
-                          border: '1px solid',
-                          borderColor: 'text.secondary',
-                          borderRadius: 0.5,
-                          p: 0.5,
-                        }}
-                      >
-                        <CheckIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                      <ChevronRightIcon color="action" />
-                    </Stack>
-                  ) : isSelected ? (
-                    <CheckIcon sx={{ fontSize: 16, color: 'primary.main' }} />
-                  ) : null}
-                </ListItemButton>
-              );
-            })}
-          </List>
+          {/* Recursive folder tree */}
+          <FolderTreeLevel
+            parentPath=""
+            folders={folders}
+            currentFolder={currentFolder}
+            expandedPaths={expandedPaths}
+            onToggleExpand={toggleExpanded}
+            onSelect={handleSelectFolder}
+            getChildrenAt={getChildrenAt}
+            depth={0}
+          />
         </DialogContent>
       </Dialog>
     </Box>
