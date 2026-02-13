@@ -86,14 +86,56 @@ export function buildFilterConditions(filters: {
     conditions.push(lte(photos.aperture, filters.maxAperture));
   }
 
-  if (filters.startDate) {
-    const startTimestamp = Math.floor(new Date(filters.startDate).getTime() / 1000);
-    conditions.push(sql`${photos.dateCaptured} >= ${startTimestamp}`);
-  }
-  if (filters.endDate) {
-    const endTimestamp =
-      Math.floor(new Date(filters.endDate).getTime() / 1000) + 86399;
-    conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
+  // New multi-select date fields take precedence over startDate/endDate
+  if (filters.selectedMonths || filters.selectedDates) {
+    const dateConditions: (SQL | undefined)[] = [];
+
+    if (filters.selectedMonths) {
+      const months = filters.selectedMonths.split(',').filter(Boolean);
+      for (const month of months) {
+        const start = Math.floor(new Date(`${month}-01T00:00:00Z`).getTime() / 1000);
+        // Get the last day of the month
+        const [year, mon] = month.split('-').map(Number);
+        const lastDay = new Date(Date.UTC(year, mon, 0)).getDate();
+        const end = Math.floor(new Date(`${month}-${String(lastDay).padStart(2, '0')}T00:00:00Z`).getTime() / 1000) + 86399;
+        dateConditions.push(
+          and(
+            sql`${photos.dateCaptured} >= ${start}`,
+            sql`${photos.dateCaptured} <= ${end}`,
+          ),
+        );
+      }
+    }
+
+    if (filters.selectedDates) {
+      const dates = filters.selectedDates.split(',').filter(Boolean);
+      for (const date of dates) {
+        const start = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000);
+        const end = start + 86399;
+        dateConditions.push(
+          and(
+            sql`${photos.dateCaptured} >= ${start}`,
+            sql`${photos.dateCaptured} <= ${end}`,
+          ),
+        );
+      }
+    }
+
+    if (dateConditions.length === 1) {
+      conditions.push(dateConditions[0]);
+    } else if (dateConditions.length > 1) {
+      conditions.push(or(...dateConditions));
+    }
+  } else {
+    if (filters.startDate) {
+      const startTimestamp = Math.floor(new Date(filters.startDate).getTime() / 1000);
+      conditions.push(sql`${photos.dateCaptured} >= ${startTimestamp}`);
+    }
+    if (filters.endDate) {
+      const endTimestamp =
+        Math.floor(new Date(filters.endDate).getTime() / 1000) + 86399;
+      conditions.push(sql`${photos.dateCaptured} <= ${endTimestamp}`);
+    }
   }
 
   if (filters.aspectRatio) {
