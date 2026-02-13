@@ -136,7 +136,7 @@ function SectionHeader({
               py: 0.25,
               borderRadius: 0.5,
               border: '1px solid',
-              borderColor: 'divider',
+              borderColor: 'text.secondary',
             }}
           >
             Clear
@@ -998,7 +998,7 @@ const FilterPanel = memo(function FilterPanel({
                                     border: '1px solid',
                                     borderColor: isMonthSelected
                                       ? 'rgba(255,255,255,0.3)'
-                                      : 'divider',
+                                      : 'text.secondary',
                                     borderRadius: 0.5,
                                     '&:hover': {
                                       bgcolor: isMonthSelected
