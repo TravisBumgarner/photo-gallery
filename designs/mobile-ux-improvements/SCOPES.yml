@@ -272,7 +272,7 @@ tasks:
       - Backend correctly filters with OR conditions for multiple month/date ranges
     depends_on: [7]
     effort: 4
-    status: implementing
+    status: completed
 
   - id: 9
     milestone: 2
