@@ -1,6 +1,7 @@
 import {
   Add as AddIcon,
   ArrowBack as ArrowBackIcon,
+  ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
@@ -164,7 +165,7 @@ function Toolbar({
               fontWeight="bold"
               noWrap
             >
-              {currentFolder ? currentFolder.split('/').pop() : 'All Folders'}
+              Browse
             </Typography>
           </Button>
         ) : (
@@ -408,13 +409,7 @@ function Toolbar({
               return (
                 <ListItemButton
                   key={child}
-                  onClick={() => {
-                    if (hasSubfolders) {
-                      setModalBrowsePath(childPath);
-                    } else {
-                      handleSelectFolder(childPath);
-                    }
-                  }}
+                  onClick={() => handleSelectFolder(childPath)}
                   selected={isSelected}
                   sx={{ py: 1.5 }}
                 >
@@ -423,9 +418,16 @@ function Toolbar({
                   </ListItemIcon>
                   <ListItemText primary={child} />
                   {hasSubfolders && (
-                    <Typography variant="caption" color="text.secondary">
-                      &rsaquo;
-                    </Typography>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setModalBrowsePath(childPath);
+                      }}
+                      sx={{ ml: 1 }}
+                    >
+                      <ChevronRightIcon />
+                    </IconButton>
                   )}
                 </ListItemButton>
               );
