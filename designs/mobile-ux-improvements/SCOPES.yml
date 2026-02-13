@@ -51,7 +51,7 @@ tasks:
       - Tapping the login password field or search bar on mobile does not trigger browser zoom
     depends_on: []
     effort: 1
-    status: implementing
+    status: completed
 
   - id: 2
     milestone: 1
