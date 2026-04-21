@@ -5,6 +5,7 @@ import {
   Close as CloseIcon,
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
+  OpenInNew as OpenInNewIcon,
   Remove as RemoveIcon,
 } from '@mui/icons-material';
 import {
@@ -66,7 +67,7 @@ function FolderTreeLevel({
         return (
           <Box key={name}>
             <ListItemButton
-              onClick={() => onSelect(fullPath)}
+              onClick={() => hasChildren ? onToggleExpand(fullPath) : onSelect(fullPath)}
               selected={isSelected}
               sx={{ py: 1.5, pl: 2 + depth * 3 }}
             >
@@ -84,24 +85,16 @@ function FolderTreeLevel({
                 }}
               />
               {isSelected && <CheckIcon fontSize="small" color="primary" />}
-              {hasChildren && (
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleExpand(fullPath);
-                  }}
-                  sx={{ ml: 1 }}
-                >
-                  <ChevronRightIcon
-                    fontSize="small"
-                    sx={{
-                      transform: isExpanded ? 'rotate(90deg)' : 'none',
-                      transition: 'transform 0.2s',
-                    }}
-                  />
-                </IconButton>
-              )}
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(fullPath);
+                }}
+                sx={{ ml: 1 }}
+              >
+                <OpenInNewIcon fontSize="small" />
+              </IconButton>
             </ListItemButton>
             {hasChildren && (
               <Collapse in={isExpanded}>
@@ -144,13 +137,23 @@ function Toolbar({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetch('/api/photos/meta', { credentials: 'include' })
+    const params = new URLSearchParams();
+    const { sortBy: _, sortOrder: _so, search: _s, folder: _f, ...filterParams } = filters;
+    Object.entries(filterParams).forEach(([key, value]) => {
+      if (value !== undefined && value !== '' && value !== null) {
+        params.append(key, String(value));
+      }
+    });
+    const qs = params.toString();
+    const url = qs ? `/api/photos/meta?${qs}` : '/api/photos/meta';
+
+    fetch(url, { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         setFolders(data.folders || []);
       })
       .catch((err) => console.error('Failed to fetch toolbar metadata:', err));
-  }, []);
+  }, [filters]);
 
   const currentFolder = filters.folder || '';
   const breadcrumbs = currentFolder ? currentFolder.split('/') : [];
