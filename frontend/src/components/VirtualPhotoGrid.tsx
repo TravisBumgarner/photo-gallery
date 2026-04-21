@@ -1,6 +1,14 @@
 import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import PhotoCard from '@/components/PhotoCard';
 import { subtleBackground } from '@/styles/styleConsts';
 import type { Photo } from '@/types';
@@ -21,21 +29,26 @@ const PADDING = 16;
 const OVERSCAN = 2;
 const SECTION_HEADER_HEIGHT = 44;
 
-type VirtualRow =
-  | {
-      type: 'header';
-      y: number;
-      height: number;
-      sectionKey: string;
-      label: string;
-      photoCount: number;
-    }
-  | {
-      type: 'photos';
-      y: number;
-      height: number;
-      photos: Photo[];
-    };
+interface PhotoRow {
+  y: number;
+  height: number;
+  photos: Photo[];
+}
+
+interface SectionLayout {
+  key: string;
+  label: string;
+  photoCount: number;
+  collapsed: boolean;
+  /** Global y offset where the section starts (header top). */
+  y: number;
+  /** Height of the photo content area (excludes header). */
+  contentHeight: number;
+  /** Total height of the section in the scroll container. */
+  totalHeight: number;
+  /** Photo rows within this section, y relative to section content area. */
+  rows: PhotoRow[];
+}
 
 const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   photos,
@@ -48,7 +61,8 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
 }: VirtualPhotoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(),
@@ -70,12 +84,14 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     }
   }, [sortBy]);
 
-  // Measure container width so row height matches actual layout
+  // Measure container width and viewport height so layout matches actual size
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const ro = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width);
+      const rect = entries[0].contentRect;
+      setContainerWidth(rect.width);
+      setViewportHeight(rect.height);
     });
     ro.observe(container);
     return () => ro.disconnect();
@@ -96,128 +112,122 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     });
   }, []);
 
-  // Build layout with section headers and photo rows
-  const layout = useMemo(() => {
-    if (!sortBy) {
-      const rows: VirtualRow[] = [];
-      const totalPhotoRows = Math.ceil(photos.length / columnCount);
-      let y = PADDING;
-      for (let r = 0; r < totalPhotoRows; r++) {
-        const rowPhotos = photos.slice(
-          r * columnCount,
-          (r + 1) * columnCount,
-        );
-        rows.push({ type: 'photos', y, height: cellSize, photos: rowPhotos });
-        y += cellSize + GAP;
-      }
-      const totalHeight = rows.length > 0 ? y - GAP + PADDING : 0;
-      return { rows, totalHeight };
+  // Flat (non-grouped) layout: single list of virtualized photo rows
+  const flatLayout = useMemo(() => {
+    if (sortBy) return null;
+    const rows: PhotoRow[] = [];
+    const totalPhotoRows = Math.ceil(photos.length / columnCount);
+    let y = PADDING;
+    for (let r = 0; r < totalPhotoRows; r++) {
+      const rowPhotos = photos.slice(r * columnCount, (r + 1) * columnCount);
+      rows.push({ y, height: cellSize, photos: rowPhotos });
+      y += cellSize + GAP;
     }
+    const totalHeight = rows.length > 0 ? y - GAP + PADDING : 0;
+    return { rows, totalHeight };
+  }, [photos, sortBy, columnCount, cellSize]);
 
-    const sections = groupPhotosBySort(photos, sortBy);
-    const rows: VirtualRow[] = [];
+  // Grouped layout: per-section layouts with sticky headers
+  const sections = useMemo((): SectionLayout[] => {
+    if (!sortBy) return [];
+    const groups = groupPhotosBySort(photos, sortBy);
+    const result: SectionLayout[] = [];
     let y = PADDING;
 
-    for (const section of sections) {
-      rows.push({
-        type: 'header',
-        y,
-        height: SECTION_HEADER_HEIGHT,
-        sectionKey: section.key,
-        label: section.label,
-        photoCount: section.photos.length,
-      });
-      y += SECTION_HEADER_HEIGHT + GAP;
+    for (const group of groups) {
+      const collapsed = collapsedSections.has(group.key);
+      const rows: PhotoRow[] = [];
+      let contentHeight = 0;
 
-      if (!collapsedSections.has(section.key)) {
-        const photoRowCount = Math.ceil(section.photos.length / columnCount);
+      if (!collapsed) {
+        const photoRowCount = Math.ceil(group.photos.length / columnCount);
+        let rowY = 0;
         for (let r = 0; r < photoRowCount; r++) {
-          const rowPhotos = section.photos.slice(
+          const rowPhotos = group.photos.slice(
             r * columnCount,
             (r + 1) * columnCount,
           );
-          rows.push({
-            type: 'photos',
-            y,
-            height: cellSize,
-            photos: rowPhotos,
-          });
-          y += cellSize + GAP;
+          rows.push({ y: rowY, height: cellSize, photos: rowPhotos });
+          rowY += cellSize + GAP;
+        }
+        contentHeight = photoRowCount > 0 ? rowY - GAP : 0;
+      }
+
+      const totalHeight =
+        SECTION_HEADER_HEIGHT + (collapsed ? 0 : GAP + contentHeight);
+
+      result.push({
+        key: group.key,
+        label: group.label,
+        photoCount: group.photos.length,
+        collapsed,
+        y,
+        contentHeight,
+        totalHeight,
+        rows,
+      });
+
+      y += totalHeight + GAP;
+    }
+
+    return result;
+  }, [photos, sortBy, columnCount, cellSize, collapsedSections]);
+
+  // Update anchor ref with the first visible photo (for scroll preservation)
+  const updateAnchor = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const top = container.scrollTop;
+
+    if (flatLayout) {
+      for (const row of flatLayout.rows) {
+        if (row.y + row.height > top) {
+          anchorRef.current = {
+            photoId: row.photos[0].id,
+            viewportOffset: row.y - top,
+          };
+          return;
+        }
+      }
+      return;
+    }
+
+    for (const section of sections) {
+      if (section.collapsed) continue;
+      const contentGlobalY = section.y + SECTION_HEADER_HEIGHT + GAP;
+      for (const row of section.rows) {
+        const globalY = contentGlobalY + row.y;
+        if (globalY + row.height > top) {
+          anchorRef.current = {
+            photoId: row.photos[0].id,
+            viewportOffset: globalY - top,
+          };
+          return;
         }
       }
     }
+  }, [flatLayout, sections]);
 
-    const totalHeight = rows.length > 0 ? y - GAP + PADDING : 0;
-    return { rows, totalHeight };
-  }, [photos, sortBy, columnCount, cellSize, collapsedSections]);
-
-  // Update anchor ref with the first visible photo
-  const updateAnchor = useCallback(() => {
-    const container = containerRef.current;
-    if (!container || layout.rows.length === 0) return;
-
-    const scrollTop = container.scrollTop;
-    for (const row of layout.rows) {
-      if (row.type === 'photos' && row.y + row.height > scrollTop) {
-        anchorRef.current = {
-          photoId: row.photos[0].id,
-          viewportOffset: row.y - scrollTop,
-        };
-        break;
-      }
-    }
-  }, [layout.rows]);
-
-  // Calculate visible range based on scroll position
-  const updateVisibleRange = useCallback(() => {
-    const container = containerRef.current;
-    if (!container || layout.rows.length === 0) return;
-
-    const scrollTop = container.scrollTop;
-    const viewportHeight = container.clientHeight;
-    const overscanPx = OVERSCAN * (cellSize + GAP);
-
-    let start = 0;
-    let end = layout.rows.length;
-
-    for (let i = 0; i < layout.rows.length; i++) {
-      if (layout.rows[i].y + layout.rows[i].height > scrollTop - overscanPx) {
-        start = i;
-        break;
-      }
-    }
-
-    for (let i = start; i < layout.rows.length; i++) {
-      if (layout.rows[i].y > scrollTop + viewportHeight + overscanPx) {
-        end = i;
-        break;
-      }
-    }
-
-    setVisibleRange((prev) => {
-      if (prev.start === start && prev.end === end) return prev;
-      return { start, end };
-    });
-  }, [layout.rows, cellSize]);
-
-  // Update visible range on scroll, and track anchor photo
+  // Scroll tracking
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    updateVisibleRange();
+    setScrollTop(container.scrollTop);
     updateAnchor();
 
     const handleScroll = () => {
       requestAnimationFrame(() => {
-        updateVisibleRange();
+        const el = containerRef.current;
+        if (!el) return;
+        setScrollTop(el.scrollTop);
         updateAnchor();
       });
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [updateVisibleRange, updateAnchor]);
+  }, [updateAnchor]);
 
   // Restore scroll position when column count or container width changes
   useLayoutEffect(() => {
@@ -233,17 +243,29 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
 
     if (!container || !anchor || (!colChanged && !widthChanged)) return;
 
-    // Find the row containing the anchor photo
-    for (const row of layout.rows) {
-      if (
-        row.type === 'photos' &&
-        row.photos.some((p) => p.id === anchor.photoId)
-      ) {
-        container.scrollTop = row.y - anchor.viewportOffset;
-        break;
+    const findAndRestore = (globalY: number, row: PhotoRow) => {
+      if (row.photos.some((p) => p.id === anchor.photoId)) {
+        container.scrollTop = globalY - anchor.viewportOffset;
+        return true;
+      }
+      return false;
+    };
+
+    if (flatLayout) {
+      for (const row of flatLayout.rows) {
+        if (findAndRestore(row.y, row)) return;
+      }
+      return;
+    }
+
+    for (const section of sections) {
+      if (section.collapsed) continue;
+      const contentGlobalY = section.y + SECTION_HEADER_HEIGHT + GAP;
+      for (const row of section.rows) {
+        if (findAndRestore(contentGlobalY + row.y, row)) return;
       }
     }
-  }, [layout, columnCount, containerWidth]);
+  }, [flatLayout, sections, columnCount, containerWidth]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -268,92 +290,74 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     };
   }, [hasMore, loading, loadMore]);
 
-  const visibleRows = layout.rows.slice(visibleRange.start, visibleRange.end);
+  const overscanPx = OVERSCAN * (cellSize + GAP);
 
-  return (
+  const renderHeader = (section: SectionLayout) => (
     <Box
-      ref={containerRef}
+      onClick={() => toggleSection(section.key)}
       sx={{
-        height: '100%',
-        overflowY: 'auto',
-        overflowX: 'hidden',
+        position: 'sticky',
+        top: 0,
+        zIndex: 2,
+        height: SECTION_HEADER_HEIGHT,
+        display: 'flex',
+        alignItems: 'center',
+        cursor: 'pointer',
+        bgcolor: subtleBackground('slightly'),
+        px: 1.5,
+        userSelect: 'none',
+        '&:hover': {
+          bgcolor: 'action.hover',
+        },
       }}
     >
-      <Box sx={{ height: layout.totalHeight, position: 'relative' }}>
-        {visibleRows.map((row) => {
-          if (row.type === 'header') {
-            const isCollapsed = collapsedSections.has(row.sectionKey);
-            return (
-              <Box
-                key={`header-${row.sectionKey}`}
-                onClick={() => toggleSection(row.sectionKey)}
-                sx={{
-                  position: 'absolute',
-                  top: row.y,
-                  left: PADDING,
-                  right: PADDING,
-                  height: SECTION_HEADER_HEIGHT,
-                  display: 'flex',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  bgcolor: subtleBackground('slightly'),
-                  px: 1.5,
-                  userSelect: 'none',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
-                }}
-              >
-                <ExpandMoreIcon
-                  sx={{
-                    transform: isCollapsed
-                      ? 'rotate(-90deg)'
-                      : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                    mr: 1,
-                    fontSize: 16,
-                  }}
-                />
-                <Typography variant="caption" fontWeight="600">
-                  {row.label}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: 0.75, fontSize: '0.65rem' }}
-                >
-                  ({row.photoCount})
-                </Typography>
-              </Box>
-            );
-          }
+      <ExpandMoreIcon
+        sx={{
+          transform: section.collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s',
+          mr: 1,
+          fontSize: 16,
+        }}
+      />
+      <Typography variant="caption" fontWeight="600">
+        {section.label}
+      </Typography>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ ml: 0.75, fontSize: '0.65rem' }}
+      >
+        ({section.photoCount})
+      </Typography>
+    </Box>
+  );
 
-          return (
-            <Box
-              key={`photos-${row.photos[0].id}`}
-              sx={{
-                position: 'absolute',
-                top: row.y,
-                left: PADDING,
-                right: PADDING,
-                height: row.height,
-                display: 'grid',
-                gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
-                gap: `${GAP}px`,
-              }}
-            >
-              {row.photos.map((photo) => (
-                <PhotoCard
-                  key={photo.id}
-                  photo={photo}
-                  onClick={() => onPhotoClick(photo)}
-                />
-              ))}
-            </Box>
-          );
-        })}
-      </Box>
+  const renderPhotoRow = (row: PhotoRow, key: string) => (
+    <Box
+      key={key}
+      sx={{
+        position: 'absolute',
+        top: row.y,
+        left: 0,
+        right: 0,
+        height: row.height,
+        display: 'grid',
+        gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
+        gap: `${GAP}px`,
+      }}
+    >
+      {row.photos.map((photo) => (
+        <PhotoCard
+          key={photo.id}
+          photo={photo}
+          onClick={() => onPhotoClick(photo)}
+        />
+      ))}
+    </Box>
+  );
 
+  const trailingControls = (
+    <>
       <div ref={observerTarget} style={{ height: '20px' }} />
 
       {loading && (
@@ -369,6 +373,79 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
           </Button>
         </Box>
       )}
+    </>
+  );
+
+  if (flatLayout) {
+    const visibleRows = flatLayout.rows.filter(
+      (row) =>
+        row.y + row.height > scrollTop - overscanPx &&
+        row.y < scrollTop + viewportHeight + overscanPx,
+    );
+
+    return (
+      <Box
+        ref={containerRef}
+        sx={{
+          height: '100%',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        <Box sx={{ height: flatLayout.totalHeight, position: 'relative' }}>
+          {visibleRows.map((row) =>
+            renderPhotoRow(row, `photos-${row.photos[0].id}`),
+          )}
+        </Box>
+        {trailingControls}
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      ref={containerRef}
+      sx={{
+        height: '100%',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        px: `${PADDING}px`,
+        pt: `${PADDING}px`,
+        pb: `${PADDING}px`,
+      }}
+    >
+      {sections.map((section) => {
+        const contentGlobalY = section.y + SECTION_HEADER_HEIGHT + GAP;
+        const visibleRows = section.collapsed
+          ? []
+          : section.rows.filter((row) => {
+              const globalY = contentGlobalY + row.y;
+              return (
+                globalY + row.height > scrollTop - overscanPx &&
+                globalY < scrollTop + viewportHeight + overscanPx
+              );
+            });
+
+        return (
+          <Box key={section.key} sx={{ mb: `${GAP}px` }}>
+            {renderHeader(section)}
+            {!section.collapsed && (
+              <Box
+                sx={{
+                  position: 'relative',
+                  height: section.contentHeight,
+                  mt: `${GAP}px`,
+                }}
+              >
+                {visibleRows.map((row) =>
+                  renderPhotoRow(row, `photos-${row.photos[0].id}`),
+                )}
+              </Box>
+            )}
+          </Box>
+        );
+      })}
+      {trailingControls}
     </Box>
   );
 });
