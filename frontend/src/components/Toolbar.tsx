@@ -5,6 +5,7 @@ import {
   Close as CloseIcon,
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
+  OpenInNew as OpenInNewIcon,
   Remove as RemoveIcon,
 } from '@mui/icons-material';
 import {
@@ -66,7 +67,7 @@ function FolderTreeLevel({
         return (
           <Box key={name}>
             <ListItemButton
-              onClick={() => onSelect(fullPath)}
+              onClick={() => hasChildren ? onToggleExpand(fullPath) : onSelect(fullPath)}
               selected={isSelected}
               sx={{ py: 1.5, pl: 2 + depth * 3 }}
             >
@@ -84,24 +85,16 @@ function FolderTreeLevel({
                 }}
               />
               {isSelected && <CheckIcon fontSize="small" color="primary" />}
-              {hasChildren && (
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleExpand(fullPath);
-                  }}
-                  sx={{ ml: 1 }}
-                >
-                  <ChevronRightIcon
-                    fontSize="small"
-                    sx={{
-                      transform: isExpanded ? 'rotate(90deg)' : 'none',
-                      transition: 'transform 0.2s',
-                    }}
-                  />
-                </IconButton>
-              )}
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(fullPath);
+                }}
+                sx={{ ml: 1 }}
+              >
+                <OpenInNewIcon fontSize="small" />
+              </IconButton>
             </ListItemButton>
             {hasChildren && (
               <Collapse in={isExpanded}>
