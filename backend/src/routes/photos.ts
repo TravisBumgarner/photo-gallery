@@ -93,11 +93,18 @@ export function buildFilterConditions(filters: {
     if (filters.selectedMonths) {
       const months = filters.selectedMonths.split(',').filter(Boolean);
       for (const month of months) {
-        const start = Math.floor(new Date(`${month}-01T00:00:00Z`).getTime() / 1000);
+        const start = Math.floor(
+          new Date(`${month}-01T00:00:00Z`).getTime() / 1000,
+        );
         // Get the last day of the month
         const [year, mon] = month.split('-').map(Number);
         const lastDay = new Date(Date.UTC(year, mon, 0)).getDate();
-        const end = Math.floor(new Date(`${month}-${String(lastDay).padStart(2, '0')}T00:00:00Z`).getTime() / 1000) + 86399;
+        const end =
+          Math.floor(
+            new Date(
+              `${month}-${String(lastDay).padStart(2, '0')}T00:00:00Z`,
+            ).getTime() / 1000,
+          ) + 86399;
         dateConditions.push(
           and(
             sql`${photos.dateCaptured} >= ${start}`,
@@ -110,7 +117,9 @@ export function buildFilterConditions(filters: {
     if (filters.selectedDates) {
       const dates = filters.selectedDates.split(',').filter(Boolean);
       for (const date of dates) {
-        const start = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000);
+        const start = Math.floor(
+          new Date(`${date}T00:00:00Z`).getTime() / 1000,
+        );
         const end = start + 86399;
         dateConditions.push(
           and(
@@ -128,7 +137,9 @@ export function buildFilterConditions(filters: {
     }
   } else {
     if (filters.startDate) {
-      const startTimestamp = Math.floor(new Date(filters.startDate).getTime() / 1000);
+      const startTimestamp = Math.floor(
+        new Date(filters.startDate).getTime() / 1000,
+      );
       conditions.push(sql`${photos.dateCaptured} >= ${startTimestamp}`);
     }
     if (filters.endDate) {
@@ -204,7 +215,9 @@ export function buildFilterConditions(filters: {
     if (keywords.length === 1) {
       conditions.push(like(photos.keywords, `%"${keywords[0]}"%`));
     } else if (keywords.length > 1) {
-      conditions.push(or(...keywords.map((k) => like(photos.keywords, `%"${k}"%`))));
+      conditions.push(
+        or(...keywords.map((k) => like(photos.keywords, `%"${k}"%`))),
+      );
     }
   }
 
@@ -246,7 +259,13 @@ router.get('/photos', async (req, res) => {
       return;
     }
 
-    const { page: pageNum, limit: limitNum, sortBy, sortOrder, ...filterParams } = parsed.data;
+    const {
+      page: pageNum,
+      limit: limitNum,
+      sortBy,
+      sortOrder,
+      ...filterParams
+    } = parsed.data;
 
     const offset = (pageNum - 1) * limitNum;
 
@@ -447,13 +466,19 @@ router.get('/photos/meta', async (req, res) => {
     const hasFilters = filterCondition !== undefined;
 
     // Return cached data if still valid and no filters are applied
-    if (!hasFilters && metadataCache && Date.now() - metadataCache.timestamp < METADATA_CACHE_TTL) {
+    if (
+      !hasFilters &&
+      metadataCache &&
+      Date.now() - metadataCache.timestamp < METADATA_CACHE_TTL
+    ) {
       return res.json(metadataCache.data);
     }
 
     // Combine filter condition with NOT NULL checks
     const withFilter = (notNullCondition: SQL) =>
-      filterCondition ? and(notNullCondition, filterCondition) : notNullCondition;
+      filterCondition
+        ? and(notNullCondition, filterCondition)
+        : notNullCondition;
 
     const cameras = await db
       .selectDistinct({ camera: photos.camera })
@@ -526,14 +551,20 @@ router.get('/photos/meta', async (req, res) => {
 
       const idList = filteredIds.join(',');
       keywordRows = db.$client
-        .prepare(`SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL AND photos.id IN (${idList}) ORDER BY value`)
+        .prepare(
+          `SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL AND photos.id IN (${idList}) ORDER BY value`,
+        )
         .all() as { value: string }[];
       folderRows = db.$client
-        .prepare(`SELECT keywords FROM photos WHERE keywords IS NOT NULL AND id IN (${idList})`)
+        .prepare(
+          `SELECT keywords FROM photos WHERE keywords IS NOT NULL AND id IN (${idList})`,
+        )
         .all() as { keywords: string }[];
     } else {
       keywordRows = db.$client
-        .prepare('SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL ORDER BY value')
+        .prepare(
+          'SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL ORDER BY value',
+        )
         .all() as { value: string }[];
       folderRows = db.$client
         .prepare('SELECT keywords FROM photos WHERE keywords IS NOT NULL')
@@ -651,11 +682,16 @@ router.get('/photos/stats', async (req, res) => {
       : 'WHERE';
 
     // 1. Total photos
-    const totalPhotos = filteredIds.length > 0 || !whereCondition
-      ? (whereCondition ? filteredIds.length : (client
-          .prepare('SELECT count(*) as count FROM photos')
-          .get() as { count: number }).count)
-      : 0;
+    const totalPhotos =
+      filteredIds.length > 0 || !whereCondition
+        ? whereCondition
+          ? filteredIds.length
+          : (
+              client.prepare('SELECT count(*) as count FROM photos').get() as {
+                count: number;
+              }
+            ).count
+        : 0;
 
     // 2. Photos over time (by month)
     const photosOverTime = client
@@ -663,7 +699,7 @@ router.get('/photos/stats', async (req, res) => {
         `SELECT strftime('%Y-%m', date_captured, 'unixepoch') as month, count(*) as count
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL
-         GROUP BY month ORDER BY month`
+         GROUP BY month ORDER BY month`,
       )
       .all() as { month: string; count: number }[];
 
@@ -672,7 +708,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT camera, count(*) as count FROM photos
          ${idFilterAnd} camera IS NOT NULL
-         GROUP BY camera ORDER BY count DESC`
+         GROUP BY camera ORDER BY count DESC`,
       )
       .all() as { camera: string; count: number }[];
 
@@ -681,7 +717,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT lens, count(*) as count FROM photos
          ${idFilterAnd} lens IS NOT NULL
-         GROUP BY lens ORDER BY count DESC`
+         GROUP BY lens ORDER BY count DESC`,
       )
       .all() as { lens: string; count: number }[];
 
@@ -690,7 +726,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT focal_length as focalLength, count(*) as count FROM photos
          ${idFilterAnd} focal_length IS NOT NULL
-         GROUP BY focal_length ORDER BY focal_length`
+         GROUP BY focal_length ORDER BY focal_length`,
       )
       .all() as { focalLength: number; count: number }[];
 
@@ -699,7 +735,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT aperture, count(*) as count FROM photos
          ${idFilterAnd} aperture IS NOT NULL
-         GROUP BY aperture ORDER BY aperture`
+         GROUP BY aperture ORDER BY aperture`,
       )
       .all() as { aperture: number; count: number }[];
 
@@ -708,7 +744,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT iso, count(*) as count FROM photos
          ${idFilterAnd} iso IS NOT NULL
-         GROUP BY iso ORDER BY iso`
+         GROUP BY iso ORDER BY iso`,
       )
       .all() as { iso: number; count: number }[];
 
@@ -727,7 +763,7 @@ router.get('/photos/stats', async (req, res) => {
         FROM photos
         ${idFilter}
         GROUP BY aspectRatio
-        ORDER BY count DESC`
+        ORDER BY count DESC`,
       )
       .all() as { aspectRatio: string; count: number }[];
 
@@ -736,7 +772,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT rating, count(*) as count FROM photos
          ${idFilterAnd} rating IS NOT NULL
-         GROUP BY rating ORDER BY rating`
+         GROUP BY rating ORDER BY rating`,
       )
       .all() as { rating: number; count: number }[];
 
@@ -745,7 +781,7 @@ router.get('/photos/stats', async (req, res) => {
       .prepare(
         `SELECT shutter_speed as shutterSpeed, count(*) as count FROM photos
          ${idFilterAnd} shutter_speed IS NOT NULL
-         GROUP BY shutter_speed ORDER BY count DESC`
+         GROUP BY shutter_speed ORDER BY count DESC`,
       )
       .all() as { shutterSpeed: string; count: number }[];
 
@@ -755,7 +791,7 @@ router.get('/photos/stats', async (req, res) => {
         `SELECT strftime('%w', date_captured, 'unixepoch') as day, count(*) as count
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL
-         GROUP BY day ORDER BY day`
+         GROUP BY day ORDER BY day`,
       )
       .all() as { day: string; count: number }[];
 
@@ -765,7 +801,7 @@ router.get('/photos/stats', async (req, res) => {
         `SELECT CAST(strftime('%H', date_captured, 'unixepoch') AS INTEGER) as hour, count(*) as count
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL
-         GROUP BY hour ORDER BY hour`
+         GROUP BY hour ORDER BY hour`,
       )
       .all() as { hour: number; count: number }[];
 
@@ -775,7 +811,7 @@ router.get('/photos/stats', async (req, res) => {
         `SELECT strftime('%Y', date_captured, 'unixepoch') as year, count(*) as count
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL
-         GROUP BY year ORDER BY year`
+         GROUP BY year ORDER BY year`,
       )
       .all() as { year: string; count: number }[];
 
@@ -789,7 +825,7 @@ router.get('/photos/stats', async (req, res) => {
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL
          GROUP BY year, month
-         ORDER BY month, year`
+         ORDER BY month, year`,
       )
       .all() as { month: number; year: string; count: number }[];
 
@@ -803,7 +839,7 @@ router.get('/photos/stats', async (req, res) => {
       yearOverYearMap.get(month)![year] = count;
     });
     const yearOverYear = Array.from(yearOverYearMap.values()).sort(
-      (a, b) => a.month - b.month
+      (a, b) => a.month - b.month,
     );
 
     // 15. Camera + Lens combinations
@@ -814,7 +850,7 @@ router.get('/photos/stats', async (req, res) => {
          ${idFilterAnd} camera IS NOT NULL AND lens IS NOT NULL
          GROUP BY camera, lens
          ORDER BY count DESC
-         LIMIT 50`
+         LIMIT 50`,
       )
       .all() as { camera: string; lens: string; count: number }[];
 
@@ -825,7 +861,7 @@ router.get('/photos/stats', async (req, res) => {
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL
          GROUP BY date
-         ORDER BY date`
+         ORDER BY date`,
       )
       .all() as { date: string; count: number }[];
 
@@ -837,7 +873,7 @@ router.get('/photos/stats', async (req, res) => {
          ${idFilterAnd} date_captured IS NOT NULL
          GROUP BY date
          ORDER BY count DESC
-         LIMIT 10`
+         LIMIT 10`,
       )
       .all() as { date: string; count: number }[];
 
@@ -848,7 +884,7 @@ router.get('/photos/stats', async (req, res) => {
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL AND camera IS NOT NULL
          GROUP BY month, camera
-         ORDER BY month, count DESC`
+         ORDER BY month, count DESC`,
       )
       .all() as { month: string; camera: string; count: number }[];
 
@@ -859,7 +895,7 @@ router.get('/photos/stats', async (req, res) => {
          FROM photos
          ${idFilterAnd} date_captured IS NOT NULL AND lens IS NOT NULL
          GROUP BY month, lens
-         ORDER BY month, count DESC`
+         ORDER BY month, count DESC`,
       )
       .all() as { month: string; lens: string; count: number }[];
 
@@ -871,7 +907,7 @@ router.get('/photos/stats', async (req, res) => {
          ${idFilterAnd} focal_length IS NOT NULL AND aperture IS NOT NULL
          GROUP BY focal_length, aperture
          ORDER BY count DESC
-         LIMIT 500`
+         LIMIT 500`,
       )
       .all() as { focalLength: number; aperture: number; count: number }[];
 

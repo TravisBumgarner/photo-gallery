@@ -13,7 +13,9 @@ function getGroupKey(photo: Photo, sortBy: string): string {
     case 'aperture':
       return photo.aperture != null ? String(photo.aperture) : '__unknown__';
     case 'dateCaptured':
-      return photo.dateCaptured ? photo.dateCaptured.substring(0, 7) : '__unknown__';
+      return photo.dateCaptured
+        ? photo.dateCaptured.substring(0, 7)
+        : '__unknown__';
     case 'createdAt':
       return photo.createdAt ? photo.createdAt.substring(0, 7) : '__unknown__';
     case 'camera':
@@ -35,7 +37,10 @@ function getGroupLabel(key: string, sortBy: string): string {
     case 'dateCaptured':
     case 'createdAt': {
       const [year, month] = key.split('-');
-      const monthName = new Date(Number(year), Number(month) - 1).toLocaleString('default', { month: 'long' });
+      const monthName = new Date(
+        Number(year),
+        Number(month) - 1,
+      ).toLocaleString('default', { month: 'long' });
       return `${monthName} ${year}`;
     }
     case 'camera':

@@ -31,13 +31,20 @@ app.use(
   }),
 );
 app.use(express.json());
-app.use(compression({ filter: (req, _res) => {
-  // Only compress API responses, not already-compressed images
-  if (req.path.startsWith('/images') || req.path.startsWith('/thumbnails')) {
-    return false;
-  }
-  return compression.filter(req, _res);
-}}));
+app.use(
+  compression({
+    filter: (req, _res) => {
+      // Only compress API responses, not already-compressed images
+      if (
+        req.path.startsWith('/images') ||
+        req.path.startsWith('/thumbnails')
+      ) {
+        return false;
+      }
+      return compression.filter(req, _res);
+    },
+  }),
+);
 
 app.use(
   session({
@@ -86,10 +93,16 @@ app.use(requireAuth);
 
 // Serve static files (protected) with immutable caching
 const staticCacheOptions = { maxAge: '1y', immutable: true };
-app.use('/images', express.static(path.join(__dirname, '../public/images'), staticCacheOptions));
+app.use(
+  '/images',
+  express.static(path.join(__dirname, '../public/images'), staticCacheOptions),
+);
 app.use(
   '/thumbnails',
-  express.static(path.join(__dirname, '../public/thumbnails'), staticCacheOptions),
+  express.static(
+    path.join(__dirname, '../public/thumbnails'),
+    staticCacheOptions,
+  ),
 );
 
 // Routes (protected)

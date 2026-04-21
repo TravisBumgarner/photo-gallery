@@ -192,8 +192,15 @@ function StatsPage() {
               renderExpanded={() => (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={stats.photosOverTime}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                    <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="hsl(0 0% 25%)"
+                    />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 12 }}
+                      stroke="hsl(0 0% 50%)"
+                    />
                     <YAxis tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
                     <Tooltip {...tooltipStyle} />
                     <Area
@@ -210,7 +217,11 @@ function StatsPage() {
               <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={stats.photosOverTime}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
                   <Tooltip {...tooltipStyle} />
                   <Area
@@ -234,8 +245,15 @@ function StatsPage() {
                     layout="vertical"
                     margin={{ left: 20 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                    <XAxis type="number" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="hsl(0 0% 25%)"
+                    />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 12 }}
+                      stroke="hsl(0 0% 50%)"
+                    />
                     <YAxis
                       type="category"
                       dataKey="camera"
@@ -249,21 +267,30 @@ function StatsPage() {
                 </ResponsiveContainer>
               )}
             >
-              <ResponsiveContainer width="100%" height={Math.max(250, stats.cameraDistribution.length * 35)}>
+              <ResponsiveContainer
+                width="100%"
+                height={Math.max(250, stats.cameraDistribution.length * 35)}
+              >
                 <BarChart
                   data={stats.cameraDistribution}
                   layout="vertical"
                   margin={{ left: 20 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis
                     type="category"
                     dataKey="camera"
                     tick={{ fontSize: 11 }}
                     stroke="hsl(0 0% 50%)"
                     width={160}
-                    tickFormatter={(v) => v.length > 22 ? `${v.slice(0, 20)}...` : v}
+                    tickFormatter={(v) =>
+                      v.length > 22 ? `${v.slice(0, 20)}...` : v
+                    }
                   />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#82ca9d" />
@@ -281,8 +308,15 @@ function StatsPage() {
                     layout="vertical"
                     margin={{ left: 20 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                    <XAxis type="number" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="hsl(0 0% 25%)"
+                    />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 12 }}
+                      stroke="hsl(0 0% 50%)"
+                    />
                     <YAxis
                       type="category"
                       dataKey="lens"
@@ -296,21 +330,30 @@ function StatsPage() {
                 </ResponsiveContainer>
               )}
             >
-              <ResponsiveContainer width="100%" height={Math.max(250, stats.lensDistribution.length * 35)}>
+              <ResponsiveContainer
+                width="100%"
+                height={Math.max(250, stats.lensDistribution.length * 35)}
+              >
                 <BarChart
                   data={stats.lensDistribution}
                   layout="vertical"
                   margin={{ left: 20 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis
                     type="category"
                     dataKey="lens"
                     tick={{ fontSize: 10 }}
                     stroke="hsl(0 0% 50%)"
                     width={180}
-                    tickFormatter={(v) => v.length > 28 ? `${v.slice(0, 26)}...` : v}
+                    tickFormatter={(v) =>
+                      v.length > 28 ? `${v.slice(0, 26)}...` : v
+                    }
                   />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#ffc658" />
@@ -323,7 +366,11 @@ function StatsPage() {
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={focalLengthBinned}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis dataKey="bin" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    dataKey="bin"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#ff7300" />
@@ -354,7 +401,11 @@ function StatsPage() {
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={stats.isoDistribution}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis dataKey="iso" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    dataKey="iso"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#FFBB28" />
@@ -373,7 +424,10 @@ function StatsPage() {
                     cx="50%"
                     cy="50%"
                     outerRadius={90}
-                    label={(props: { aspectRatio?: string; percent?: number }) =>
+                    label={(props: {
+                      aspectRatio?: string;
+                      percent?: number;
+                    }) =>
                       `${props.aspectRatio ?? ''} (${((props.percent ?? 0) * 100).toFixed(0)}%)`
                     }
                   >
@@ -431,13 +485,24 @@ function StatsPage() {
               renderExpanded={() => (
                 <Stack spacing={3} sx={{ height: '100%' }}>
                   <Box sx={{ flex: 1 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ ml: 1, mb: 1 }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ ml: 1, mb: 1 }}
+                    >
                       By Day of Week
                     </Typography>
                     <ResponsiveContainer width="100%" height="90%">
                       <BarChart data={dayOfWeekMapped}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                        <XAxis dataKey="day" tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="hsl(0 0% 25%)"
+                        />
+                        <XAxis
+                          dataKey="day"
+                          tick={{ fontSize: 12 }}
+                          stroke="hsl(0 0% 50%)"
+                        />
                         <YAxis tick={{ fontSize: 12 }} stroke="hsl(0 0% 50%)" />
                         <Tooltip {...tooltipStyle} />
                         <Bar dataKey="count" fill="#8884d8" />
@@ -445,12 +510,19 @@ function StatsPage() {
                     </ResponsiveContainer>
                   </Box>
                   <Box sx={{ flex: 1 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ ml: 1, mb: 1 }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ ml: 1, mb: 1 }}
+                    >
                       By Hour of Day
                     </Typography>
                     <ResponsiveContainer width="100%" height="90%">
                       <BarChart data={stats.photosByHourOfDay}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="hsl(0 0% 25%)"
+                        />
                         <XAxis
                           dataKey="hour"
                           tick={{ fontSize: 12 }}
@@ -477,8 +549,15 @@ function StatsPage() {
                   </Typography>
                   <ResponsiveContainer width="100%" height={150}>
                     <BarChart data={dayOfWeekMapped}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                      <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="hsl(0 0% 25%)"
+                      />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 11 }}
+                        stroke="hsl(0 0% 50%)"
+                      />
                       <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
                       <Tooltip {...tooltipStyle} />
                       <Bar dataKey="count" fill="#8884d8" />
@@ -495,7 +574,10 @@ function StatsPage() {
                   </Typography>
                   <ResponsiveContainer width="100%" height={150}>
                     <BarChart data={stats.photosByHourOfDay}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="hsl(0 0% 25%)"
+                      />
                       <XAxis
                         dataKey="hour"
                         tick={{ fontSize: 11 }}
@@ -516,12 +598,19 @@ function StatsPage() {
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={stats.photosByYear}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis dataKey="year" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    dataKey="year"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#8884d8">
                     {stats.photosByYear.map((_, index) => (
-                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      <Cell
+                        key={index}
+                        fill={CHART_COLORS[index % CHART_COLORS.length]}
+                      />
                     ))}
                   </Bar>
                 </BarChart>
@@ -537,7 +626,22 @@ function StatsPage() {
                     dataKey="month"
                     tick={{ fontSize: 11 }}
                     stroke="hsl(0 0% 50%)"
-                    tickFormatter={(v) => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][v - 1] || v}
+                    tickFormatter={(v) =>
+                      [
+                        'Jan',
+                        'Feb',
+                        'Mar',
+                        'Apr',
+                        'May',
+                        'Jun',
+                        'Jul',
+                        'Aug',
+                        'Sep',
+                        'Oct',
+                        'Nov',
+                        'Dec',
+                      ][v - 1] || v
+                    }
                   />
                   <YAxis tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
                   <Tooltip {...tooltipStyle} />
@@ -558,10 +662,21 @@ function StatsPage() {
 
             {/* 13. Top 10 Most Productive Days - Horizontal Bar */}
             <ChartCard title="Top 10 Most Productive Days">
-              <ResponsiveContainer width="100%" height={Math.max(250, stats.topDays.length * 30)}>
-                <BarChart data={stats.topDays} layout="vertical" margin={{ left: 20 }}>
+              <ResponsiveContainer
+                width="100%"
+                height={Math.max(250, stats.topDays.length * 30)}
+              >
+                <BarChart
+                  data={stats.topDays}
+                  layout="vertical"
+                  margin={{ left: 20 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 25%)" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(0 0% 50%)" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    stroke="hsl(0 0% 50%)"
+                  />
                   <YAxis
                     type="category"
                     dataKey="date"
@@ -572,7 +687,10 @@ function StatsPage() {
                   <Tooltip {...tooltipStyle} />
                   <Bar dataKey="count" fill="#00C49F">
                     {stats.topDays.map((_, index) => (
-                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      <Cell
+                        key={index}
+                        fill={CHART_COLORS[index % CHART_COLORS.length]}
+                      />
                     ))}
                   </Bar>
                 </BarChart>
@@ -582,34 +700,49 @@ function StatsPage() {
             {/* 14. Camera + Lens Combinations - Table/Heatmap style */}
             <ChartCard title="Camera + Lens Combinations">
               <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
-                {stats.cameraLensCombinations.slice(0, 20).map((combo, index) => (
-                  <Box
-                    key={index}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      py: 0.5,
-                      borderBottom: '1px solid hsl(0 0% 20%)',
-                    }}
-                  >
+                {stats.cameraLensCombinations
+                  .slice(0, 20)
+                  .map((combo, index) => (
                     <Box
+                      key={index}
                       sx={{
-                        width: Math.min(100, (combo.count / stats.cameraLensCombinations[0].count) * 100),
-                        height: 8,
-                        bgcolor: CHART_COLORS[index % CHART_COLORS.length],
-                        borderRadius: 1,
-                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        py: 0.5,
+                        borderBottom: '1px solid hsl(0 0% 20%)',
                       }}
-                    />
-                    <Typography variant="caption" sx={{ flexGrow: 1, minWidth: 0 }} noWrap>
-                      {combo.camera} + {combo.lens}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                      {combo.count}
-                    </Typography>
-                  </Box>
-                ))}
+                    >
+                      <Box
+                        sx={{
+                          width: Math.min(
+                            100,
+                            (combo.count /
+                              stats.cameraLensCombinations[0].count) *
+                              100,
+                          ),
+                          height: 8,
+                          bgcolor: CHART_COLORS[index % CHART_COLORS.length],
+                          borderRadius: 1,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Typography
+                        variant="caption"
+                        sx={{ flexGrow: 1, minWidth: 0 }}
+                        noWrap
+                      >
+                        {combo.camera} + {combo.lens}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ flexShrink: 0 }}
+                      >
+                        {combo.count}
+                      </Typography>
+                    </Box>
+                  ))}
               </Box>
             </ChartCard>
 
@@ -657,7 +790,12 @@ function StatsPage() {
                     stroke="hsl(0 0% 50%)"
                     tickFormatter={(v) => `f/${v}`}
                   />
-                  <ZAxis type="number" dataKey="count" range={[20, 400]} name="Count" />
+                  <ZAxis
+                    type="number"
+                    dataKey="count"
+                    range={[20, 400]}
+                    name="Count"
+                  />
                   <Tooltip
                     {...tooltipStyle}
                     formatter={(value, name) => {
@@ -766,7 +904,14 @@ function ChartCard({
           },
         }}
       >
-        <Box sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Box
+          sx={{
+            p: 3,
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <Box
             sx={{
               display: 'flex',
@@ -800,7 +945,11 @@ function ChartCard({
 }
 
 // Calendar heatmap component (GitHub-style)
-function CalendarHeatmap({ data }: { data: { date: string; count: number }[] }) {
+function CalendarHeatmap({
+  data,
+}: {
+  data: { date: string; count: number }[];
+}) {
   const dateMap = new Map(data.map((d) => [d.date, d.count]));
   const maxCount = Math.max(...data.map((d) => d.count), 1);
 
@@ -843,7 +992,20 @@ function CalendarHeatmap({ data }: { data: { date: string; count: number }[] }) 
     return `hsl(142 ${40 + intensity * 30}% ${20 + intensity * 30}%)`;
   };
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
 
   return (
     <Box sx={{ overflow: 'auto' }}>
@@ -852,7 +1014,11 @@ function CalendarHeatmap({ data }: { data: { date: string; count: number }[] }) 
           const firstDay = week.find((d) => d.count >= 0);
           if (firstDay && firstDay.date.getDate() <= 7 && i > 0) {
             return (
-              <Typography key={i} variant="caption" sx={{ width: 10, fontSize: 9, color: 'text.secondary' }}>
+              <Typography
+                key={i}
+                variant="caption"
+                sx={{ width: 10, fontSize: 9, color: 'text.secondary' }}
+              >
                 {months[firstDay.date.getMonth()]}
               </Typography>
             );
@@ -861,15 +1027,29 @@ function CalendarHeatmap({ data }: { data: { date: string; count: number }[] }) 
         })}
       </Box>
       <Box sx={{ display: 'flex', gap: 0.5 }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, pr: 0.5 }}>
+        <Box
+          sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, pr: 0.5 }}
+        >
           {['', 'M', '', 'W', '', 'F', ''].map((day, i) => (
-            <Typography key={i} variant="caption" sx={{ height: 10, fontSize: 8, lineHeight: '10px', color: 'text.secondary' }}>
+            <Typography
+              key={i}
+              variant="caption"
+              sx={{
+                height: 10,
+                fontSize: 8,
+                lineHeight: '10px',
+                color: 'text.secondary',
+              }}
+            >
               {day}
             </Typography>
           ))}
         </Box>
         {weeks.map((week, weekIdx) => (
-          <Box key={weekIdx} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Box
+            key={weekIdx}
+            sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
+          >
             {week.map((day, dayIdx) => (
               <Box
                 key={dayIdx}
@@ -880,26 +1060,51 @@ function CalendarHeatmap({ data }: { data: { date: string; count: number }[] }) 
                   borderRadius: 0.5,
                   cursor: day.count >= 0 ? 'pointer' : 'default',
                 }}
-                title={day.count >= 0 ? `${day.date.toLocaleDateString()}: ${day.count} photos` : ''}
+                title={
+                  day.count >= 0
+                    ? `${day.date.toLocaleDateString()}: ${day.count} photos`
+                    : ''
+                }
               />
             ))}
           </Box>
         ))}
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1, justifyContent: 'flex-end' }}>
-        <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary' }}>Less</Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          mt: 1,
+          justifyContent: 'flex-end',
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{ fontSize: 9, color: 'text.secondary' }}
+        >
+          Less
+        </Typography>
         {[0, 0.25, 0.5, 0.75, 1].map((intensity) => (
           <Box
             key={intensity}
             sx={{
               width: 10,
               height: 10,
-              bgcolor: intensity === 0 ? 'hsl(0 0% 15%)' : `hsl(142 ${40 + intensity * 30}% ${20 + intensity * 30}%)`,
+              bgcolor:
+                intensity === 0
+                  ? 'hsl(0 0% 15%)'
+                  : `hsl(142 ${40 + intensity * 30}% ${20 + intensity * 30}%)`,
               borderRadius: 0.5,
             }}
           />
         ))}
-        <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary' }}>More</Typography>
+        <Typography
+          variant="caption"
+          sx={{ fontSize: 9, color: 'text.secondary' }}
+        >
+          More
+        </Typography>
       </Box>
     </Box>
   );
