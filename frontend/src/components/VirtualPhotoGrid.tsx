@@ -330,7 +330,7 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
 
           return (
             <Box
-              key={`photos-${row.y}`}
+              key={`photos-${row.photos[0].id}`}
               sx={{
                 position: 'absolute',
                 top: row.y,

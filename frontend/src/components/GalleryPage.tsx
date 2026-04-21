@@ -37,6 +37,8 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
   const [columnCount, setColumnCount] = useState(4);
   const [columnOverride, setColumnOverride] = useState(false);
 
+  const pendingNavigateNextRef = useRef(false);
+
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -165,6 +167,17 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, fetchPhotos]);
 
+  // Auto-advance to next photo after pagination loads new photos
+  useEffect(() => {
+    if (pendingNavigateNextRef.current && selectedPhoto) {
+      const currentIndex = photos.findIndex((p) => p.id === selectedPhoto.id);
+      if (currentIndex !== -1 && currentIndex < photos.length - 1) {
+        pendingNavigateNextRef.current = false;
+        setSelectedPhoto(photos[currentIndex + 1]);
+      }
+    }
+  }, [photos, selectedPhoto]);
+
   const handleFilterChange = useCallback((newFilters: Partial<PhotoFilters>) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
   }, []);
@@ -183,11 +196,17 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
     if (currentIndex === -1) return;
 
     if (direction === 'prev') {
-      const newIndex = (currentIndex - 1 + photos.length) % photos.length;
-      setSelectedPhoto(photos[newIndex]);
+      if (currentIndex === 0) return;
+      setSelectedPhoto(photos[currentIndex - 1]);
     } else {
-      const newIndex = (currentIndex + 1) % photos.length;
-      setSelectedPhoto(photos[newIndex]);
+      if (currentIndex === photos.length - 1) {
+        if (hasMore) {
+          pendingNavigateNextRef.current = true;
+          handleLoadMore();
+        }
+        return;
+      }
+      setSelectedPhoto(photos[currentIndex + 1]);
     }
   };
 
