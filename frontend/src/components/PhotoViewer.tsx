@@ -87,8 +87,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
     if (photos.length <= 1) return;
 
     const getPhotoAtOffset = (offset: number) => {
-      const index =
-        (currentIndex + offset + photos.length) % photos.length;
+      const index = (currentIndex + offset + photos.length) % photos.length;
       return photos[index];
     };
 
@@ -294,9 +293,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                         { label: 'Shutter', value: photo.shutterSpeed },
                         {
                           label: 'Aperture',
-                          value: photo.aperture
-                            ? `f/${photo.aperture}`
-                            : null,
+                          value: photo.aperture ? `f/${photo.aperture}` : null,
                         },
                         {
                           label: 'Focal',
@@ -322,10 +319,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                         },
                       ].map(({ label, value }) => (
                         <Box key={label} sx={{ minWidth: 0 }}>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             {label}
                           </Typography>
                           <Typography variant="body2" noWrap>
@@ -335,9 +329,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                       ))}
                     </Box>
                     {keywords.length > 0 && (
-                      <Box
-                        sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}
-                      >
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {keywords.map((keyword: string, index: number) => (
                           <Chip key={index} label={keyword} size="small" />
                         ))}
@@ -364,10 +356,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                       </Stack>
                       <Stack spacing={1}>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Camera:
                           </Typography>
                           <Typography variant="body2">
@@ -375,10 +364,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Lens:
                           </Typography>
                           <Typography variant="body2">
@@ -402,10 +388,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                       </Stack>
                       <Stack spacing={1}>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Stars:
                           </Typography>
                           <Box>
@@ -427,10 +410,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Box>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Label:
                           </Typography>
                           <Box>
@@ -468,10 +448,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                       </Stack>
                       <Stack spacing={1}>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             ISO:
                           </Typography>
                           <Typography variant="body2">
@@ -479,10 +456,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Shutter:
                           </Typography>
                           <Typography variant="body2">
@@ -490,10 +464,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Aperture:
                           </Typography>
                           <Typography variant="body2">
@@ -501,10 +472,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Focal Length:
                           </Typography>
                           <Typography variant="body2">
@@ -530,10 +498,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                       </Stack>
                       <Stack spacing={1}>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Resolution:
                           </Typography>
                           <Typography variant="body2">
@@ -541,10 +506,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Aspect Ratio:
                           </Typography>
                           <Typography variant="body2">
@@ -552,10 +514,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             File Size:
                           </Typography>
                           <Typography variant="body2">
@@ -563,10 +522,7 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
+                          <Typography variant="caption" color="text.secondary">
                             Date Captured:
                           </Typography>
                           <Typography variant="body2">
@@ -598,15 +554,9 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
                               gap: 0.5,
                             }}
                           >
-                            {keywords.map(
-                              (keyword: string, index: number) => (
-                                <Chip
-                                  key={index}
-                                  label={keyword}
-                                  size="small"
-                                />
-                              ),
-                            )}
+                            {keywords.map((keyword: string, index: number) => (
+                              <Chip key={index} label={keyword} size="small" />
+                            ))}
                           </Box>
                         </Box>
                       </>

@@ -124,9 +124,7 @@ function StatsFilterBar({ filters, onFilterChange }: StatsFilterBarProps) {
             }}
             label="Camera"
             renderValue={(selected) =>
-              selected.length === 1
-                ? selected[0]
-                : `${selected.length} cameras`
+              selected.length === 1 ? selected[0] : `${selected.length} cameras`
             }
           >
             {metadata.cameras.map((camera) => (
@@ -211,10 +209,7 @@ function StatsFilterBar({ filters, onFilterChange }: StatsFilterBarProps) {
             </Typography>
             <Slider
               value={
-                isoRange || [
-                  filters.minIso ?? isoMin,
-                  filters.maxIso ?? isoMax,
-                ]
+                isoRange || [filters.minIso ?? isoMin, filters.maxIso ?? isoMax]
               }
               onChange={(_, newValue) => {
                 setIsoRange(newValue as [number, number]);

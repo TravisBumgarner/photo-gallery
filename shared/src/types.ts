@@ -87,5 +87,9 @@ export interface StatsResponse {
   topDays: { date: string; count: number }[];
   cameraUsageOverTime: { month: string; camera: string; count: number }[];
   lensUsageOverTime: { month: string; lens: string; count: number }[];
-  focalLengthVsAperture: { focalLength: number; aperture: number; count: number }[];
+  focalLengthVsAperture: {
+    focalLength: number;
+    aperture: number;
+    count: number;
+  }[];
 }

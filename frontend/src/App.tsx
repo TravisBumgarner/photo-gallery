@@ -58,12 +58,14 @@ function App() {
   if (!isAuthenticated) {
     return (
       <AppThemeProvider>
-        <LoginPage onLogin={() => {
-          // iOS Safari scrolls the viewport when the soft keyboard opens for the password field.
-          // That scroll offset persists after the keyboard dismisses, so reset it before rendering the gallery.
-          window.scrollTo(0, 0);
-          setIsAuthenticated(true);
-        }} />
+        <LoginPage
+          onLogin={() => {
+            // iOS Safari scrolls the viewport when the soft keyboard opens for the password field.
+            // That scroll offset persists after the keyboard dismisses, so reset it before rendering the gallery.
+            window.scrollTo(0, 0);
+            setIsAuthenticated(true);
+          }}
+        />
       </AppThemeProvider>
     );
   }

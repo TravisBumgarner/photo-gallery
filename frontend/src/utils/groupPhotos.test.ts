@@ -81,7 +81,9 @@ describe('groupPhotosBySort', () => {
 
     const sections = groupPhotosBySort(photos, 'iso');
     expect(sections).toHaveLength(2);
-    const unknownSection = sections.find((s) => s.label.toLowerCase().includes('unknown'));
+    const unknownSection = sections.find((s) =>
+      s.label.toLowerCase().includes('unknown'),
+    );
     expect(unknownSection).toBeDefined();
     expect(unknownSection!.photos).toHaveLength(1);
   });

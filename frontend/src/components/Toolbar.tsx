@@ -66,7 +66,9 @@ function FolderTreeLevel({
         return (
           <Box key={name}>
             <ListItemButton
-              onClick={() => hasChildren ? onToggleExpand(fullPath) : onSelect(fullPath)}
+              onClick={() =>
+                hasChildren ? onToggleExpand(fullPath) : onSelect(fullPath)
+              }
               selected={isSelected}
               sx={{ py: 1.5, pl: 2 + depth * 3 }}
             >
@@ -137,7 +139,13 @@ function Toolbar({
 
   useEffect(() => {
     const params = new URLSearchParams();
-    const { sortBy: _, sortOrder: _so, search: _s, folder: _f, ...filterParams } = filters;
+    const {
+      sortBy: _,
+      sortOrder: _so,
+      search: _s,
+      folder: _f,
+      ...filterParams
+    } = filters;
     Object.entries(filterParams).forEach(([key, value]) => {
       if (value !== undefined && value !== '' && value !== null) {
         params.append(key, String(value));
@@ -272,11 +280,7 @@ function Toolbar({
               overflow: 'hidden',
             }}
           >
-            <Typography
-              variant="body2"
-              fontWeight="bold"
-              noWrap
-            >
+            <Typography variant="body2" fontWeight="bold" noWrap>
               Browse
             </Typography>
           </Button>
@@ -294,7 +298,11 @@ function Toolbar({
               scrollbarWidth: 'none',
             }}
           >
-            <FolderIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
+            <FolderIcon
+              fontSize="small"
+              color="action"
+              sx={{ flexShrink: 0 }}
+            />
             <Breadcrumbs
               separator="/"
               sx={{
@@ -310,7 +318,14 @@ function Toolbar({
                 color={currentFolder ? 'inherit' : 'primary'}
                 fontWeight={currentFolder ? 'normal' : 'bold'}
                 onClick={() => onFilterChange({ folder: '' })}
-                sx={{ cursor: 'pointer', lineHeight: 1, fontSize: '13.33px', position: 'relative', fontWeight: 'bold', top: '-1px' }}
+                sx={{
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                  fontSize: '13.33px',
+                  position: 'relative',
+                  fontWeight: 'bold',
+                  top: '-1px',
+                }}
               >
                 All
               </Link>
@@ -392,10 +407,15 @@ function Toolbar({
 
         {/* Row Count Control (hidden on mobile) */}
         {!isMobile && (
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{
-            flexShrink: 0,
-            paddingRight: '50px',
-          }}>
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{
+              flexShrink: 0,
+              paddingRight: '50px',
+            }}
+          >
             <IconButton
               size="small"
               onClick={() => onColumnCountChange(Math.max(1, columnCount - 1))}
@@ -426,8 +446,17 @@ function Toolbar({
         onClose={() => setFolderModalOpen(false)}
         fullScreen
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.5 }}>
-          <Typography variant="h6" fontWeight="bold">Browse Folders</Typography>
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 1.5,
+          }}
+        >
+          <Typography variant="h6" fontWeight="bold">
+            Browse Folders
+          </Typography>
           <IconButton onClick={() => setFolderModalOpen(false)}>
             <CloseIcon />
           </IconButton>
@@ -442,7 +471,12 @@ function Toolbar({
             <ListItemIcon sx={{ minWidth: 36 }}>
               <FolderOpenIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText primary="All Folders" primaryTypographyProps={{ fontWeight: !currentFolder ? 'bold' : 'normal' }} />
+            <ListItemText
+              primary="All Folders"
+              primaryTypographyProps={{
+                fontWeight: !currentFolder ? 'bold' : 'normal',
+              }}
+            />
           </ListItemButton>
 
           {/* Recursive folder tree */}

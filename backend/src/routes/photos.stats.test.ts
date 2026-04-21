@@ -13,100 +13,108 @@ let db: ReturnType<typeof drizzle>;
 
 function seedPhotos() {
   // Photo 1: Nikon, 50mm, Jan 2024 (Monday), landscape 3:2
-  db.insert(photos).values({
-    uuid: 'aaa-111',
-    filename: 'sunset.jpg',
-    originalPath: '/images/aaa-111.jpg',
-    thumbnailPath: '/thumbnails/aaa-111.jpg',
-    blurhash: 'LEHV6nWB',
-    width: 6000,
-    height: 4000,
-    aspectRatio: 1.5,
-    camera: 'NIKON Z 6_2',
-    lens: 'NIKKOR Z 50mm f/1.8 S',
-    dateCaptured: new Date('2024-01-15T10:30:00Z'),
-    iso: 200,
-    shutterSpeed: '1/250',
-    aperture: 1.8,
-    focalLength: 50,
-    rating: 4,
-    label: 'Green',
-    keywords: '["landscape","sunset"]',
-    fileSize: 12000000,
-    mimeType: 'image/jpeg',
-  }).run();
+  db.insert(photos)
+    .values({
+      uuid: 'aaa-111',
+      filename: 'sunset.jpg',
+      originalPath: '/images/aaa-111.jpg',
+      thumbnailPath: '/thumbnails/aaa-111.jpg',
+      blurhash: 'LEHV6nWB',
+      width: 6000,
+      height: 4000,
+      aspectRatio: 1.5,
+      camera: 'NIKON Z 6_2',
+      lens: 'NIKKOR Z 50mm f/1.8 S',
+      dateCaptured: new Date('2024-01-15T10:30:00Z'),
+      iso: 200,
+      shutterSpeed: '1/250',
+      aperture: 1.8,
+      focalLength: 50,
+      rating: 4,
+      label: 'Green',
+      keywords: '["landscape","sunset"]',
+      fileSize: 12000000,
+      mimeType: 'image/jpeg',
+    })
+    .run();
 
   // Photo 2: Canon, 24mm, Mar 2024 (Friday), landscape 16:9
-  db.insert(photos).values({
-    uuid: 'bbb-222',
-    filename: 'city.jpg',
-    originalPath: '/images/bbb-222.jpg',
-    thumbnailPath: '/thumbnails/bbb-222.jpg',
-    blurhash: 'L5H2EC=P',
-    width: 3840,
-    height: 2160,
-    aspectRatio: 1.78,
-    camera: 'Canon EOS R6',
-    lens: 'RF 24-70mm f/2.8L',
-    dateCaptured: new Date('2024-03-22T18:45:00Z'),
-    iso: 800,
-    shutterSpeed: '1/125',
-    aperture: 2.8,
-    focalLength: 24,
-    rating: 3,
-    label: 'Blue',
-    keywords: '["urban","city"]',
-    fileSize: 8000000,
-    mimeType: 'image/jpeg',
-  }).run();
+  db.insert(photos)
+    .values({
+      uuid: 'bbb-222',
+      filename: 'city.jpg',
+      originalPath: '/images/bbb-222.jpg',
+      thumbnailPath: '/thumbnails/bbb-222.jpg',
+      blurhash: 'L5H2EC=P',
+      width: 3840,
+      height: 2160,
+      aspectRatio: 1.78,
+      camera: 'Canon EOS R6',
+      lens: 'RF 24-70mm f/2.8L',
+      dateCaptured: new Date('2024-03-22T18:45:00Z'),
+      iso: 800,
+      shutterSpeed: '1/125',
+      aperture: 2.8,
+      focalLength: 24,
+      rating: 3,
+      label: 'Blue',
+      keywords: '["urban","city"]',
+      fileSize: 8000000,
+      mimeType: 'image/jpeg',
+    })
+    .run();
 
   // Photo 3: Nikon, 85mm, Jan 2024 (Wednesday), portrait 2:3
-  db.insert(photos).values({
-    uuid: 'ccc-333',
-    filename: 'portrait.jpg',
-    originalPath: '/images/ccc-333.jpg',
-    thumbnailPath: '/thumbnails/ccc-333.jpg',
-    blurhash: 'LGF5]+Yk',
-    width: 4000,
-    height: 6000,
-    aspectRatio: 0.667,
-    camera: 'NIKON Z 6_2',
-    lens: 'NIKKOR Z 85mm f/1.8 S',
-    dateCaptured: new Date('2024-01-24T14:00:00Z'),
-    iso: 100,
-    shutterSpeed: '1/500',
-    aperture: 1.8,
-    focalLength: 85,
-    rating: 5,
-    label: 'Red',
-    keywords: '["portrait","people"]',
-    fileSize: 15000000,
-    mimeType: 'image/jpeg',
-  }).run();
+  db.insert(photos)
+    .values({
+      uuid: 'ccc-333',
+      filename: 'portrait.jpg',
+      originalPath: '/images/ccc-333.jpg',
+      thumbnailPath: '/thumbnails/ccc-333.jpg',
+      blurhash: 'LGF5]+Yk',
+      width: 4000,
+      height: 6000,
+      aspectRatio: 0.667,
+      camera: 'NIKON Z 6_2',
+      lens: 'NIKKOR Z 85mm f/1.8 S',
+      dateCaptured: new Date('2024-01-24T14:00:00Z'),
+      iso: 100,
+      shutterSpeed: '1/500',
+      aperture: 1.8,
+      focalLength: 85,
+      rating: 5,
+      label: 'Red',
+      keywords: '["portrait","people"]',
+      fileSize: 15000000,
+      mimeType: 'image/jpeg',
+    })
+    .run();
 
   // Photo 4: Canon, 70mm, Jun 2024 (Saturday), square 1:1, no rating
-  db.insert(photos).values({
-    uuid: 'ddd-444',
-    filename: 'food.jpg',
-    originalPath: '/images/ddd-444.jpg',
-    thumbnailPath: '/thumbnails/ddd-444.jpg',
-    blurhash: 'L9B4HYIA',
-    width: 3000,
-    height: 3000,
-    aspectRatio: 1.0,
-    camera: 'Canon EOS R6',
-    lens: 'RF 24-70mm f/2.8L',
-    dateCaptured: new Date('2024-06-15T12:00:00Z'),
-    iso: 400,
-    shutterSpeed: '1/60',
-    aperture: 5.6,
-    focalLength: 70,
-    rating: null,
-    label: null,
-    keywords: '["food","macro"]',
-    fileSize: 6000000,
-    mimeType: 'image/jpeg',
-  }).run();
+  db.insert(photos)
+    .values({
+      uuid: 'ddd-444',
+      filename: 'food.jpg',
+      originalPath: '/images/ddd-444.jpg',
+      thumbnailPath: '/thumbnails/ddd-444.jpg',
+      blurhash: 'L9B4HYIA',
+      width: 3000,
+      height: 3000,
+      aspectRatio: 1.0,
+      camera: 'Canon EOS R6',
+      lens: 'RF 24-70mm f/2.8L',
+      dateCaptured: new Date('2024-06-15T12:00:00Z'),
+      iso: 400,
+      shutterSpeed: '1/60',
+      aperture: 5.6,
+      focalLength: 70,
+      rating: null,
+      label: null,
+      keywords: '["food","macro"]',
+      fileSize: 6000000,
+      mimeType: 'image/jpeg',
+    })
+    .run();
 }
 
 beforeAll(() => {
@@ -183,11 +191,16 @@ describe('buildFilterConditions', () => {
   });
 
   it('filters by aperture range', () => {
-    const condition = buildFilterConditions({ minAperture: 2.0, maxAperture: 6.0 });
+    const condition = buildFilterConditions({
+      minAperture: 2.0,
+      maxAperture: 6.0,
+    });
     expect(condition).toBeDefined();
 
     const rows = db.select().from(photos).where(condition).all();
-    expect(rows.every((r) => r.aperture! >= 2.0 && r.aperture! <= 6.0)).toBe(true);
+    expect(rows.every((r) => r.aperture! >= 2.0 && r.aperture! <= 6.0)).toBe(
+      true,
+    );
   });
 
   it('filters by date range', () => {
@@ -230,7 +243,9 @@ describe('buildFilterConditions', () => {
 
   it('filters by selectedMonths for non-contiguous months', () => {
     // Jan 2024 has 2 photos (aaa-111, ccc-333), Jun 2024 has 1 (ddd-444)
-    const condition = buildFilterConditions({ selectedMonths: '2024-01,2024-06' });
+    const condition = buildFilterConditions({
+      selectedMonths: '2024-01,2024-06',
+    });
     expect(condition).toBeDefined();
 
     const rows = db.select().from(photos).where(condition).all();
@@ -241,7 +256,9 @@ describe('buildFilterConditions', () => {
 
   it('filters by selectedDates for specific dates', () => {
     // 2024-01-15 has 1 photo (aaa-111), 2024-06-15 has 1 (ddd-444)
-    const condition = buildFilterConditions({ selectedDates: '2024-01-15,2024-06-15' });
+    const condition = buildFilterConditions({
+      selectedDates: '2024-01-15,2024-06-15',
+    });
     expect(condition).toBeDefined();
 
     const rows = db.select().from(photos).where(condition).all();
@@ -282,14 +299,17 @@ describe('GET /photos/stats response shape', () => {
   // They run the aggregation queries directly against the test DB.
 
   it('returns totalPhotos matching the count in the database', () => {
-    const [row] = db.select({ count: sql<number>`count(*)` }).from(photos).all();
+    const [row] = db
+      .select({ count: sql<number>`count(*)` })
+      .from(photos)
+      .all();
     expect(row.count).toBe(4);
   });
 
   it('groups photos by month for photosOverTime', () => {
     const rows = sqlite
       .prepare(
-        "SELECT strftime('%Y-%m', date_captured, 'unixepoch') as month, count(*) as count FROM photos WHERE date_captured IS NOT NULL GROUP BY month ORDER BY month"
+        "SELECT strftime('%Y-%m', date_captured, 'unixepoch') as month, count(*) as count FROM photos WHERE date_captured IS NOT NULL GROUP BY month ORDER BY month",
       )
       .all() as { month: string; count: number }[];
 
@@ -301,7 +321,7 @@ describe('GET /photos/stats response shape', () => {
   it('groups photos by camera for cameraDistribution', () => {
     const rows = sqlite
       .prepare(
-        'SELECT camera, count(*) as count FROM photos WHERE camera IS NOT NULL GROUP BY camera ORDER BY count DESC'
+        'SELECT camera, count(*) as count FROM photos WHERE camera IS NOT NULL GROUP BY camera ORDER BY count DESC',
       )
       .all() as { camera: string; count: number }[];
 
@@ -312,7 +332,7 @@ describe('GET /photos/stats response shape', () => {
   it('groups photos by lens for lensDistribution', () => {
     const rows = sqlite
       .prepare(
-        'SELECT lens, count(*) as count FROM photos WHERE lens IS NOT NULL GROUP BY lens ORDER BY count DESC'
+        'SELECT lens, count(*) as count FROM photos WHERE lens IS NOT NULL GROUP BY lens ORDER BY count DESC',
       )
       .all() as { lens: string; count: number }[];
 
@@ -322,7 +342,7 @@ describe('GET /photos/stats response shape', () => {
   it('groups photos by focal_length for focalLengthDistribution', () => {
     const rows = sqlite
       .prepare(
-        'SELECT focal_length as focalLength, count(*) as count FROM photos WHERE focal_length IS NOT NULL GROUP BY focal_length ORDER BY focal_length'
+        'SELECT focal_length as focalLength, count(*) as count FROM photos WHERE focal_length IS NOT NULL GROUP BY focal_length ORDER BY focal_length',
       )
       .all() as { focalLength: number; count: number }[];
 
@@ -356,7 +376,7 @@ describe('GET /photos/stats response shape', () => {
   it('groups photos by day of week', () => {
     const rows = sqlite
       .prepare(
-        "SELECT strftime('%w', date_captured, 'unixepoch') as day, count(*) as count FROM photos WHERE date_captured IS NOT NULL GROUP BY day ORDER BY day"
+        "SELECT strftime('%w', date_captured, 'unixepoch') as day, count(*) as count FROM photos WHERE date_captured IS NOT NULL GROUP BY day ORDER BY day",
       )
       .all() as { day: string; count: number }[];
 
@@ -371,7 +391,7 @@ describe('GET /photos/stats response shape', () => {
   it('groups photos by hour of day', () => {
     const rows = sqlite
       .prepare(
-        "SELECT CAST(strftime('%H', date_captured, 'unixepoch') AS INTEGER) as hour, count(*) as count FROM photos WHERE date_captured IS NOT NULL GROUP BY hour ORDER BY hour"
+        "SELECT CAST(strftime('%H', date_captured, 'unixepoch') AS INTEGER) as hour, count(*) as count FROM photos WHERE date_captured IS NOT NULL GROUP BY hour ORDER BY hour",
       )
       .all() as { hour: number; count: number }[];
 

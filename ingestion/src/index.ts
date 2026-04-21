@@ -10,11 +10,7 @@ import { endExiftool } from '@/exif.js';
 import { processImage } from '@/process.js';
 import type { PhotoRecord } from '@/process.js';
 import { scanDirectory } from '@/scan.js';
-import {
-  runRemoteCommand,
-  syncFileToRemote,
-  syncToRemote,
-} from '@/sync.js';
+import { runRemoteCommand, syncFileToRemote, syncToRemote } from '@/sync.js';
 
 const PARALLEL_BATCH_SIZE = 20;
 
@@ -139,7 +135,13 @@ async function main() {
 
       const results = await Promise.allSettled(
         batch.map((imagePath) =>
-          processImage(imagePath, sourceDir, outputDir, thumbnailDir, fileTransferMode),
+          processImage(
+            imagePath,
+            sourceDir,
+            outputDir,
+            thumbnailDir,
+            fileTransferMode,
+          ),
         ),
       );
 
@@ -176,7 +178,14 @@ async function main() {
   await endExiftool();
 
   if (isProduction) {
-    await runProductionSync(records, localDir, outputDir, thumbnailDir, sshHost!, destinationDir);
+    await runProductionSync(
+      records,
+      localDir,
+      outputDir,
+      thumbnailDir,
+      sshHost!,
+      destinationDir,
+    );
   } else {
     await runLocalDbSync(records, outputDir, config.DATABASE_URL!);
   }
@@ -258,11 +267,7 @@ async function runProductionSync(
   console.log(`\nWrote manifest with ${records.length} records.`);
 
   // Rsync images and thumbnails to remote
-  syncToRemote(
-    outputDir,
-    sshHost,
-    path.join(destinationDir, 'public/images'),
-  );
+  syncToRemote(outputDir, sshHost, path.join(destinationDir, 'public/images'));
   syncToRemote(
     thumbnailDir,
     sshHost,

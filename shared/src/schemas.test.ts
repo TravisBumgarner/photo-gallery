@@ -51,12 +51,16 @@ describe('photoFiltersSchema', () => {
     });
 
     it('accepts comma-separated month values', () => {
-      const result = photoFiltersSchema.parse({ selectedMonths: '2024-01,2024-03,2024-06' });
+      const result = photoFiltersSchema.parse({
+        selectedMonths: '2024-01,2024-03,2024-06',
+      });
       expect(result.selectedMonths).toBe('2024-01,2024-03,2024-06');
     });
 
     it('accepts comma-separated date values', () => {
-      const result = photoFiltersSchema.parse({ selectedDates: '2024-01-15,2024-06-15' });
+      const result = photoFiltersSchema.parse({
+        selectedDates: '2024-01-15,2024-06-15',
+      });
       expect(result.selectedDates).toBe('2024-01-15,2024-06-15');
     });
   });

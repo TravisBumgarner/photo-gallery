@@ -14,24 +14,22 @@ export const PALETTE = {
     900: 'hsl(0 0% 10%)',
     1000: 'hsl(0 0% 0%)',
   },
-}
+};
 
-export const subtleBackground = (
-  subtleness: 'very' | 'slightly' = 'very'
-) => {
+export const subtleBackground = (subtleness: 'very' | 'slightly' = 'very') => {
   if (subtleness === 'slightly') {
-    return `color-mix(in hsl, ${PALETTE.grayscale[500]}, ${PALETTE.grayscale[900]} 90%)`
+    return `color-mix(in hsl, ${PALETTE.grayscale[500]}, ${PALETTE.grayscale[900]} 90%)`;
   }
 
-  return `color-mix(in hsl, ${PALETTE.grayscale[800]}, ${PALETTE.grayscale[900]} 80%)`
-}
+  return `color-mix(in hsl, ${PALETTE.grayscale[800]}, ${PALETTE.grayscale[900]} 80%)`;
+};
 
 export const BORDER_RADIUS = {
   ZERO: {
     PX: '0px',
     INT: 0,
   },
-} as const
+} as const;
 
 export const FONT_SIZES = {
   SMALL: {
@@ -50,7 +48,7 @@ export const FONT_SIZES = {
     PX: '32px',
     INT: 32,
   },
-} as const
+} as const;
 
 export const SPACING = {
   TINY: {
@@ -73,10 +71,10 @@ export const SPACING = {
     PX: '48px',
     INT: 48,
   },
-} as const
+} as const;
 
 export const BUTTON_STYLES = {
   color: PALETTE.grayscale[900],
   background: PALETTE.grayscale[200],
   hoverBackground: PALETTE.grayscale[100],
-} as const
+} as const;
