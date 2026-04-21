@@ -60,7 +60,7 @@ describe('groupPhotosBySort', () => {
     expect(sections[1].photos).toHaveLength(1);
   });
 
-  it('groups photos by date captured into day groups', () => {
+  it('groups photos by date captured into month groups', () => {
     const photos = [
       makePhoto({ id: 1, dateCaptured: '2024-01-15T10:00:00Z' }),
       makePhoto({ id: 2, dateCaptured: '2024-01-15T18:00:00Z' }),

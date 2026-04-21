@@ -333,6 +333,7 @@ const FilterPanel = memo(function FilterPanel({
             />
             <Collapse
               in={expandedSection === 'general'}
+              unmountOnExit
               sx={{
                 flex: 1,
                 minHeight: 0,
@@ -589,6 +590,7 @@ const FilterPanel = memo(function FilterPanel({
             />
             <Collapse
               in={expandedSection === 'camera'}
+              unmountOnExit
               sx={{
                 flex: 1,
                 minHeight: 0,
@@ -671,6 +673,7 @@ const FilterPanel = memo(function FilterPanel({
             />
             <Collapse
               in={expandedSection === 'lens'}
+              unmountOnExit
               sx={{
                 flex: 1,
                 minHeight: 0,
@@ -755,6 +758,7 @@ const FilterPanel = memo(function FilterPanel({
             />
             <Collapse
               in={expandedSection === 'aspectRatio'}
+              unmountOnExit
               sx={{
                 flex: 1,
                 minHeight: 0,
@@ -892,6 +896,7 @@ const FilterPanel = memo(function FilterPanel({
             />
             <Collapse
               in={expandedSection === 'dates'}
+              unmountOnExit
               sx={{
                 flex: 1,
                 minHeight: 0,
@@ -1305,6 +1310,7 @@ const FilterPanel = memo(function FilterPanel({
             />
             <Collapse
               in={expandedSection === 'tags'}
+              unmountOnExit
               sx={{
                 flex: 1,
                 minHeight: 0,
