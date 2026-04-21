@@ -1,7 +1,6 @@
 import {
   Add as AddIcon,
   Check as CheckIcon,
-  ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
