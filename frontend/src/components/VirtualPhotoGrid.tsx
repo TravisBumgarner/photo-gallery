@@ -1,6 +1,6 @@
 import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PhotoCard from '@/components/PhotoCard';
 import { subtleBackground } from '@/styles/styleConsts';
 import type { Photo } from '@/types';
@@ -53,6 +53,13 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(),
   );
+
+  // Track anchor photo for scroll preservation across layout changes
+  const anchorRef = useRef<{ photoId: number; viewportOffset: number } | null>(
+    null,
+  );
+  const prevColumnCountRef = useRef(columnCount);
+  const prevContainerWidthRef = useRef(0);
 
   // Clear collapsed sections when sort field changes
   const prevSortByRef = useRef(sortBy);
@@ -144,6 +151,23 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     return { rows, totalHeight };
   }, [photos, sortBy, columnCount, cellSize, collapsedSections]);
 
+  // Update anchor ref with the first visible photo
+  const updateAnchor = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || layout.rows.length === 0) return;
+
+    const scrollTop = container.scrollTop;
+    for (const row of layout.rows) {
+      if (row.type === 'photos' && row.y + row.height > scrollTop) {
+        anchorRef.current = {
+          photoId: row.photos[0].id,
+          viewportOffset: row.y - scrollTop,
+        };
+        break;
+      }
+    }
+  }, [layout.rows]);
+
   // Calculate visible range based on scroll position
   const updateVisibleRange = useCallback(() => {
     const container = containerRef.current;
@@ -176,20 +200,50 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
     });
   }, [layout.rows, cellSize]);
 
-  // Update visible range on scroll
+  // Update visible range on scroll, and track anchor photo
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     updateVisibleRange();
+    updateAnchor();
 
     const handleScroll = () => {
-      requestAnimationFrame(updateVisibleRange);
+      requestAnimationFrame(() => {
+        updateVisibleRange();
+        updateAnchor();
+      });
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [updateVisibleRange]);
+  }, [updateVisibleRange, updateAnchor]);
+
+  // Restore scroll position when column count or container width changes
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const anchor = anchorRef.current;
+    const colChanged = prevColumnCountRef.current !== columnCount;
+    const widthChanged =
+      prevContainerWidthRef.current !== 0 &&
+      prevContainerWidthRef.current !== containerWidth;
+
+    prevColumnCountRef.current = columnCount;
+    prevContainerWidthRef.current = containerWidth;
+
+    if (!container || !anchor || (!colChanged && !widthChanged)) return;
+
+    // Find the row containing the anchor photo
+    for (const row of layout.rows) {
+      if (
+        row.type === 'photos' &&
+        row.photos.some((p) => p.id === anchor.photoId)
+      ) {
+        container.scrollTop = row.y - anchor.viewportOffset;
+        break;
+      }
+    }
+  }, [layout, columnCount, containerWidth]);
 
   // Infinite scroll observer
   useEffect(() => {
