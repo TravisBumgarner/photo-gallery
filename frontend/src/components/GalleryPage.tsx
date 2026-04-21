@@ -1,4 +1,7 @@
-import { ChevronRight as ChevronRightIcon, FilterList as FilterListIcon } from '@mui/icons-material';
+import {
+  ChevronRight as ChevronRightIcon,
+  FilterList as FilterListIcon,
+} from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -15,7 +18,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import FilterPanel from '@/components/FilterPanel';
 import PhotoViewer from '@/components/PhotoViewer';
 import Toolbar from '@/components/Toolbar';
-import VirtualPhotoGrid from '@/components/VirtualPhotoGrid';
+import VirtualPhotoGrid, {
+  type VirtualPhotoGridHandle,
+} from '@/components/VirtualPhotoGrid';
 import type { Photo, PhotoFilters, PhotosResponse } from '@/types';
 
 interface GalleryPageProps {
@@ -38,6 +43,14 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
   const [columnOverride, setColumnOverride] = useState(false);
 
   const pendingNavigateNextRef = useRef(false);
+  const gridRef = useRef<VirtualPhotoGridHandle | null>(null);
+
+  const handleCloseViewer = useCallback(() => {
+    setSelectedPhoto((current) => {
+      if (current) gridRef.current?.ensurePhotoVisible(current.id);
+      return null;
+    });
+  }, []);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -178,9 +191,12 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
     }
   }, [photos, selectedPhoto]);
 
-  const handleFilterChange = useCallback((newFilters: Partial<PhotoFilters>) => {
-    setFilters((prev) => ({ ...prev, ...newFilters }));
-  }, []);
+  const handleFilterChange = useCallback(
+    (newFilters: Partial<PhotoFilters>) => {
+      setFilters((prev) => ({ ...prev, ...newFilters }));
+    },
+    [],
+  );
 
   const handlePhotoClick = useCallback((photo: Photo) => {
     setSelectedPhoto(photo);
@@ -211,7 +227,14 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
   };
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', overflowX: 'hidden', width: '100vw' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100vw',
+      }}
+    >
       {/* Left Sidebar for Filters */}
       <Drawer
         variant={isMobile ? 'temporary' : 'persistent'}
@@ -292,27 +315,115 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
                 No photos found. Try adjusting your filters.
               </Typography>
               {(() => {
-                const activeFilters: { label: string; onClear: () => void }[] = [];
-                if (filters.search) activeFilters.push({ label: `Search: ${filters.search}`, onClear: () => handleFilterChange({ search: '' }) });
-                if (filters.camera) activeFilters.push({ label: `Camera: ${filters.camera}`, onClear: () => handleFilterChange({ camera: undefined }) });
-                if (filters.lens) activeFilters.push({ label: `Lens: ${filters.lens}`, onClear: () => handleFilterChange({ lens: undefined }) });
-                if (filters.minIso !== undefined || filters.maxIso !== undefined) activeFilters.push({ label: `ISO: ${filters.minIso ?? ''}–${filters.maxIso ?? ''}`, onClear: () => handleFilterChange({ minIso: undefined, maxIso: undefined }) });
-                if (filters.minAperture !== undefined || filters.maxAperture !== undefined) activeFilters.push({ label: `Aperture: f/${filters.minAperture ?? ''}–f/${filters.maxAperture ?? ''}`, onClear: () => handleFilterChange({ minAperture: undefined, maxAperture: undefined }) });
-                if (filters.startDate || filters.endDate) activeFilters.push({ label: `Date: ${filters.startDate ?? ''}–${filters.endDate ?? ''}`, onClear: () => handleFilterChange({ startDate: undefined, endDate: undefined }) });
-                if (filters.selectedMonths) activeFilters.push({ label: `Months: ${filters.selectedMonths}`, onClear: () => handleFilterChange({ selectedMonths: '' }) });
-                if (filters.selectedDates) activeFilters.push({ label: `Dates: ${filters.selectedDates}`, onClear: () => handleFilterChange({ selectedDates: '' }) });
-                if (filters.aspectRatio) activeFilters.push({ label: `Aspect: ${filters.aspectRatio}`, onClear: () => handleFilterChange({ aspectRatio: undefined }) });
-                if (filters.orientation) activeFilters.push({ label: `Orientation: ${filters.orientation}`, onClear: () => handleFilterChange({ orientation: undefined }) });
-                if (filters.rating !== undefined) activeFilters.push({ label: `Rating: ${filters.rating}+`, onClear: () => handleFilterChange({ rating: undefined }) });
-                if (filters.label) activeFilters.push({ label: `Label: ${filters.label}`, onClear: () => handleFilterChange({ label: undefined }) });
-                if (filters.keyword) activeFilters.push({ label: `Keyword: ${filters.keyword}`, onClear: () => handleFilterChange({ keyword: undefined }) });
-                if (filters.folder) activeFilters.push({ label: `Folder: ${filters.folder}`, onClear: () => handleFilterChange({ folder: '' }) });
+                const activeFilters: { label: string; onClear: () => void }[] =
+                  [];
+                if (filters.search)
+                  activeFilters.push({
+                    label: `Search: ${filters.search}`,
+                    onClear: () => handleFilterChange({ search: '' }),
+                  });
+                if (filters.camera)
+                  activeFilters.push({
+                    label: `Camera: ${filters.camera}`,
+                    onClear: () => handleFilterChange({ camera: undefined }),
+                  });
+                if (filters.lens)
+                  activeFilters.push({
+                    label: `Lens: ${filters.lens}`,
+                    onClear: () => handleFilterChange({ lens: undefined }),
+                  });
+                if (
+                  filters.minIso !== undefined ||
+                  filters.maxIso !== undefined
+                )
+                  activeFilters.push({
+                    label: `ISO: ${filters.minIso ?? ''}–${filters.maxIso ?? ''}`,
+                    onClear: () =>
+                      handleFilterChange({
+                        minIso: undefined,
+                        maxIso: undefined,
+                      }),
+                  });
+                if (
+                  filters.minAperture !== undefined ||
+                  filters.maxAperture !== undefined
+                )
+                  activeFilters.push({
+                    label: `Aperture: f/${filters.minAperture ?? ''}–f/${filters.maxAperture ?? ''}`,
+                    onClear: () =>
+                      handleFilterChange({
+                        minAperture: undefined,
+                        maxAperture: undefined,
+                      }),
+                  });
+                if (filters.startDate || filters.endDate)
+                  activeFilters.push({
+                    label: `Date: ${filters.startDate ?? ''}–${filters.endDate ?? ''}`,
+                    onClear: () =>
+                      handleFilterChange({
+                        startDate: undefined,
+                        endDate: undefined,
+                      }),
+                  });
+                if (filters.selectedMonths)
+                  activeFilters.push({
+                    label: `Months: ${filters.selectedMonths}`,
+                    onClear: () => handleFilterChange({ selectedMonths: '' }),
+                  });
+                if (filters.selectedDates)
+                  activeFilters.push({
+                    label: `Dates: ${filters.selectedDates}`,
+                    onClear: () => handleFilterChange({ selectedDates: '' }),
+                  });
+                if (filters.aspectRatio)
+                  activeFilters.push({
+                    label: `Aspect: ${filters.aspectRatio}`,
+                    onClear: () =>
+                      handleFilterChange({ aspectRatio: undefined }),
+                  });
+                if (filters.orientation)
+                  activeFilters.push({
+                    label: `Orientation: ${filters.orientation}`,
+                    onClear: () =>
+                      handleFilterChange({ orientation: undefined }),
+                  });
+                if (filters.rating !== undefined)
+                  activeFilters.push({
+                    label: `Rating: ${filters.rating}+`,
+                    onClear: () => handleFilterChange({ rating: undefined }),
+                  });
+                if (filters.label)
+                  activeFilters.push({
+                    label: `Label: ${filters.label}`,
+                    onClear: () => handleFilterChange({ label: undefined }),
+                  });
+                if (filters.keyword)
+                  activeFilters.push({
+                    label: `Keyword: ${filters.keyword}`,
+                    onClear: () => handleFilterChange({ keyword: undefined }),
+                  });
+                if (filters.folder)
+                  activeFilters.push({
+                    label: `Folder: ${filters.folder}`,
+                    onClear: () => handleFilterChange({ folder: '' }),
+                  });
 
                 return activeFilters.length > 0 ? (
                   <Stack spacing={2} alignItems="center">
-                    <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="center" useFlexGap>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      flexWrap="wrap"
+                      justifyContent="center"
+                      useFlexGap
+                    >
                       {activeFilters.map((f) => (
-                        <Chip key={f.label} label={f.label} onDelete={f.onClear} size="small" />
+                        <Chip
+                          key={f.label}
+                          label={f.label}
+                          onDelete={f.onClear}
+                          size="small"
+                        />
                       ))}
                     </Stack>
                     <Button
@@ -350,6 +461,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
             </Box>
           ) : (
             <VirtualPhotoGrid
+              ref={gridRef}
               photos={photos}
               onPhotoClick={handlePhotoClick}
               hasMore={hasMore}
@@ -366,7 +478,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
         <PhotoViewer
           photo={selectedPhoto}
           photos={photos}
-          onClose={() => setSelectedPhoto(null)}
+          onClose={handleCloseViewer}
           onNavigate={handlePhotoNavigate}
         />
       )}
