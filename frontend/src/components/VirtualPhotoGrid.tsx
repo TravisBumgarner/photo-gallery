@@ -10,7 +10,6 @@ import {
   useState,
 } from 'react';
 import PhotoCard from '@/components/PhotoCard';
-import { subtleBackground } from '@/styles/styleConsts';
 import type { Photo } from '@/types';
 import { groupPhotosBySort } from '@/utils/groupPhotos';
 
@@ -24,7 +23,7 @@ interface VirtualPhotoGridProps {
   sortBy?: string;
 }
 
-const GAP = 16;
+const GAP = 0;
 const PADDING = 16;
 const OVERSCAN = 2;
 const SECTION_HEADER_HEIGHT = 44;
@@ -100,7 +99,7 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
   // Cards are 1:1 aspect ratio, so cell height = cell width
   const cellSize =
     containerWidth > 0
-      ? (containerWidth - PADDING * 2 - (columnCount - 1) * GAP) / columnCount
+      ? (containerWidth - (columnCount - 1) * GAP) / columnCount
       : 300;
 
   const toggleSection = useCallback((key: string) => {
@@ -303,11 +302,11 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
         display: 'flex',
         alignItems: 'center',
         cursor: 'pointer',
-        bgcolor: subtleBackground('slightly'),
+        bgcolor: 'background.default',
         px: 1.5,
         userSelect: 'none',
         '&:hover': {
-          bgcolor: 'action.hover',
+          bgcolor: 'background.paper',
         },
       }}
     >
@@ -409,8 +408,6 @@ const VirtualPhotoGrid = memo(function VirtualPhotoGrid({
         height: '100%',
         overflowY: 'auto',
         overflowX: 'hidden',
-        px: `${PADDING}px`,
-        pt: `${PADDING}px`,
         pb: `${PADDING}px`,
       }}
     >
