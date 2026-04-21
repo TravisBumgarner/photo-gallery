@@ -137,13 +137,23 @@ function Toolbar({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetch('/api/photos/meta', { credentials: 'include' })
+    const params = new URLSearchParams();
+    const { sortBy: _, sortOrder: _so, search: _s, folder: _f, ...filterParams } = filters;
+    Object.entries(filterParams).forEach(([key, value]) => {
+      if (value !== undefined && value !== '' && value !== null) {
+        params.append(key, String(value));
+      }
+    });
+    const qs = params.toString();
+    const url = qs ? `/api/photos/meta?${qs}` : '/api/photos/meta';
+
+    fetch(url, { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         setFolders(data.folders || []);
       })
       .catch((err) => console.error('Failed to fetch toolbar metadata:', err));
-  }, []);
+  }, [filters]);
 
   const currentFolder = filters.folder || '';
   const breadcrumbs = currentFolder ? currentFolder.split('/') : [];

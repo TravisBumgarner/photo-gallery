@@ -432,35 +432,51 @@ router.get('/photos/suggestions', async (_req, res) => {
 });
 
 // Consolidated metadata endpoint — replaces individual meta/* endpoints
-router.get('/photos/meta', async (_req, res) => {
+router.get('/photos/meta', async (req, res) => {
   try {
-    // Return cached data if still valid
-    if (metadataCache && Date.now() - metadataCache.timestamp < METADATA_CACHE_TTL) {
+    const parsed = statsFiltersSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid query parameters',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const filterCondition = buildFilterConditions(parsed.data);
+    const hasFilters = filterCondition !== undefined;
+
+    // Return cached data if still valid and no filters are applied
+    if (!hasFilters && metadataCache && Date.now() - metadataCache.timestamp < METADATA_CACHE_TTL) {
       return res.json(metadataCache.data);
     }
+
+    // Combine filter condition with NOT NULL checks
+    const withFilter = (notNullCondition: SQL) =>
+      filterCondition ? and(notNullCondition, filterCondition) : notNullCondition;
 
     const cameras = await db
       .selectDistinct({ camera: photos.camera })
       .from(photos)
-      .where(sql`${photos.camera} IS NOT NULL`)
+      .where(withFilter(sql`${photos.camera} IS NOT NULL`))
       .orderBy(asc(photos.camera));
 
     const lenses = await db
       .selectDistinct({ lens: photos.lens })
       .from(photos)
-      .where(sql`${photos.lens} IS NOT NULL`)
+      .where(withFilter(sql`${photos.lens} IS NOT NULL`))
       .orderBy(asc(photos.lens));
 
     const isoValues = await db
       .selectDistinct({ iso: photos.iso })
       .from(photos)
-      .where(sql`${photos.iso} IS NOT NULL`)
+      .where(withFilter(sql`${photos.iso} IS NOT NULL`))
       .orderBy(asc(photos.iso));
 
     const apertureValues = await db
       .selectDistinct({ aperture: photos.aperture })
       .from(photos)
-      .where(sql`${photos.aperture} IS NOT NULL`)
+      .where(withFilter(sql`${photos.aperture} IS NOT NULL`))
       .orderBy(asc(photos.aperture));
 
     const dates = await db
@@ -468,7 +484,7 @@ router.get('/photos/meta', async (_req, res) => {
         date: sql<string>`DATE(${photos.dateCaptured}, 'unixepoch')`,
       })
       .from(photos)
-      .where(sql`${photos.dateCaptured} IS NOT NULL`)
+      .where(withFilter(sql`${photos.dateCaptured} IS NOT NULL`))
       .orderBy(desc(sql`DATE(${photos.dateCaptured}, 'unixepoch')`));
 
     const dateGroups = await db
@@ -477,19 +493,57 @@ router.get('/photos/meta', async (_req, res) => {
         count: sql<number>`count(*)`,
       })
       .from(photos)
-      .where(sql`${photos.dateCaptured} IS NOT NULL`)
+      .where(withFilter(sql`${photos.dateCaptured} IS NOT NULL`))
       .groupBy(sql`DATE(date_captured, 'unixepoch')`)
       .orderBy(desc(sql`DATE(date_captured, 'unixepoch')`));
 
-    // Use json_each() to extract keywords in SQL instead of loading all rows
-    const keywordRows = db.$client
-      .prepare('SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL ORDER BY value')
-      .all() as { value: string }[];
+    // Use filtered IDs approach for raw SQL queries when filters are active
+    let keywordRows: { value: string }[];
+    let folderRows: { keywords: string }[];
+
+    if (hasFilters) {
+      const filteredIds = db
+        .select({ id: photos.id })
+        .from(photos)
+        .where(filterCondition)
+        .all()
+        .map((r) => r.id);
+
+      if (filteredIds.length === 0) {
+        const emptyData = {
+          cameras: [],
+          lenses: [],
+          isoValues: [],
+          apertureValues: [],
+          dates: [],
+          dateCounts: {},
+          keywords: [],
+          labels: [],
+          folders: [],
+        };
+        return res.json(emptyData);
+      }
+
+      const idList = filteredIds.join(',');
+      keywordRows = db.$client
+        .prepare(`SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL AND photos.id IN (${idList}) ORDER BY value`)
+        .all() as { value: string }[];
+      folderRows = db.$client
+        .prepare(`SELECT keywords FROM photos WHERE keywords IS NOT NULL AND id IN (${idList})`)
+        .all() as { keywords: string }[];
+    } else {
+      keywordRows = db.$client
+        .prepare('SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL ORDER BY value')
+        .all() as { value: string }[];
+      folderRows = db.$client
+        .prepare('SELECT keywords FROM photos WHERE keywords IS NOT NULL')
+        .all() as { keywords: string }[];
+    }
 
     const labels = await db
       .selectDistinct({ label: photos.label })
       .from(photos)
-      .where(sql`${photos.label} IS NOT NULL`)
+      .where(withFilter(sql`${photos.label} IS NOT NULL`))
       .orderBy(asc(photos.label));
 
     const dateCounts: Record<string, number> = {};
@@ -498,9 +552,6 @@ router.get('/photos/meta', async (_req, res) => {
     });
 
     // Build folder paths from keyword arrays (each keyword array represents a folder hierarchy)
-    const folderRows = db.$client
-      .prepare('SELECT keywords FROM photos WHERE keywords IS NOT NULL')
-      .all() as { keywords: string }[];
     const folderSet = new Set<string>();
     folderRows.forEach((row) => {
       try {
@@ -528,7 +579,10 @@ router.get('/photos/meta', async (_req, res) => {
       folders,
     };
 
-    metadataCache = { data, timestamp: Date.now() };
+    // Only cache unfiltered results
+    if (!hasFilters) {
+      metadataCache = { data, timestamp: Date.now() };
+    }
     res.json(data);
   } catch (error) {
     console.error('Error fetching metadata:', error);

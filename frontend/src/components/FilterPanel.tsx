@@ -174,7 +174,17 @@ const FilterPanel = memo(function FilterPanel({
     useState<AccordionSection | null>(null);
 
   useEffect(() => {
-    fetch('/api/photos/meta', { credentials: 'include' })
+    const params = new URLSearchParams();
+    const { sortBy: _, sortOrder: _so, search: _s, ...filterParams } = filters;
+    Object.entries(filterParams).forEach(([key, value]) => {
+      if (value !== undefined && value !== '' && value !== null) {
+        params.append(key, String(value));
+      }
+    });
+    const qs = params.toString();
+    const url = qs ? `/api/photos/meta?${qs}` : '/api/photos/meta';
+
+    fetch(url, { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         setCameras(data.cameras || []);
@@ -186,7 +196,7 @@ const FilterPanel = memo(function FilterPanel({
         setApertureValues(data.apertureValues || []);
       })
       .catch((err) => console.error('Failed to fetch metadata:', err));
-  }, []);
+  }, [filters]);
 
   const toggleSection = (section: AccordionSection) => {
     setExpandedSection((prev) => (prev === section ? null : section));
