@@ -1,0 +1,10 @@
+{
+  "name": "photo-tagger",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \".venv/bin/uvicorn server:app --reload --port 8000\" \"npm --prefix frontend run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}
