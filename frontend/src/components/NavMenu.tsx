@@ -8,6 +8,8 @@ import {
 } from '@mui/material';
 import {
   BarChart as BarChartIcon,
+  Pets as PetsIcon,
+  People as PeopleIcon,
   PhotoLibrary as PhotoIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
@@ -54,6 +56,24 @@ function NavMenu() {
             <PhotoIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Gallery</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onClick={() => handleNav('/people')}
+          selected={location.pathname === '/people'}
+        >
+          <ListItemIcon>
+            <PeopleIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>People</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onClick={() => handleNav('/dogs')}
+          selected={location.pathname === '/dogs'}
+        >
+          <ListItemIcon>
+            <PetsIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Dogs</ListItemText>
         </MenuItem>
         <MenuItem
           onClick={() => handleNav('/stats')}

@@ -4,11 +4,13 @@ export function syncToRemote(
   localDir: string,
   sshHost: string,
   sshDestDir: string,
+  options: { delete?: boolean } = {},
 ) {
   console.log(`\nSyncing to ${sshHost}:${sshDestDir}...`);
+  const flags = options.delete ? '-avz --delete' : '-avz';
   try {
     execSync(`ssh ${sshHost} "mkdir -p ${sshDestDir}"`, { stdio: 'inherit' });
-    execSync(`rsync -avz ${localDir}/ ${sshHost}:${sshDestDir}/`, {
+    execSync(`rsync ${flags} ${localDir}/ ${sshHost}:${sshDestDir}/`, {
       stdio: 'inherit',
     });
     console.log('Sync complete.');

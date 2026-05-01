@@ -4,9 +4,13 @@ import {
   and,
   asc,
   desc,
+  eq,
   getTableColumns,
+  gt,
   gte,
+  inArray,
   like,
+  lt,
   lte,
   or,
   sql,
@@ -17,6 +21,7 @@ import { photos } from 'shared/db/schema';
 import { photoFiltersSchema, statsFiltersSchema } from 'shared/schemas';
 import type { StatsResponse } from 'shared/types';
 import { config } from '../config.js';
+import { searchByQuery } from '../contentSearch.js';
 
 const db = createDb(config.DATABASE_URL);
 
@@ -41,6 +46,8 @@ export function buildFilterConditions(filters: {
   label?: string;
   keyword?: string;
   folder?: string;
+  people?: string;
+  dogs?: string;
 }): SQL | undefined {
   const conditions: (SQL | undefined)[] = [];
 
@@ -229,6 +236,43 @@ export function buildFilterConditions(filters: {
     conditions.push(like(photos.keywords, `${jsonPrefix}%`));
   }
 
+  if (filters.people) {
+    const labels = filters.people.split(',').filter(Boolean);
+    if (labels.length > 0) {
+      // AND semantics: photo must contain a face for every selected label.
+      // GROUP BY photo + HAVING distinct-label-count = N enforces this with a
+      // single subquery.
+      conditions.push(sql`${photos.uuid} IN (
+        SELECT f.photo_uuid
+        FROM faces f
+        JOIN face_clusters c ON c.id = f.cluster_id
+        WHERE c.person_label IN (${sql.join(
+          labels.map((l) => sql`${l}`),
+          sql`, `,
+        )})
+        GROUP BY f.photo_uuid
+        HAVING COUNT(DISTINCT c.person_label) = ${labels.length}
+      )`);
+    }
+  }
+
+  if (filters.dogs) {
+    const labels = filters.dogs.split(',').filter(Boolean);
+    if (labels.length > 0) {
+      conditions.push(sql`${photos.uuid} IN (
+        SELECT d.photo_uuid
+        FROM dogs d
+        JOIN dog_clusters c ON c.id = d.cluster_id
+        WHERE c.dog_label IN (${sql.join(
+          labels.map((l) => sql`${l}`),
+          sql`, `,
+        )})
+        GROUP BY d.photo_uuid
+        HAVING COUNT(DISTINCT c.dog_label) = ${labels.length}
+      )`);
+    }
+  }
+
   if (conditions.length === 0) {
     return undefined;
   }
@@ -248,6 +292,7 @@ export function invalidateMetadataCache() {
 }
 
 // Get photos with pagination, filters, and search
+
 router.get('/photos', async (req, res) => {
   try {
     const parsed = photoFiltersSchema.safeParse(req.query);
@@ -264,10 +309,96 @@ router.get('/photos', async (req, res) => {
       limit: limitNum,
       sortBy,
       sortOrder,
+      contentSearch,
       ...filterParams
     } = parsed.data;
 
     const offset = (pageNum - 1) * limitNum;
+
+    if (contentSearch && contentSearch.length > 0) {
+      // Filter-first, rank-second: apply non-content filters in SQL to get a
+      // candidate UUID set, then score just those by content embedding. The
+      // old top-K-then-intersect approach silently dropped filter matches
+      // that fell outside the global top-K (e.g. a labeled person whose
+      // photos weren't all in the top 200 by content match).
+      const baseWhere = buildFilterConditions(filterParams);
+      let candidateUuids: Set<string> | undefined;
+      if (baseWhere) {
+        const candidates = await db
+          .select({ uuid: photos.uuid })
+          .from(photos)
+          .where(baseWhere);
+        candidateUuids = new Set(candidates.map((r) => r.uuid));
+        if (candidateUuids.size === 0) {
+          res.json({
+            photos: [],
+            pagination: {
+              page: pageNum,
+              limit: limitNum,
+              total: 0,
+              totalPages: 0,
+              hasMore: false,
+            },
+          });
+          return;
+        }
+      }
+
+      // No top-K cap — pagination on the client side handles slicing. The
+      // sort is sub-100ms over ~30k embeddings, so cost is negligible.
+      const ranked = await searchByQuery(
+        contentSearch,
+        undefined,
+        candidateUuids,
+      );
+      if (ranked.length === 0) {
+        res.json({
+          photos: [],
+          pagination: {
+            page: pageNum,
+            limit: limitNum,
+            total: 0,
+            totalPages: 0,
+            hasMore: false,
+          },
+        });
+        return;
+      }
+
+      const rankByUuid = new Map<string, number>();
+      ranked.forEach((r, i) => rankByUuid.set(r.uuid, i));
+
+      const matching = await db
+        .select(getTableColumns(photos))
+        .from(photos)
+        .where(
+          inArray(
+            photos.uuid,
+            ranked.map((r) => r.uuid),
+          ),
+        );
+
+      matching.sort(
+        (a, b) =>
+          (rankByUuid.get(a.uuid) ?? Infinity) -
+          (rankByUuid.get(b.uuid) ?? Infinity),
+      );
+
+      const total = matching.length;
+      const paginated = matching.slice(offset, offset + limitNum);
+
+      res.json({
+        photos: paginated,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
+          hasMore: pageNum * limitNum < total,
+        },
+      });
+      return;
+    }
 
     const whereClause = buildFilterConditions(filterParams);
 
@@ -938,6 +1069,70 @@ router.get('/photos/stats', async (req, res) => {
   } catch (error) {
     console.error('Error fetching stats:', error);
     res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// Get chronological neighbors of a photo (ignores filters by design — this is
+// the "what was happening around this shot" view that escapes the search).
+router.get('/photos/:id/neighbors', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const requested = parseInt((req.query.window as string) ?? '', 10);
+    const window =
+      Number.isFinite(requested) && requested > 0
+        ? Math.min(requested, 50)
+        : 10;
+
+    const targetRows = await db
+      .select({ id: photos.id, dateCaptured: photos.dateCaptured })
+      .from(photos)
+      .where(eq(photos.id, Number(id)))
+      .limit(1);
+
+    if (targetRows.length === 0) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    const target = targetRows[0];
+    if (!target.dateCaptured) {
+      return res.json({ before: [], after: [] });
+    }
+
+    // Tiebreak on id so photos sharing a timestamp have a stable order.
+    const before = await db
+      .select(getTableColumns(photos))
+      .from(photos)
+      .where(
+        or(
+          lt(photos.dateCaptured, target.dateCaptured),
+          and(
+            eq(photos.dateCaptured, target.dateCaptured),
+            lt(photos.id, target.id),
+          ),
+        ),
+      )
+      .orderBy(desc(photos.dateCaptured), desc(photos.id))
+      .limit(window);
+
+    const after = await db
+      .select(getTableColumns(photos))
+      .from(photos)
+      .where(
+        or(
+          gt(photos.dateCaptured, target.dateCaptured),
+          and(
+            eq(photos.dateCaptured, target.dateCaptured),
+            gt(photos.id, target.id),
+          ),
+        ),
+      )
+      .orderBy(asc(photos.dateCaptured), asc(photos.id))
+      .limit(window);
+
+    res.json({ before: before.reverse(), after });
+  } catch (error) {
+    console.error('Error fetching neighbors:', error);
+    res.status(500).json({ error: 'Failed to fetch neighbors' });
   }
 });
 

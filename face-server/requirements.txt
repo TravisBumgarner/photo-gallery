@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+insightface
+onnxruntime
+numpy
+pillow
+# Dog detection (loaded lazily on first /detect-dogs call)
+ultralytics
+transformers
+torch

@@ -33,9 +33,12 @@ export interface PhotoRecord {
   keywords: string | null;
 }
 
-function generateUUID(filename: string, dateCaptured: Date | null): string {
+function generateUUID(
+  relativePath: string,
+  dateCaptured: Date | null,
+): string {
   const dateStr = dateCaptured ? dateCaptured.toISOString() : 'no-date';
-  const uniqueString = `${filename}-${dateStr}`;
+  const uniqueString = `${relativePath}-${dateStr}`;
   return createHash('sha256')
     .update(uniqueString)
     .digest('hex')
@@ -58,7 +61,8 @@ export async function processImage(
   const exifData = await extractExifData(imagePath);
 
   // Generate UUID early — used for hash-based output filenames
-  const uuid = generateUUID(filename, exifData.dateCaptured);
+  const relativePath = path.relative(sourceDir, imagePath);
+  const uuid = generateUUID(relativePath, exifData.dateCaptured);
   const ext = path.extname(filename);
   const hashFilename = `${uuid}${ext}`;
   const thumbnailFilename = `thumb_${uuid}.jpg`;

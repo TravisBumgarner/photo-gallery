@@ -23,7 +23,10 @@
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
-    "deploy:nfs": "./deploy.sh"
+    "sync-db": "npm run sync-db -w ingestion",
+    "sync-images": "npm run sync-images -w ingestion",
+    "sync-code": "./deploy.sh",
+    "sync-to-prod": "npm run sync-db && npm run sync-images && npm run sync-code"
   },
   "keywords": [],
   "author": "",

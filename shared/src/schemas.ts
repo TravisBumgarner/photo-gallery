@@ -4,6 +4,7 @@ export const photoFiltersSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().default(''),
+  contentSearch: z.string().default(''),
   camera: z.string().default(''),
   lens: z.string().default(''),
   minIso: z.coerce.number().optional(),
@@ -20,6 +21,8 @@ export const photoFiltersSchema = z.object({
   label: z.string().default(''),
   keyword: z.string().default(''),
   folder: z.string().default(''),
+  people: z.string().default(''),
+  dogs: z.string().default(''),
   sortBy: z
     .enum(['dateCaptured', 'filename', 'rating', 'createdAt'])
     .default('dateCaptured'),
