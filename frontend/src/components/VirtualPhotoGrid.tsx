@@ -322,7 +322,11 @@ const VirtualPhotoGrid = memo(
               loadMore();
             }
           },
-          { root: containerRef.current, threshold: 0.1 },
+          {
+            root: containerRef.current,
+            rootMargin: '1000px 0px',
+            threshold: 0,
+          },
         );
 
         const currentTarget = observerTarget.current;

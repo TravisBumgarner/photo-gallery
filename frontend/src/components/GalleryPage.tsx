@@ -14,7 +14,7 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FilterPanel from '@/components/FilterPanel';
 import PhotoViewer from '@/components/PhotoViewer';
 import Toolbar from '@/components/Toolbar';
@@ -86,10 +86,24 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
   const loadMorePendingRef = useRef(false);
   const initialLoadRef = useRef(false);
   const prevFiltersRef = useRef<string>('');
+  // Abort + seq for stale-response handling. Fast filter toggling used to drop
+  // new fetches via a `loadingRef` guard, leaving prevFiltersRef ahead of the
+  // actual displayed photos and producing chip-says-X-but-grid-shows-Y bugs.
+  const abortRef = useRef<AbortController | null>(null);
+  const seqRef = useRef(0);
 
   const fetchPhotos = useCallback(
     async (pageNum: number, currentFilters: PhotoFilters, append = false) => {
-      if (loadingRef.current) return;
+      // Load-more dedupe (rapid scroll can fire handleLoadMore twice). Filter
+      // fetches always proceed and cancel whatever's in flight.
+      if (append && loadingRef.current) return;
+
+      if (!append && abortRef.current) {
+        abortRef.current.abort();
+      }
+      const ac = new AbortController();
+      abortRef.current = ac;
+      const seq = ++seqRef.current;
 
       loadingRef.current = true;
       setLoading(true);
@@ -107,6 +121,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
 
         const response = await fetch(`/api/photos?${params}`, {
           credentials: 'include',
+          signal: ac.signal,
         });
 
         if (response.status === 401) {
@@ -115,6 +130,9 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
         }
 
         const data: PhotosResponse = await response.json();
+
+        // Stale response — a newer fetch has already started.
+        if (seq !== seqRef.current) return;
 
         if (data.photos && data.pagination) {
           setPhotos((prev) =>
@@ -127,11 +145,14 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
           setHasMore(false);
         }
       } catch (error) {
+        if ((error as Error)?.name === 'AbortError') return;
         console.error('Failed to fetch photos:', error);
       } finally {
-        setLoading(false);
-        loadingRef.current = false;
-        loadMorePendingRef.current = false;
+        if (seq === seqRef.current) {
+          setLoading(false);
+          loadingRef.current = false;
+          loadMorePendingRef.current = false;
+        }
       }
     },
     [],
@@ -197,6 +218,107 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
     },
     [],
   );
+
+  const activeFilters = useMemo<
+    { label: string; onClear: () => void }[]
+  >(() => {
+    const list: { label: string; onClear: () => void }[] = [];
+    if (filters.search)
+      list.push({
+        label: `Search: ${filters.search}`,
+        onClear: () => handleFilterChange({ search: '' }),
+      });
+    if (filters.contentSearch)
+      list.push({
+        label: `Content: ${filters.contentSearch}`,
+        onClear: () => handleFilterChange({ contentSearch: '' }),
+      });
+    if (filters.camera)
+      list.push({
+        label: `Camera: ${filters.camera}`,
+        onClear: () => handleFilterChange({ camera: undefined }),
+      });
+    if (filters.lens)
+      list.push({
+        label: `Lens: ${filters.lens}`,
+        onClear: () => handleFilterChange({ lens: undefined }),
+      });
+    if (filters.minIso !== undefined || filters.maxIso !== undefined)
+      list.push({
+        label: `ISO: ${filters.minIso ?? ''}–${filters.maxIso ?? ''}`,
+        onClear: () =>
+          handleFilterChange({ minIso: undefined, maxIso: undefined }),
+      });
+    if (
+      filters.minAperture !== undefined ||
+      filters.maxAperture !== undefined
+    )
+      list.push({
+        label: `Aperture: f/${filters.minAperture ?? ''}–f/${filters.maxAperture ?? ''}`,
+        onClear: () =>
+          handleFilterChange({
+            minAperture: undefined,
+            maxAperture: undefined,
+          }),
+      });
+    if (filters.startDate || filters.endDate)
+      list.push({
+        label: `Date: ${filters.startDate ?? ''}–${filters.endDate ?? ''}`,
+        onClear: () =>
+          handleFilterChange({ startDate: undefined, endDate: undefined }),
+      });
+    if (filters.selectedMonths)
+      list.push({
+        label: `Months: ${filters.selectedMonths}`,
+        onClear: () => handleFilterChange({ selectedMonths: '' }),
+      });
+    if (filters.selectedDates)
+      list.push({
+        label: `Dates: ${filters.selectedDates}`,
+        onClear: () => handleFilterChange({ selectedDates: '' }),
+      });
+    if (filters.aspectRatio)
+      list.push({
+        label: `Aspect: ${filters.aspectRatio}`,
+        onClear: () => handleFilterChange({ aspectRatio: undefined }),
+      });
+    if (filters.orientation)
+      list.push({
+        label: `Orientation: ${filters.orientation}`,
+        onClear: () => handleFilterChange({ orientation: undefined }),
+      });
+    if (filters.rating !== undefined)
+      list.push({
+        label: `Rating: ${filters.rating}+`,
+        onClear: () => handleFilterChange({ rating: undefined }),
+      });
+    if (filters.label)
+      list.push({
+        label: `Label: ${filters.label}`,
+        onClear: () => handleFilterChange({ label: undefined }),
+      });
+    if (filters.keyword)
+      list.push({
+        label: `Keyword: ${filters.keyword}`,
+        onClear: () => handleFilterChange({ keyword: undefined }),
+      });
+    if (filters.folder)
+      list.push({
+        label: `Folder: ${filters.folder}`,
+        onClear: () => handleFilterChange({ folder: '' }),
+      });
+    if (filters.people)
+      list.push({
+        label: `People: ${filters.people.split(',').join(', ')}`,
+        onClear: () => handleFilterChange({ people: '' }),
+      });
+    if (filters.dogs)
+      list.push({
+        label: `Dogs: ${filters.dogs.split(',').join(', ')}`,
+        onClear: () => handleFilterChange({ dogs: '' }),
+      });
+    return list;
+  }, [filters, handleFilterChange]);
 
   const handlePhotoClick = useCallback((photo: Photo) => {
     setSelectedPhoto(photo);
@@ -309,106 +431,31 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
             </Box>
           )}
 
+          {activeFilters.length > 0 && (photos.length > 0 || loading) && (
+            <Stack
+              direction="row"
+              spacing={1}
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ px: 2, py: 1.5 }}
+            >
+              {activeFilters.map((f) => (
+                <Chip
+                  key={f.label}
+                  label={f.label}
+                  onDelete={f.onClear}
+                  size="small"
+                />
+              ))}
+            </Stack>
+          )}
+
           {photos.length === 0 && !loading ? (
             <Box sx={{ textAlign: 'center', mt: 8, px: 2 }}>
               <Typography variant="h6" color="text.secondary" mb={2}>
                 No photos found. Try adjusting your filters.
               </Typography>
-              {(() => {
-                const activeFilters: { label: string; onClear: () => void }[] =
-                  [];
-                if (filters.search)
-                  activeFilters.push({
-                    label: `Search: ${filters.search}`,
-                    onClear: () => handleFilterChange({ search: '' }),
-                  });
-                if (filters.camera)
-                  activeFilters.push({
-                    label: `Camera: ${filters.camera}`,
-                    onClear: () => handleFilterChange({ camera: undefined }),
-                  });
-                if (filters.lens)
-                  activeFilters.push({
-                    label: `Lens: ${filters.lens}`,
-                    onClear: () => handleFilterChange({ lens: undefined }),
-                  });
-                if (
-                  filters.minIso !== undefined ||
-                  filters.maxIso !== undefined
-                )
-                  activeFilters.push({
-                    label: `ISO: ${filters.minIso ?? ''}–${filters.maxIso ?? ''}`,
-                    onClear: () =>
-                      handleFilterChange({
-                        minIso: undefined,
-                        maxIso: undefined,
-                      }),
-                  });
-                if (
-                  filters.minAperture !== undefined ||
-                  filters.maxAperture !== undefined
-                )
-                  activeFilters.push({
-                    label: `Aperture: f/${filters.minAperture ?? ''}–f/${filters.maxAperture ?? ''}`,
-                    onClear: () =>
-                      handleFilterChange({
-                        minAperture: undefined,
-                        maxAperture: undefined,
-                      }),
-                  });
-                if (filters.startDate || filters.endDate)
-                  activeFilters.push({
-                    label: `Date: ${filters.startDate ?? ''}–${filters.endDate ?? ''}`,
-                    onClear: () =>
-                      handleFilterChange({
-                        startDate: undefined,
-                        endDate: undefined,
-                      }),
-                  });
-                if (filters.selectedMonths)
-                  activeFilters.push({
-                    label: `Months: ${filters.selectedMonths}`,
-                    onClear: () => handleFilterChange({ selectedMonths: '' }),
-                  });
-                if (filters.selectedDates)
-                  activeFilters.push({
-                    label: `Dates: ${filters.selectedDates}`,
-                    onClear: () => handleFilterChange({ selectedDates: '' }),
-                  });
-                if (filters.aspectRatio)
-                  activeFilters.push({
-                    label: `Aspect: ${filters.aspectRatio}`,
-                    onClear: () =>
-                      handleFilterChange({ aspectRatio: undefined }),
-                  });
-                if (filters.orientation)
-                  activeFilters.push({
-                    label: `Orientation: ${filters.orientation}`,
-                    onClear: () =>
-                      handleFilterChange({ orientation: undefined }),
-                  });
-                if (filters.rating !== undefined)
-                  activeFilters.push({
-                    label: `Rating: ${filters.rating}+`,
-                    onClear: () => handleFilterChange({ rating: undefined }),
-                  });
-                if (filters.label)
-                  activeFilters.push({
-                    label: `Label: ${filters.label}`,
-                    onClear: () => handleFilterChange({ label: undefined }),
-                  });
-                if (filters.keyword)
-                  activeFilters.push({
-                    label: `Keyword: ${filters.keyword}`,
-                    onClear: () => handleFilterChange({ keyword: undefined }),
-                  });
-                if (filters.folder)
-                  activeFilters.push({
-                    label: `Folder: ${filters.folder}`,
-                    onClear: () => handleFilterChange({ folder: '' }),
-                  });
-
-                return activeFilters.length > 0 ? (
+              {activeFilters.length > 0 ? (
                   <Stack spacing={2} alignItems="center">
                     <Stack
                       direction="row"
@@ -452,8 +499,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
                   >
                     Clear All Filters
                   </Button>
-                );
-              })()}
+                )}
             </Box>
           ) : photos.length === 0 && loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
@@ -468,7 +514,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
               loadMore={handleLoadMore}
               loading={loading}
               columnCount={columnCount}
-              sortBy={filters.sortBy}
+              sortBy={filters.contentSearch ? undefined : filters.sortBy}
             />
           )}
         </Box>
@@ -480,6 +526,7 @@ function GalleryPage({ onLogout }: GalleryPageProps) {
           photos={photos}
           onClose={handleCloseViewer}
           onNavigate={handlePhotoNavigate}
+          onSelectPhoto={setSelectedPhoto}
         />
       )}
 

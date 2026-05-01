@@ -47,7 +47,8 @@ const deploy = {
     './db': './dist/db/index.js',
     './db/schema': './dist/db/schema.js',
     './types': './dist/types.js',
-    './schemas': './dist/schemas.js'
+    './schemas': './dist/schemas.js',
+    './embed': './dist/embed.js'
   },
   dependencies: pkg.dependencies
 };

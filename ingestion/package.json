@@ -3,7 +3,20 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "ingest": "tsx src/index.ts"
+    "ingest": "tsx src/index.ts",
+    "tag": "tsx src/tag.ts",
+    "detect-faces": "tsx src/detect-faces.ts",
+    "cluster-faces": "tsx src/cluster-faces.ts",
+    "detect-dogs": "tsx src/detect-dogs.ts",
+    "cluster-dogs": "tsx src/cluster-dogs.ts",
+    "extract-exported": "tsx src/extract-exported.ts",
+    "put-back-exported": "tsx src/put-back-exported.ts",
+    "clear-production-db": "tsx src/clear-production-db.ts",
+    "clear-local-db": "tsx src/clear-local-db.ts",
+    "sync-db": "tsx src/sync-db.ts",
+    "sync-images": "tsx src/sync-images.ts",
+    "nukedb-ingest-tag": "npm run clear-local-db && npm run clear-production-db && npm run ingest && npm run tag && npm run sync-db && npm run sync-images && npm run extract-exported",
+    "upsert-ingest-tag": "npm run ingest && npm run tag && npm run sync-db && npm run sync-images && npm run extract-exported"
   },
   "dependencies": {
     "blurhash": "^2.0.5",
@@ -15,8 +28,8 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "better-sqlite3": "^11.7.0",
     "@types/node": "^20.11.5",
+    "better-sqlite3": "^11.7.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

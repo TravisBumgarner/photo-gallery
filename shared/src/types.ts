@@ -31,6 +31,7 @@ export interface PhotosResponse {
 
 export interface PhotoFilters {
   search?: string;
+  contentSearch?: string;
   camera?: string;
   lens?: string;
   minIso?: number;
@@ -47,6 +48,8 @@ export interface PhotoFilters {
   label?: string;
   keyword?: string;
   folder?: string;
+  people?: string;
+  dogs?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }

@@ -16,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@huggingface/tokenizers": "^0.1.3",
     "@types/express-session": "^1.18.2",
     "better-sqlite3": "^11.7.0",
     "compression": "^1.8.1",
@@ -26,6 +27,7 @@
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.19.0",
     "helmet": "^8.1.0",
+    "onnxruntime-web": "^1.24.3",
     "shared": "*",
     "zod": "^3.22.0"
   },

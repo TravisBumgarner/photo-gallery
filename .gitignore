@@ -9,3 +9,13 @@ dist
 *.tsbuildinfo
 frontend/vite.config.d.ts
 frontend/vite.config.js
+
+# Auto-downloaded ONNX model + tokenizer cache for content search
+**/models/
+.venv/
+
+# YOLO weights are downloaded by ultralytics on first use; no need to commit.
+face-server/yolov8n.pt
+
+# Local SQLite backups (manual snapshots) — too large for git.
+db_backups/

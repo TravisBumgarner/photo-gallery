@@ -10,6 +10,11 @@ const envSchema = z.object({
   DRY_RUN: z.string(),
   FILE_TRANSFER_MODE: z.enum(['copy', 'cut']),
   SSH_HOST: z.string().optional(),
+  MODEL_SERVER_HOST: z.string().optional(),
+  MODEL_SERVER_MODEL: z.string().optional(),
+  MODEL_SERVER_API_KEY: z.string().optional(),
+  FACE_SERVER_HOST: z.string().optional(),
+  FACE_SERVER_API_KEY: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

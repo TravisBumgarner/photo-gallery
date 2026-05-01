@@ -66,6 +66,8 @@ type AccordionSection =
   | 'general'
   | 'camera'
   | 'lens'
+  | 'people'
+  | 'dogs'
   | 'aspectRatio'
   | 'dates'
   | 'tags';
@@ -160,6 +162,8 @@ const FilterPanel = memo(function FilterPanel({
 }: FilterPanelProps) {
   const [cameras, setCameras] = useState<string[]>([]);
   const [lenses, setLenses] = useState<string[]>([]);
+  const [people, setPeople] = useState<{ label: string; count: number }[]>([]);
+  const [dogs, setDogs] = useState<{ label: string; count: number }[]>([]);
   const [dates, setDates] = useState<string[]>([]);
   const [dateCounts, setDateCounts] = useState<Record<string, number>>({});
   const [keywords, setKeywords] = useState<string[]>([]);
@@ -198,6 +202,29 @@ const FilterPanel = memo(function FilterPanel({
       .catch((err) => console.error('Failed to fetch metadata:', err));
   }, [filters]);
 
+  // People + dog labels are independent of the photo metadata cache and won't
+  // change mid-session — fetch once on mount.
+  useEffect(() => {
+    fetch('/api/people/labels', { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        const rows: { personLabel: string; faceCount: number }[] =
+          data.labels ?? [];
+        setPeople(
+          rows.map((r) => ({ label: r.personLabel, count: r.faceCount })),
+        );
+      })
+      .catch((err) => console.error('Failed to fetch people:', err));
+
+    fetch('/api/dogs/labels', { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        const rows: { dogLabel: string; dogCount: number }[] = data.labels ?? [];
+        setDogs(rows.map((r) => ({ label: r.dogLabel, count: r.dogCount })));
+      })
+      .catch((err) => console.error('Failed to fetch dogs:', err));
+  }, []);
+
   const toggleSection = (section: AccordionSection) => {
     setExpandedSection((prev) => (prev === section ? null : section));
   };
@@ -213,6 +240,8 @@ const FilterPanel = memo(function FilterPanel({
   );
   const hasCameraFilter = !!filters.camera;
   const hasLensFilter = !!filters.lens;
+  const hasPeopleFilter = !!filters.people;
+  const hasDogsFilter = !!filters.dogs;
   const hasAspectRatioFilter = !!(filters.aspectRatio || filters.orientation);
   const hasDateFilter = !!(
     filters.startDate ||
@@ -252,11 +281,15 @@ const FilterPanel = memo(function FilterPanel({
         </IconButton>
       </Box>
 
-      {/* Search */}
       <Box sx={{ p: 0.75, borderBottom: 1, borderColor: 'divider' }}>
         <SearchBar
-          value={filters.search || ''}
-          onChange={(search) => onFilterChange({ search })}
+          value={filters.contentSearch || filters.search || ''}
+          onChange={(search) =>
+            onFilterChange({ search, contentSearch: '' })
+          }
+          onContentSearch={(contentSearch) =>
+            onFilterChange({ contentSearch, search: '' })
+          }
         />
       </Box>
 
@@ -743,6 +776,198 @@ const FilterPanel = memo(function FilterPanel({
                   );
                 })}
               </List>
+            </Box>
+          </Collapse>
+        </Box>
+
+        {/* People Section */}
+        <Box
+          sx={{
+            ...sectionSx,
+            ...(expandedSection === 'people'
+              ? {
+                  flexShrink: 1,
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }
+              : { flexShrink: 0 }),
+          }}
+        >
+          <SectionHeader
+            label="People"
+            section="people"
+            expandedSection={expandedSection}
+            onToggle={toggleSection}
+            hasActiveFilter={hasPeopleFilter}
+            onClear={() => onFilterChange({ people: '' })}
+          />
+          <Collapse
+            in={expandedSection === 'people'}
+            unmountOnExit
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+              },
+            }}
+          >
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+              {people.length === 0 ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', px: 1, py: 1 }}
+                >
+                  No people labeled yet. Visit the People page from the menu to
+                  start labeling face clusters.
+                </Typography>
+              ) : (
+                <List dense disablePadding sx={{ pt: 0.5 }}>
+                  <ListItem disablePadding>
+                    <ListItemButton
+                      sx={{ py: 0.1, px: 0.75 }}
+                      selected={!filters.people}
+                      onClick={() => onFilterChange({ people: '' })}
+                    >
+                      <ListItemText
+                        primary="All"
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                  {people.map((p) => {
+                    const selected = isInList(filters.people, p.label);
+                    return (
+                      <ListItem key={p.label} disablePadding>
+                        <ListItemButton
+                          sx={{ py: 0.1, px: 0.75 }}
+                          selected={selected}
+                          onClick={() =>
+                            onFilterChange({
+                              people: toggleInList(filters.people, p.label),
+                            })
+                          }
+                        >
+                          <ListItemText
+                            primary={`${p.label} (${p.count})`}
+                            primaryTypographyProps={{
+                              variant: 'body2',
+                              noWrap: true,
+                            }}
+                          />
+                          {selected && (
+                            <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
+                          )}
+                        </ListItemButton>
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              )}
+            </Box>
+          </Collapse>
+        </Box>
+
+        {/* Dogs Section */}
+        <Box
+          sx={{
+            ...sectionSx,
+            ...(expandedSection === 'dogs'
+              ? {
+                  flexShrink: 1,
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }
+              : { flexShrink: 0 }),
+          }}
+        >
+          <SectionHeader
+            label="Dogs"
+            section="dogs"
+            expandedSection={expandedSection}
+            onToggle={toggleSection}
+            hasActiveFilter={hasDogsFilter}
+            onClear={() => onFilterChange({ dogs: '' })}
+          />
+          <Collapse
+            in={expandedSection === 'dogs'}
+            unmountOnExit
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+              },
+            }}
+          >
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+              {dogs.length === 0 ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', px: 1, py: 1 }}
+                >
+                  No dogs labeled yet. Visit the Dogs page from the menu to
+                  start labeling.
+                </Typography>
+              ) : (
+                <List dense disablePadding sx={{ pt: 0.5 }}>
+                  <ListItem disablePadding>
+                    <ListItemButton
+                      sx={{ py: 0.1, px: 0.75 }}
+                      selected={!filters.dogs}
+                      onClick={() => onFilterChange({ dogs: '' })}
+                    >
+                      <ListItemText
+                        primary="All"
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                  {dogs.map((d) => {
+                    const selected = isInList(filters.dogs, d.label);
+                    return (
+                      <ListItem key={d.label} disablePadding>
+                        <ListItemButton
+                          sx={{ py: 0.1, px: 0.75 }}
+                          selected={selected}
+                          onClick={() =>
+                            onFilterChange({
+                              dogs: toggleInList(filters.dogs, d.label),
+                            })
+                          }
+                        >
+                          <ListItemText
+                            primary={`${d.label} (${d.count})`}
+                            primaryTypographyProps={{
+                              variant: 'body2',
+                              noWrap: true,
+                            }}
+                          />
+                          {selected && (
+                            <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
+                          )}
+                        </ListItemButton>
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              )}
             </Box>
           </Collapse>
         </Box>

@@ -32,13 +32,26 @@ interface PhotoViewerProps {
   photos: Photo[];
   onClose: () => void;
   onNavigate: (direction: 'prev' | 'next') => void;
+  onSelectPhoto?: (photo: Photo) => void;
 }
 
-function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
+function PhotoViewer({
+  photo,
+  photos,
+  onClose,
+  onNavigate,
+  onSelectPhoto,
+}: PhotoViewerProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [showMetadata, setShowMetadata] = useState(!isMobile);
+  const [neighbors, setNeighbors] = useState<{
+    before: Photo[];
+    after: Photo[];
+  }>({ before: [], after: [] });
+  const stripRef = useRef<HTMLDivElement | null>(null);
   const currentIndex = photos.findIndex((p) => p.id === photo.id);
+  const inResults = currentIndex !== -1;
 
   const formatAspectRatio = (ratio: number) => {
     const commonRatios = [
@@ -60,14 +73,30 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
     return ratio.toFixed(2);
   };
 
+  // When the current photo isn't part of the search results (user clicked into
+  // a neighbor), arrow keys walk the chronological neighborhood instead of the
+  // results array. Reaching the edge re-fetches and the strip slides forward.
+  const navigate = (direction: 'prev' | 'next') => {
+    if (inResults) {
+      onNavigate(direction);
+      return;
+    }
+    if (!onSelectPhoto) return;
+    const target =
+      direction === 'prev'
+        ? neighbors.before[neighbors.before.length - 1]
+        : neighbors.after[0];
+    if (target) onSelectPhoto(target);
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowLeft') {
-        onNavigate('prev');
+        navigate('prev');
       } else if (e.key === 'ArrowRight') {
-        onNavigate('next');
+        navigate('next');
       }
     };
 
@@ -78,7 +107,44 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'unset';
     };
-  }, [onClose, onNavigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, onNavigate, inResults, neighbors, onSelectPhoto]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/photos/${photo.id}/neighbors?window=10`, {
+      credentials: 'include',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setNeighbors({
+          before: data.before ?? [],
+          after: data.after ?? [],
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [photo.id]);
+
+  // Center the active thumbnail in the strip whenever the photo changes.
+  useEffect(() => {
+    const el = stripRef.current?.querySelector<HTMLElement>(
+      '[data-neighbor-active="true"]',
+    );
+    if (el && stripRef.current) {
+      const stripRect = stripRef.current.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const offset =
+        elRect.left -
+        stripRect.left -
+        stripRect.width / 2 +
+        elRect.width / 2;
+      stripRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  }, [photo.id, neighbors]);
 
   // Progressive photo preloading
   const preloadedRef = useRef<Set<string>>(new Set());
@@ -567,6 +633,62 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             )}
           </Box>
 
+          {/* Chronological neighbor strip */}
+          {(neighbors.before.length > 0 || neighbors.after.length > 0) && (
+            <Box
+              ref={stripRef}
+              sx={{
+                display: 'flex',
+                gap: 0.5,
+                overflowX: 'auto',
+                px: 1,
+                py: 0.75,
+                bgcolor: 'background.paper',
+                borderTop: 1,
+                borderColor: 'divider',
+              }}
+            >
+              {[...neighbors.before, photo, ...neighbors.after].map((p) => {
+                const active = p.id === photo.id;
+                return (
+                  <Box
+                    key={p.id}
+                    data-neighbor-active={active ? 'true' : undefined}
+                    onClick={() => {
+                      if (!active && onSelectPhoto) onSelectPhoto(p);
+                    }}
+                    sx={{
+                      flex: '0 0 auto',
+                      width: 56,
+                      height: 56,
+                      cursor: active ? 'default' : 'pointer',
+                      boxShadow: active
+                        ? (t) => `inset 0 0 0 2px ${t.palette.primary.main}`
+                        : 'none',
+                      borderRadius: 0.5,
+                      overflow: 'hidden',
+                      opacity: active ? 1 : 0.75,
+                      transition: 'opacity 0.15s',
+                      '&:hover': active ? {} : { opacity: 1 },
+                    }}
+                  >
+                    <img
+                      src={p.thumbnailPath}
+                      alt={p.filename}
+                      loading="lazy"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block',
+                      }}
+                    />
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+
           {/* Bottom Navigation Bar */}
           <Box
             sx={{
@@ -581,8 +703,12 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
             }}
           >
             <IconButton
-              onClick={() => onNavigate('prev')}
-              disabled={photos.length <= 1}
+              onClick={() => navigate('prev')}
+              disabled={
+                inResults
+                  ? photos.length <= 1
+                  : neighbors.before.length === 0 || !onSelectPhoto
+              }
               size={isMobile ? 'medium' : 'small'}
             >
               <ArrowBackIcon />
@@ -593,12 +719,16 @@ function PhotoViewer({ photo, photos, onClose, onNavigate }: PhotoViewerProps) {
               color="text.secondary"
               sx={{ minWidth: 64, textAlign: 'center' }}
             >
-              {currentIndex + 1} / {photos.length}
+              {inResults ? `${currentIndex + 1} / ${photos.length}` : '—'}
             </Typography>
 
             <IconButton
-              onClick={() => onNavigate('next')}
-              disabled={photos.length <= 1}
+              onClick={() => navigate('next')}
+              disabled={
+                inResults
+                  ? photos.length <= 1
+                  : neighbors.after.length === 0 || !onSelectPhoto
+              }
               size={isMobile ? 'medium' : 'small'}
             >
               <ArrowForwardIcon />

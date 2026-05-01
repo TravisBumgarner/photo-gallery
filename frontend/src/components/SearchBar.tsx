@@ -1,16 +1,23 @@
 import {
+  AutoAwesome as AutoAwesomeIcon,
+  Clear as ClearIcon,
+  Search as SearchIcon,
+} from '@mui/icons-material';
+import {
   Autocomplete,
   Box,
   CircularProgress,
+  IconButton,
   ListSubheader,
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface SearchBarProps {
   value: string;
   onChange: (value: string) => void;
+  onContentSearch?: (value: string) => void;
 }
 
 interface GroupedSuggestions {
@@ -24,29 +31,20 @@ interface OptionGroup {
   options: string[];
 }
 
-function SearchBar({ value, onChange }: SearchBarProps) {
-  const [localValue, setLocalValue] = useState(value);
-  const [inputValue, setInputValue] = useState('');
+const CONTENT_OPTION_PREFIX = '✨ Content Search: ';
+
+function SearchBar({ value, onChange, onContentSearch }: SearchBarProps) {
+  const [inputValue, setInputValue] = useState(value);
   const [options, setOptions] = useState<string[]>([]);
   const [groupedOptions, setGroupedOptions] = useState<OptionGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [showGrouped, setShowGrouped] = useState(false);
-  const lastNotifiedRef = useRef(value);
 
+  // Sync input when parent updates `value` externally (e.g. filter chip clear).
   useEffect(() => {
-    // Only notify parent if value actually changed from last notified value
-    if (localValue === lastNotifiedRef.current) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      lastNotifiedRef.current = localValue;
-      onChange(localValue);
-    }, 500);
+    setInputValue(value);
+  }, [value]);
 
-    return () => clearTimeout(timer);
-  }, [localValue, onChange]);
-
-  // Fetch grouped suggestions on focus (when no input)
   const fetchGroupedSuggestions = async () => {
     try {
       setLoading(true);
@@ -113,25 +111,39 @@ function SearchBar({ value, onChange }: SearchBarProps) {
     };
   }, [inputValue]);
 
-  // Flatten grouped options for Autocomplete
-  const allOptions = showGrouped
+  // Build dropdown options. The "Content Search" pseudo-option is prepended
+  // whenever the user has typed something and a content-search handler is wired.
+  const baseOptions = showGrouped
     ? groupedOptions.flatMap((group) => group.options)
     : options;
+  const contentOption =
+    inputValue.length > 0 && onContentSearch
+      ? `${CONTENT_OPTION_PREFIX}${inputValue}`
+      : null;
+  const allOptions = contentOption
+    ? [contentOption, ...baseOptions]
+    : baseOptions;
+
+  const submitRegular = (text: string) => {
+    onChange(text);
+  };
 
   return (
     <Autocomplete
       freeSolo
+      forcePopupIcon={false}
+      disableClearable
       options={allOptions}
-      value={localValue}
       inputValue={inputValue}
-      onInputChange={(_, newInputValue) => {
-        setInputValue(newInputValue);
-        setLocalValue(newInputValue);
-      }}
+      onInputChange={(_, v) => setInputValue(v)}
       onChange={(_, newValue) => {
-        if (typeof newValue === 'string') {
-          setLocalValue(newValue);
+        if (typeof newValue !== 'string') return;
+        if (newValue.startsWith(CONTENT_OPTION_PREFIX) && onContentSearch) {
+          const text = newValue.slice(CONTENT_OPTION_PREFIX.length);
+          onContentSearch(text);
+          return;
         }
+        submitRegular(newValue);
       }}
       onFocus={() => {
         if (inputValue.length === 0) {
@@ -167,28 +179,57 @@ function SearchBar({ value, onChange }: SearchBarProps) {
             )
           : undefined
       }
-      renderOption={(props, option) => (
-        <Box component="li" {...props}>
-          {showGrouped ? (
-            <Typography variant="body2">{option}</Typography>
-          ) : (
-            <Typography variant="body2">{option}</Typography>
-          )}
-        </Box>
-      )}
+      renderOption={(props, option) => {
+        const isContent = option.startsWith(CONTENT_OPTION_PREFIX);
+        return (
+          <Box component="li" {...props}>
+            {isContent ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  color: 'primary.main',
+                }}
+              >
+                <AutoAwesomeIcon fontSize="small" />
+                <Typography variant="body2" fontStyle="italic">
+                  {option.slice(CONTENT_OPTION_PREFIX.length)}
+                </Typography>
+              </Box>
+            ) : (
+              <Typography variant="body2">{option}</Typography>
+            )}
+          </Box>
+        );
+      }}
       renderInput={(params) => (
         <TextField
           {...params}
-          placeholder="Search photos, camera, keywords..."
+          placeholder="Search photos…"
           size="small"
           InputProps={{
             ...params.InputProps,
             endAdornment: (
               <>
-                {loading ? (
-                  <CircularProgress color="inherit" size={20} />
-                ) : null}
-                {params.InputProps.endAdornment}
+                {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                {inputValue.length > 0 && (
+                  <IconButton
+                    size="small"
+                    aria-label="Clear"
+                    onClick={() => setInputValue('')}
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                )}
+                <IconButton
+                  size="small"
+                  aria-label="Search"
+                  onClick={() => submitRegular(inputValue)}
+                  edge="end"
+                >
+                  <SearchIcon fontSize="small" />
+                </IconButton>
               </>
             ),
           }}
