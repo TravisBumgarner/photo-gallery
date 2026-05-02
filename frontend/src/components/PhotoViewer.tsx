@@ -9,6 +9,7 @@ import {
   Label as LabelIcon,
   Settings as SettingsIcon,
   Star as StarIcon,
+  ViewCarouselOutlined as ViewCarouselOutlinedIcon,
 } from '@mui/icons-material';
 import {
   Box,
@@ -45,6 +46,7 @@ function PhotoViewer({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [showMetadata, setShowMetadata] = useState(!isMobile);
+  const [showNeighbors, setShowNeighbors] = useState(false);
   const [neighbors, setNeighbors] = useState<{
     before: Photo[];
     after: Photo[];
@@ -137,14 +139,23 @@ function PhotoViewer({
     if (el && stripRef.current) {
       const stripRect = stripRef.current.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
-      const offset =
-        elRect.left -
-        stripRect.left -
-        stripRect.width / 2 +
-        elRect.width / 2;
-      stripRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+      if (isMobile) {
+        const offset =
+          elRect.left -
+          stripRect.left -
+          stripRect.width / 2 +
+          elRect.width / 2;
+        stripRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+      } else {
+        const offset =
+          elRect.top -
+          stripRect.top -
+          stripRect.height / 2 +
+          elRect.height / 2;
+        stripRef.current.scrollBy({ top: offset, behavior: 'smooth' });
+      }
     }
-  }, [photo.id, neighbors]);
+  }, [photo.id, neighbors, isMobile, showNeighbors]);
 
   // Progressive photo preloading
   const preloadedRef = useRef<Set<string>>(new Set());
@@ -284,6 +295,73 @@ function PhotoViewer({
                 }}
               />
             </Box>
+
+            {showNeighbors &&
+              (neighbors.before.length > 0 || neighbors.after.length > 0) && (
+                <Box
+                  ref={stripRef}
+                  sx={{
+                    display: isMobile ? 'flex' : 'grid',
+                    gridTemplateColumns: isMobile
+                      ? undefined
+                      : 'repeat(2, 1fr)',
+                    flexDirection: isMobile ? 'row' : undefined,
+                    gap: 0.5,
+                    overflowX: isMobile ? 'auto' : 'hidden',
+                    overflowY: isMobile ? 'hidden' : 'auto',
+                    flexShrink: 0,
+                    width: isMobile ? '100%' : 176,
+                    height: isMobile ? 80 : 'auto',
+                    px: isMobile ? 1 : 0.75,
+                    py: isMobile ? 0.75 : 1,
+                    bgcolor: 'background.paper',
+                    borderTop: isMobile ? 1 : 0,
+                    borderLeft: isMobile ? 0 : 1,
+                    borderColor: 'divider',
+                  }}
+                >
+                  {[...neighbors.before, photo, ...neighbors.after].map((p) => {
+                    const active = p.id === photo.id;
+                    return (
+                      <Box
+                        key={p.id}
+                        data-neighbor-active={active ? 'true' : undefined}
+                        onClick={() => {
+                          if (!active && onSelectPhoto) onSelectPhoto(p);
+                        }}
+                        sx={{
+                          flex: isMobile ? '0 0 auto' : undefined,
+                          width: isMobile ? 56 : '100%',
+                          height: isMobile ? 56 : undefined,
+                          aspectRatio: isMobile ? undefined : '1 / 1',
+                          cursor: active ? 'default' : 'pointer',
+                          boxShadow: active
+                            ? (t) =>
+                                `inset 0 0 0 2px ${t.palette.primary.main}`
+                            : 'none',
+                          borderRadius: 0.5,
+                          overflow: 'hidden',
+                          opacity: active ? 1 : 0.75,
+                          transition: 'opacity 0.15s',
+                          '&:hover': active ? {} : { opacity: 1 },
+                        }}
+                      >
+                        <img
+                          src={p.thumbnailPath}
+                          alt={p.filename}
+                          loading="lazy"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                          }}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
 
             {showMetadata && (
               <Paper
@@ -633,62 +711,6 @@ function PhotoViewer({
             )}
           </Box>
 
-          {/* Chronological neighbor strip */}
-          {(neighbors.before.length > 0 || neighbors.after.length > 0) && (
-            <Box
-              ref={stripRef}
-              sx={{
-                display: 'flex',
-                gap: 0.5,
-                overflowX: 'auto',
-                px: 1,
-                py: 0.75,
-                bgcolor: 'background.paper',
-                borderTop: 1,
-                borderColor: 'divider',
-              }}
-            >
-              {[...neighbors.before, photo, ...neighbors.after].map((p) => {
-                const active = p.id === photo.id;
-                return (
-                  <Box
-                    key={p.id}
-                    data-neighbor-active={active ? 'true' : undefined}
-                    onClick={() => {
-                      if (!active && onSelectPhoto) onSelectPhoto(p);
-                    }}
-                    sx={{
-                      flex: '0 0 auto',
-                      width: 56,
-                      height: 56,
-                      cursor: active ? 'default' : 'pointer',
-                      boxShadow: active
-                        ? (t) => `inset 0 0 0 2px ${t.palette.primary.main}`
-                        : 'none',
-                      borderRadius: 0.5,
-                      overflow: 'hidden',
-                      opacity: active ? 1 : 0.75,
-                      transition: 'opacity 0.15s',
-                      '&:hover': active ? {} : { opacity: 1 },
-                    }}
-                  >
-                    <img
-                      src={p.thumbnailPath}
-                      alt={p.filename}
-                      loading="lazy"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        display: 'block',
-                      }}
-                    />
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
-
           {/* Bottom Navigation Bar */}
           <Box
             sx={{
@@ -735,6 +757,17 @@ function PhotoViewer({
             </IconButton>
 
             <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
+            <IconButton
+              onClick={() => setShowNeighbors(!showNeighbors)}
+              size={isMobile ? 'medium' : 'small'}
+              color={showNeighbors ? 'primary' : 'default'}
+              disabled={
+                neighbors.before.length === 0 && neighbors.after.length === 0
+              }
+            >
+              <ViewCarouselOutlinedIcon />
+            </IconButton>
 
             <IconButton
               onClick={() => setShowMetadata(!showMetadata)}
