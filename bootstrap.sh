@@ -8,7 +8,7 @@ echo "Cleaning previous installs..."
 rm -rf node_modules package-lock.json
 rm -rf backend/node_modules backend/package-lock.json
 rm -rf frontend/node_modules frontend/package-lock.json
-rm -rf ingestion/node_modules ingestion/package-lock.json
+rm -rf offline-ingestion/node_modules offline-ingestion/package-lock.json
 rm -rf shared/node_modules shared/package-lock.json
 
 # Install all dependencies (npm workspaces handles backend, frontend, etc.)
@@ -21,9 +21,9 @@ if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
 fi
 
-if [ ! -f ingestion/.env ]; then
-  echo "Creating ingestion/.env from .env.example..."
-  cp ingestion/.env.example ingestion/.env
+if [ ! -f offline-ingestion/.env.local ]; then
+  echo "Creating offline-ingestion/.env.local from .env.example..."
+  cp offline-ingestion/.env.example offline-ingestion/.env.local
 fi
 
 # Apply existing Drizzle migrations to SQLite

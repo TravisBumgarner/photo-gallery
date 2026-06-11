@@ -1,0 +1,98 @@
+name: offline-ingestion
+
+# Spin up the model servers + label UI with `docker compose up -d`, and run
+# pipeline tasks through the one-shot `cli` service. The `./oi` launcher wraps
+# all of this with an interactive menu — you normally don't call compose directly.
+#
+# Paths are relative to this file (offline-ingestion/). Host data lives in
+# ../backend (sqlite.db, public/images, public/thumbnails, models) and is bind-
+# mounted at /data so writes persist on the host.
+
+services:
+  # Python vision sidecar (faces + dogs). Runs locally here; to use a remote box
+  # instead, run this service there and set FACE_SERVER_HOST to its URL.
+  face-server:
+    build:
+      context: ./face-server
+    image: offline-ingestion-face-server
+    ports:
+      - "${FACE_SERVER_PORT:-8090}:8090"
+    environment:
+      PORT: "8090"
+      FACE_SERVER_API_KEY: "${FACE_SERVER_API_KEY:-}"
+      DET_SIZE: "${FACE_DET_SIZE:-640}"
+      DOG_DET_CONF: "${FACE_DOG_DET_CONF:-0.5}"
+      CONCURRENCY: "${FACE_CONCURRENCY:-4}"
+    volumes:
+      - insightface-cache:/root/.insightface
+      - hf-cache:/root/.cache/huggingface
+    restart: unless-stopped
+
+  # Standalone tagging web UI (replaces the old frontend People/Dogs pages).
+  label-app:
+    build:
+      context: ..
+      dockerfile: offline-ingestion/Dockerfile
+    image: offline-ingestion-app
+    command: ["npm", "run", "label"]
+    ports:
+      - "${LABEL_PORT:-5180}:5180"
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: /data/sqlite.db
+      DESTINATION_DIRECTORY: /data/public
+      MODEL_CACHE_DIR: /data/models/bge-small-en-v1.5
+    volumes:
+      - ../backend:/data
+      - ./offline-ingestion.config.json:/app/offline-ingestion/offline-ingestion.config.json:ro
+    restart: unless-stopped
+
+  # One-shot task runner. Never started by `up` (profile gates it); the launcher
+  # invokes `docker compose run --rm cli npm run <task>`.
+  cli:
+    build:
+      context: ..
+      dockerfile: offline-ingestion/Dockerfile
+    image: offline-ingestion-app
+    profiles: ["cli"]
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: /data/sqlite.db
+      DESTINATION_DIRECTORY: /data/public
+      MODEL_CACHE_DIR: /data/models/bge-small-en-v1.5
+      SOURCE_DIR: /photos
+      INGEST_MODE: "${INGEST_MODE:-local}"
+      DRY_RUN: "${DRY_RUN:-false}"
+      FILE_TRANSFER_MODE: "${FILE_TRANSFER_MODE:-copy}"
+      ASSUME_YES: "${ASSUME_YES:-1}"
+      # Model server URLs are set by ./oi from the one "model server host" you
+      # pick (local containers by default, or another machine). Defaults here are
+      # the local Docker services.
+      FACE_SERVER_HOST: "${FACE_SERVER_HOST:-http://face-server:8090}"
+      MODEL_SERVER_HOST: "${MODEL_SERVER_HOST:-http://ollama:11434}"
+      MODEL_SERVER_MODEL: "${MODEL_SERVER_MODEL:-}"
+      MODEL_SERVER_API_KEY: "${MODEL_SERVER_API_KEY:-}"
+    volumes:
+      - ../backend:/data
+      # Your photo library (set by ./oi). Read-write so 'cut' transfer mode works.
+      - "${SOURCE_DIR:?set SOURCE_DIR (the host photo folder) before running cli}:/photos"
+      - ./offline-ingestion.config.json:/app/offline-ingestion/offline-ingestion.config.json:ro
+      # SSH keys for sync-to-prod (harmless if unused).
+      - "${HOME}/.ssh:/root/.ssh:ro"
+
+  # Local vision LLM for text tagging. ./oi starts this (and pulls the model)
+  # when you tag with "this machine" as the model server host.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  insightface-cache:
+  hf-cache:
+  ollama:

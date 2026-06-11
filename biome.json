@@ -35,7 +35,7 @@
     "includes": [
       "shared/src/**",
       "backend/src/**",
-      "ingestion/src/**",
+      "offline-ingestion/src/**",
       "frontend/src/**",
       "frontend/vite.config.ts",
       "frontend/tsconfig*.json",
@@ -44,7 +44,7 @@
       "package.json",
       "shared/package.json",
       "backend/package.json",
-      "ingestion/package.json",
+      "offline-ingestion/package.json",
       "frontend/package.json"
     ]
   }

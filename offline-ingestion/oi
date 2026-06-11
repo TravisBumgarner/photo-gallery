@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+# Offline Ingestion launcher. Runs on the HOST (needs only Docker + bash) and
+# orchestrates the containers: checks Docker, builds images, asks what you want
+# to do, brings up the model servers, and runs the pipeline tasks inside the
+# `cli` container. All heavy dependencies live in the images — nothing to install.
+#
+#   ./oi                 interactive menu
+#   ./oi /path/to/photos interactive menu, pre-filling the source folder
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+bold()  { printf '\033[1m%s\033[0m\n' "$1"; }
+dim()   { printf '\033[2m%s\033[0m\n' "$1"; }
+err()   { printf '\033[31m%s\033[0m\n' "$1" >&2; }
+ok()    { printf '\033[32m%s\033[0m\n' "$1"; }
+ask()   { local p="$1" d="${2:-}" a; read -rp "$p" a; echo "${a:-$d}"; }
+yes()   { local a; a=$(ask "$1 [y/N] " ""); [[ "$a" =~ ^[Yy] ]]; }   # default No
+yesd()  { local a; a=$(ask "$1 [Y/n] " "y"); [[ ! "$a" =~ ^[Nn] ]]; } # default Yes
+
+os_default_photos() { # the conventional pictures folder for this OS
+  case "$(uname -s)" in
+    Darwin) echo "$HOME/Pictures" ;;                              # macOS
+    Linux)  echo "${XDG_PICTURES_DIR:-$HOME/Pictures}" ;;         # XDG, else ~/Pictures
+    *)      echo "${USERPROFILE:-$HOME}/Pictures" ;;              # Windows/Git-bash fallback
+  esac
+}
+
+env_get() { # read KEY from .env.local
+  [[ -f .env.local ]] && grep -E "^$1=" .env.local | tail -1 | cut -d= -f2- || true
+}
+env_set() { # persist KEY=VALUE to .env.local (so it's the next-run default)
+  local key="$1" val="$2"
+  touch .env.local
+  grep -v -E "^${key}=" .env.local > .env.local.tmp 2>/dev/null || true
+  printf '%s=%s\n' "$key" "$val" >> .env.local.tmp
+  mv .env.local.tmp .env.local
+}
+
+# Point the cli at the model servers for a chosen host. localhost => run them in
+# Docker here (cli reaches them by service name); any other host => they run on
+# that machine and we talk to it directly. HEALTH_HOST is the host-reachable
+# address we curl to confirm they're up.
+set_model_urls() { # set_model_urls <host>
+  COMPUTE_HOST="$1"
+  if [[ "$COMPUTE_HOST" == localhost || "$COMPUTE_HOST" == 127.0.0.1 ]]; then
+    models_local=true
+    export FACE_SERVER_HOST="http://face-server:8090"   # docker-internal
+    export MODEL_SERVER_HOST="http://ollama:11434"
+    HEALTH_HOST=localhost
+  else
+    models_local=false
+    export FACE_SERVER_HOST="http://${COMPUTE_HOST}:8090"
+    export MODEL_SERVER_HOST="http://${COMPUTE_HOST}:11434"
+    HEALTH_HOST="$COMPUTE_HOST"
+  fi
+}
+
+# Are the model servers the chosen tasks need reachable from here?
+check_models() { # check_models <host>
+  local h="$1"
+  if [[ "${do_faces:-false}" == true || "${do_dogs:-false}" == true ]]; then
+    curl -fsS "http://${h}:8090/health" >/dev/null 2>&1 || return 1
+  fi
+  if [[ "${do_tag:-false}" == true ]]; then
+    curl -fsS "http://${h}:11434/api/tags"  >/dev/null 2>&1 \
+      || curl -fsS "http://${h}:11434/v1/models" >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
+# Build + start, on THIS machine, the model servers the chosen tasks need.
+start_local_models() {
+  if [[ "$do_faces" == true || "$do_dogs" == true ]]; then
+    bold "Starting face-server (this machine)..."
+    dim "(building the Python vision image — PyTorch wheels are large; watch the pip lines)"
+    docker compose build --progress=plain face-server
+    docker compose up -d face-server
+  fi
+  if [[ "$do_tag" == true ]]; then
+    bold "Starting Ollama (this machine)..."
+    docker compose up -d ollama
+    bold "Pulling model '$MODEL_SERVER_MODEL' (one-time, can be several GB)..."
+    docker compose exec -T ollama ollama pull "$MODEL_SERVER_MODEL" \
+      || err "Model pull failed — retry later: docker compose exec ollama ollama pull $MODEL_SERVER_MODEL"
+  fi
+}
+
+# ----- preflight: docker -----------------------------------------------------
+if ! command -v docker >/dev/null 2>&1; then
+  err "Docker is not installed."
+  echo "Install Docker Desktop (Mac/Windows) or Docker Engine (Linux):"
+  echo "  https://docs.docker.com/get-docker/"
+  echo "Then re-run ./oi"
+  exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+  err "Docker is installed but the daemon isn't running. Start Docker and re-run ./oi."
+  exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  err "This needs Docker Compose v2 (the 'docker compose' subcommand). Update Docker."
+  exit 1
+fi
+
+# ----- preflight: env --------------------------------------------------------
+if [[ ! -f .env.local ]]; then
+  err ".env.local not found."
+  if [[ -f .env.example ]] && yes "Create it from .env.example now?"; then
+    cp .env.example .env.local
+    ok "Wrote .env.local — set SOURCE_DIR (the rest is asked interactively)."
+  fi
+  echo "Edit .env.local, then re-run ./oi."
+  exit 1
+fi
+
+bold "=== Offline Ingestion ==="
+
+# ----- 1. source folder ------------------------------------------------------
+# The one folder the gallery ingests — every image nested under it. How photos
+# get there (manual or Lightroom export) is a separate prep step; see README
+# "Prepare the Photo Ingestion Directory". Precedence: CLI arg > SOURCE_DIR in
+# .env.local > OS default pictures folder.
+default_src="${1:-$(env_get SOURCE_DIR)}"
+default_src="${default_src:-$(os_default_photos)}"
+SRC=$(ask "Photo folder [$default_src]: " "$default_src")
+SRC="${SRC/#\~/$HOME}"
+if [[ -z "$SRC" || ! -d "$SRC" ]]; then
+  err "Folder does not exist: '$SRC'"
+  exit 1
+fi
+export SOURCE_DIR="$SRC"
+env_set SOURCE_DIR "$SRC"
+ok "Source: $SRC"
+
+# ----- 2. mode ---------------------------------------------------------------
+echo
+dim "Create = wipe the local DB + images and start fresh."
+dim "Update = keep existing data; add new photos and process only what's new."
+MODE=update
+if yes "Start FRESH (wipe local data)?"; then MODE=create; fi
+ok "Mode: $MODE"
+
+# ----- 3. tasks --------------------------------------------------------------
+echo
+bold "Pick tasks:"
+yesd "  Ingest photos (scan, thumbnails, EXIF)?"  && do_ingest=true || do_ingest=false
+yesd "  Text-tag + vector search (vision LLM)?"    && do_tag=true    || do_tag=false
+yesd "  Detect + cluster people (faces)?"          && do_faces=true  || do_faces=false
+yesd "  Detect + cluster dogs?"                    && do_dogs=true   || do_dogs=false
+
+# ----- 4. model servers ------------------------------------------------------
+# One machine runs the heavy model work (face/dog detection + the tagging LLM):
+# this one, or another. localhost = here; anything else = that machine's address.
+need_models=false
+[[ "$do_faces" == true || "$do_dogs" == true || "$do_tag" == true ]] && need_models=true
+set_model_urls localhost
+if [[ "$need_models" == true ]]; then
+  echo
+  dim "Where do the model servers run? Leave 'localhost' to run them here, or"
+  dim "enter another machine's IP/hostname."
+  dhost="$(env_get COMPUTE_HOST)"; dhost="${dhost:-localhost}"
+  set_model_urls "$(ask "Model server host [$dhost]: " "$dhost")"
+  env_set COMPUTE_HOST "$COMPUTE_HOST"
+  if [[ "$models_local" == false ]]; then
+    dim "On $COMPUTE_HOST: run 'docker compose up -d' in offline-ingestion, get its IP"
+    dim "  (macOS: 'ipconfig getifaddr en0' · Linux: 'hostname -I'), and enter that here."
+  fi
+fi
+
+# Tagging model + optional key — only when tagging.
+if [[ "$do_tag" == true ]]; then
+  dmodel="$(env_get MODEL_SERVER_MODEL)"; dmodel="${dmodel:-llama3.2-vision}"
+  export MODEL_SERVER_MODEL="$(ask "Vision model [$dmodel]: " "$dmodel")"
+  env_set MODEL_SERVER_MODEL "$MODEL_SERVER_MODEL"
+  export MODEL_SERVER_API_KEY="$(ask "Model API key (blank if none): " "$(env_get MODEL_SERVER_API_KEY)")"
+  env_set MODEL_SERVER_API_KEY "$MODEL_SERVER_API_KEY"
+fi
+
+# ----- 5. dry run / sync -----------------------------------------------------
+export DRY_RUN=false
+if [[ "$do_ingest" == true ]] && yes "Dry run ingest (preview, no changes)?"; then export DRY_RUN=true; fi
+do_sync=false
+if yes "Sync to production when done (rsync over SSH)?"; then do_sync=true; fi
+
+# ----- summary ---------------------------------------------------------------
+echo
+bold "Plan:"
+echo "  source : $SRC"
+echo "  mode   : $MODE"
+echo "  tasks  : $([[ $do_ingest == true ]] && echo -n 'ingest ')$([[ $do_tag == true ]] && echo -n 'tag ')$([[ $do_faces == true ]] && echo -n 'faces ')$([[ $do_dogs == true ]] && echo -n 'dogs ')"
+echo "  models : $([[ $need_models == true ]] && { [[ $models_local == true ]] && echo 'this machine' || echo "$COMPUTE_HOST"; } || echo n/a)"
+[[ "$do_tag" == true ]] && echo "  model  : $MODEL_SERVER_MODEL"
+echo "  dryrun : $DRY_RUN"
+echo "  sync   : $do_sync"
+echo
+yes "Proceed?" || { echo "Aborted."; exit 0; }
+
+# ----- build images ----------------------------------------------------------
+# --progress=plain streams the full, uncollapsed build log (each RUN + pip line),
+# so a slow/stuck step is visible instead of hidden behind the collapsed view.
+bold "Building images (first run downloads/compiles; cached after)..."
+dim "(full build output below — this can take a while on a slow connection)"
+docker compose build --progress=plain cli label-app
+
+run_task() { # run_task <npm-script> <label>
+  bold ">>> $2"
+  docker compose run --rm cli npm run "$1"
+}
+
+# ----- model servers: start (if local) + health-gate -------------------------
+# Don't start the pipeline until the model servers are actually reachable. While
+# they're not, re-prompt for a host (lets you point at another machine, or fix
+# and retry locally).
+if [[ "$need_models" == true ]]; then
+  [[ "$models_local" == true ]] && start_local_models
+  printf "Waiting for model server(s) at %s" "$HEALTH_HOST"
+  tries=0
+  until check_models "$HEALTH_HOST"; do
+    if [[ $tries -lt 30 ]]; then printf "."; sleep 2; tries=$((tries + 1)); continue; fi
+    echo
+    err "Model server(s) not reachable at $HEALTH_HOST."
+    [[ "$models_local" == false ]] && dim "On that machine: 'docker compose up -d' in offline-ingestion, then use its IP."
+    set_model_urls "$(ask "Model server host (Ctrl-C to abort) [$HEALTH_HOST]: " "$HEALTH_HOST")"
+    env_set COMPUTE_HOST "$COMPUTE_HOST"
+    [[ "$models_local" == true ]] && start_local_models
+    tries=0
+    printf "Waiting for model server(s) at %s" "$HEALTH_HOST"
+  done
+  ok " connected"
+fi
+
+# ----- run pipeline ----------------------------------------------------------
+[[ "$MODE" == create ]] && run_task clear-local-db "Wiping local data"
+[[ "$do_ingest" == true ]] && run_task ingest "Ingesting photos"
+[[ "$do_tag"    == true ]] && run_task tag "Text-tagging + embedding"
+[[ "$do_faces"  == true ]] && { run_task detect-faces "Detecting faces"; run_task cluster-faces "Clustering faces"; }
+[[ "$do_dogs"   == true ]] && { run_task detect-dogs "Detecting dogs"; run_task cluster-dogs "Clustering dogs"; }
+
+if [[ "$do_sync" == true ]]; then
+  run_task sync-db "Syncing DB to prod"
+  run_task sync-images "Syncing images to prod"
+fi
+
+# ----- label app -------------------------------------------------------------
+echo
+if [[ "$do_faces" == true || "$do_dogs" == true ]] && yesd "Open the tagging UI to label people/dogs now?"; then
+  docker compose up -d label-app
+  ok "Tagging UI: http://localhost:${LABEL_PORT:-5180}"
+  dim "Stop it later with: docker compose stop label-app"
+fi
+
+ok "Done."

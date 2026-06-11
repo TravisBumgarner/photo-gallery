@@ -1,0 +1,331 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from 'drizzle-orm';
+import type { AnySQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import express from 'express';
+import { createDb } from 'shared/db';
+import {
+  dogClusters,
+  dogs,
+  faceClusters,
+  faces,
+  photos,
+} from 'shared/db/schema';
+import { loadConfig, thumbnailsDir } from '@/config.js';
+import { settings } from '@/settings.js';
+
+// Standalone cluster-labeling app. This replaces the old frontend PeoplePage /
+// DogsPage. It talks to the same sqlite.db directly via shared/db — no dependency
+// on the main backend or frontend. People (faces / personLabel) and dogs
+// (dogLabel) are near-identical, so both are driven from one KINDS table.
+
+const config = loadConfig('local');
+if (!config.DATABASE_URL) {
+  console.error('DATABASE_URL must be set in .env.local (path to sqlite).');
+  process.exit(1);
+}
+const db = createDb(path.resolve(config.DATABASE_URL));
+
+interface Kind {
+  clusters: SQLiteTable;
+  items: SQLiteTable;
+  clusterId: AnySQLiteColumn;
+  clusterPk: AnySQLiteColumn;
+  labelColumn: AnySQLiteColumn;
+  labelKey: 'personLabel' | 'dogLabel';
+  ignoredColumn: AnySQLiteColumn;
+  itemId: AnySQLiteColumn;
+  itemClusterId: AnySQLiteColumn;
+  photoUuid: AnySQLiteColumn;
+  bboxX: AnySQLiteColumn;
+  bboxY: AnySQLiteColumn;
+  bboxW: AnySQLiteColumn;
+  bboxH: AnySQLiteColumn;
+  detScore: AnySQLiteColumn;
+  updatedAt: AnySQLiteColumn;
+  minUnlabeled: number;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
+const fc = faceClusters as any;
+// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
+const fa = faces as any;
+// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
+const dc = dogClusters as any;
+// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
+const dg = dogs as any;
+
+const KINDS: Record<string, Kind> = {
+  people: {
+    clusters: faceClusters,
+    items: faces,
+    clusterId: fa.clusterId,
+    clusterPk: fc.id,
+    labelColumn: fc.personLabel,
+    labelKey: 'personLabel',
+    ignoredColumn: fc.ignored,
+    itemId: fa.id,
+    itemClusterId: fa.clusterId,
+    photoUuid: fa.photoUuid,
+    bboxX: fa.bboxX,
+    bboxY: fa.bboxY,
+    bboxW: fa.bboxW,
+    bboxH: fa.bboxH,
+    detScore: fa.detScore,
+    updatedAt: fc.updatedAt,
+    minUnlabeled: 5,
+  },
+  dogs: {
+    clusters: dogClusters,
+    items: dogs,
+    clusterId: dg.clusterId,
+    clusterPk: dc.id,
+    labelColumn: dc.dogLabel,
+    labelKey: 'dogLabel',
+    ignoredColumn: dc.ignored,
+    itemId: dg.id,
+    itemClusterId: dg.clusterId,
+    photoUuid: dg.photoUuid,
+    bboxX: dg.bboxX,
+    bboxY: dg.bboxY,
+    bboxW: dg.bboxW,
+    bboxH: dg.bboxH,
+    detScore: dg.detScore,
+    updatedAt: dc.updatedAt,
+    minUnlabeled: 3,
+  },
+};
+
+const SAMPLES_PER_CLUSTER = settings.labelApp.sampleFacesPerCluster;
+
+const app = express();
+app.use(express.json());
+
+// Serve the photo thumbnails (photos.thumbnailPath looks like
+// "thumbnails/thumb_<uuid>.jpg", so static-mount the destination root).
+app.use(express.static(path.dirname(thumbnailsDir(config))));
+
+function getKind(req: express.Request, res: express.Response): Kind | null {
+  const kind = KINDS[req.params.kind];
+  if (!kind) {
+    res.status(404).json({ error: `unknown kind '${req.params.kind}'` });
+    return null;
+  }
+  return kind;
+}
+
+// GET /api/:kind/clusters?status=unlabeled|labeled|ignored&limit=&offset=
+app.get('/api/:kind/clusters', async (req, res) => {
+  const k = getKind(req, res);
+  if (!k) return;
+  try {
+    const status = String(req.query.status ?? 'unlabeled');
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 500);
+    const offset = Math.max(Number(req.query.offset ?? 0), 0);
+    const minCount = Math.max(
+      Number(
+        req.query.minCount ?? (status === 'unlabeled' ? k.minUnlabeled : 0),
+      ),
+      0,
+    );
+
+    const whereParts = [] as ReturnType<typeof eq>[];
+    if (status === 'labeled') {
+      whereParts.push(isNotNull(k.labelColumn));
+    } else if (status === 'ignored') {
+      whereParts.push(eq(k.ignoredColumn, true));
+    } else {
+      whereParts.push(isNull(k.labelColumn));
+      whereParts.push(eq(k.ignoredColumn, false));
+    }
+
+    const clusters = await db
+      .select({
+        id: k.clusterPk,
+        label: k.labelColumn,
+        ignored: k.ignoredColumn,
+        count: sql<number>`count(${k.itemId})`,
+      })
+      .from(k.clusters)
+      .leftJoin(k.items, eq(k.itemClusterId, k.clusterPk))
+      .where(and(...whereParts))
+      .groupBy(k.clusterPk)
+      .having(sql`count(${k.itemId}) >= ${minCount}`)
+      .orderBy(desc(sql`count(${k.itemId})`), asc(k.clusterPk))
+      .limit(limit)
+      .offset(offset);
+
+    if (clusters.length === 0) {
+      res.json({ clusters: [], hasMore: false });
+      return;
+    }
+
+    const clusterIds = clusters.map((c) => c.id as number);
+    const sampleRows = (await db.all(sql`
+      SELECT item_id, photo_uuid, thumbnail_path, bbox_x, bbox_y, bbox_w, bbox_h, det_score, cluster_id
+      FROM (
+        SELECT
+          ${k.itemId} AS item_id,
+          ${k.photoUuid} AS photo_uuid,
+          ${photos.thumbnailPath} AS thumbnail_path,
+          ${k.bboxX} AS bbox_x,
+          ${k.bboxY} AS bbox_y,
+          ${k.bboxW} AS bbox_w,
+          ${k.bboxH} AS bbox_h,
+          ${k.detScore} AS det_score,
+          ${k.itemClusterId} AS cluster_id,
+          ROW_NUMBER() OVER (PARTITION BY ${k.itemClusterId} ORDER BY ${k.detScore} DESC) AS rn
+        FROM ${k.items}
+        JOIN ${photos} ON ${photos.uuid} = ${k.photoUuid}
+        WHERE ${k.itemClusterId} IN (${sql.join(
+          clusterIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      )
+      WHERE rn <= ${SAMPLES_PER_CLUSTER}
+    `)) as Array<{
+      item_id: number;
+      photo_uuid: string;
+      thumbnail_path: string;
+      bbox_x: number;
+      bbox_y: number;
+      bbox_w: number;
+      bbox_h: number;
+      det_score: number;
+      cluster_id: number;
+    }>;
+
+    const samplesByCluster = new Map<number, unknown[]>();
+    for (const r of sampleRows) {
+      const arr = samplesByCluster.get(r.cluster_id) ?? [];
+      arr.push({
+        itemId: r.item_id,
+        photoUuid: r.photo_uuid,
+        thumbnailPath: r.thumbnail_path,
+        bboxX: r.bbox_x,
+        bboxY: r.bbox_y,
+        bboxW: r.bbox_w,
+        bboxH: r.bbox_h,
+        detScore: r.det_score,
+      });
+      samplesByCluster.set(r.cluster_id, arr);
+    }
+
+    res.json({
+      clusters: clusters.map((c) => ({
+        id: c.id,
+        label: c.label,
+        ignored: c.ignored,
+        count: c.count,
+        samples: samplesByCluster.get(c.id as number) ?? [],
+      })),
+      hasMore: clusters.length === limit,
+    });
+  } catch (err) {
+    console.error(`GET /api/${req.params.kind}/clusters failed:`, err);
+    res.status(500).json({ error: 'Failed to fetch clusters' });
+  }
+});
+
+// PATCH /api/:kind/clusters/:id  body: { label?: string|null, ignored?: boolean }
+app.patch('/api/:kind/clusters/:id', async (req, res) => {
+  const k = getKind(req, res);
+  if (!k) return;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'invalid id' });
+      return;
+    }
+    const { label, ignored } = req.body as {
+      label?: string | null;
+      ignored?: boolean;
+    };
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+    if (label !== undefined) {
+      update[k.labelKey] = label === null || label === '' ? null : label.trim();
+    }
+    if (ignored !== undefined) update.ignored = ignored;
+
+    await db.update(k.clusters).set(update).where(eq(k.clusterPk, id));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`PATCH /api/${req.params.kind}/clusters/:id failed:`, err);
+    res.status(500).json({ error: 'Failed to update cluster' });
+  }
+});
+
+// POST /api/:kind/clusters/merge  body: { sourceIds: number[], targetId: number }
+app.post('/api/:kind/clusters/merge', async (req, res) => {
+  const k = getKind(req, res);
+  if (!k) return;
+  try {
+    const { sourceIds, targetId } = req.body as {
+      sourceIds: number[];
+      targetId: number;
+    };
+    if (
+      !Array.isArray(sourceIds) ||
+      sourceIds.length === 0 ||
+      !Number.isInteger(targetId) ||
+      sourceIds.includes(targetId)
+    ) {
+      res
+        .status(400)
+        .json({ error: 'sourceIds[] and a distinct targetId required' });
+      return;
+    }
+    await db
+      .update(k.items)
+      .set({ clusterId: targetId, updatedAt: new Date() })
+      .where(inArray(k.itemClusterId, sourceIds));
+    await db.delete(k.clusters).where(inArray(k.clusterPk, sourceIds));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`POST /api/${req.params.kind}/clusters/merge failed:`, err);
+    res.status(500).json({ error: 'Failed to merge clusters' });
+  }
+});
+
+// GET /api/:kind/labels — distinct labels with counts.
+app.get('/api/:kind/labels', async (req, res) => {
+  const k = getKind(req, res);
+  if (!k) return;
+  try {
+    const rows = await db
+      .select({
+        label: k.labelColumn,
+        count: sql<number>`count(${k.itemId})`,
+      })
+      .from(k.clusters)
+      .leftJoin(k.items, eq(k.itemClusterId, k.clusterPk))
+      .where(isNotNull(k.labelColumn))
+      .groupBy(k.labelColumn)
+      .orderBy(desc(sql`count(${k.itemId})`));
+    res.json({ labels: rows });
+  } catch (err) {
+    console.error(`GET /api/${req.params.kind}/labels failed:`, err);
+    res.status(500).json({ error: 'Failed to fetch labels' });
+  }
+});
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(here, 'public')));
+
+const port = settings.labelApp.port;
+app.listen(port, () => {
+  console.log(`\n  Label app:    http://localhost:${port}`);
+  console.log(`  Database:     ${path.resolve(config.DATABASE_URL!)}`);
+  console.log(
+    '  Tag people and dogs, then re-run clustering as new photos arrive.\n',
+  );
+});

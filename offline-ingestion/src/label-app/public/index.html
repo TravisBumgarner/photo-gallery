@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Offline Ingestion — Tagging</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #14161a; color: #e6e8eb;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: #1b1e24; border-bottom: 1px solid #2a2e36;
+    padding: 12px 20px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+  }
+  h1 { font-size: 16px; margin: 0 12px 0 0; font-weight: 600; }
+  .group { display: inline-flex; border: 1px solid #2a2e36; border-radius: 8px; overflow: hidden; }
+  .group button {
+    background: transparent; color: #aeb4bd; border: 0; padding: 6px 14px; cursor: pointer; font: inherit;
+  }
+  .group button.active { background: #3b82f6; color: #fff; }
+  .group button:not(.active):hover { background: #242832; }
+  #status { margin-left: auto; color: #8b919b; font-size: 13px; }
+  main { padding: 20px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .card { background: #1b1e24; border: 1px solid #2a2e36; border-radius: 10px; padding: 12px; }
+  .card.sel { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+  .crops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 10px; }
+  .crop { aspect-ratio: 1; border-radius: 6px; background: #0d0f12 center/cover no-repeat; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .meta { color: #8b919b; font-size: 12px; margin-bottom: 8px; }
+  input[type=text] {
+    flex: 1; background: #0d0f12; border: 1px solid #2a2e36; color: #e6e8eb; border-radius: 6px; padding: 6px 8px; font: inherit;
+  }
+  button.act { background: #242832; color: #e6e8eb; border: 1px solid #2a2e36; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+  button.act:hover { background: #2d323c; }
+  button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  .bar { position: sticky; bottom: 0; background: #1b1e24cc; backdrop-filter: blur(6px); border-top: 1px solid #2a2e36;
+    padding: 10px 20px; display: none; gap: 10px; align-items: center; }
+  .bar.show { display: flex; }
+  footer { padding: 24px; text-align: center; }
+  .muted { color: #8b919b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tagging</h1>
+  <div class="group" id="kind">
+    <button type="button" data-kind="people" class="active">People</button>
+    <button type="button" data-kind="dogs">Dogs</button>
+  </div>
+  <div class="group" id="statusTabs">
+    <button type="button" data-status="unlabeled" class="active">Unlabeled</button>
+    <button type="button" data-status="labeled">Labeled</button>
+    <button type="button" data-status="ignored">Ignored</button>
+  </div>
+  <span id="status"></span>
+</header>
+
+<main id="grid"></main>
+<footer id="footer"></footer>
+
+<div class="bar" id="mergeBar">
+  <span id="mergeInfo" class="muted"></span>
+  <span style="flex:1"></span>
+  <button type="button" class="act" id="mergeCancel">Clear</button>
+  <button type="button" class="act primary" id="mergeGo">Merge selected →</button>
+</div>
+
+<script>
+const PAD = {
+  people: { top: 0.6, bottom: 0.25, side: 0.35 },
+  dogs:   { top: 0.08, bottom: 0.08, side: 0.08 },
+};
+
+let kind = 'people';
+let status = 'unlabeled';
+let offset = 0;
+let loading = false;
+let hasMore = false;
+const selected = new Set();
+
+const grid = document.getElementById('grid');
+const footer = document.getElementById('footer');
+const statusEl = document.getElementById('status');
+
+function cropStyle(s) {
+  const p = PAD[kind];
+  let x = s.bboxX - s.bboxW * p.side;
+  let y = s.bboxY - s.bboxH * p.top;
+  let w = s.bboxW * (1 + p.side * 2);
+  let h = s.bboxH * (1 + p.top + p.bottom);
+  x = Math.max(0, x); y = Math.max(0, y);
+  w = Math.min(1 - x, w); h = Math.min(1 - y, h);
+  if (w <= 0 || h <= 0) { x = 0; y = 0; w = 1; h = 1; }
+  const posX = w >= 1 ? 0 : (x / (1 - w)) * 100;
+  const posY = h >= 1 ? 0 : (y / (1 - h)) * 100;
+  const sizeX = (1 / w) * 100;
+  const sizeY = (1 / h) * 100;
+  return `background-image:url('/${s.thumbnailPath}');background-size:${sizeX}% ${sizeY}%;background-position:${posX}% ${posY}%;`;
+}
+
+function card(c) {
+  const el = document.createElement('div');
+  el.className = `card${selected.has(c.id) ? ' sel' : ''}`;
+  const crops = c.samples.map((s) => `<div class="crop" style="${cropStyle(s)}"></div>`).join('');
+  el.innerHTML = `
+    <div class="crops">${crops}</div>
+    <div class="meta">#${c.id} · ${c.count} ${kind === 'people' ? 'faces' : 'dogs'}${c.ignored ? ' · ignored' : ''}</div>
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" placeholder="${kind === 'people' ? 'name (e.g. mom)' : 'name (e.g. bowser)'}" value="${c.label ?? ''}" />
+      <button type="button" class="act primary" data-act="save">Save</button>
+    </div>
+    <div class="row">
+      <button type="button" class="act" data-act="ignore">${c.ignored ? 'Un-ignore' : 'Ignore'}</button>
+      <span style="flex:1"></span>
+      <label class="muted"><input type="checkbox" data-act="sel" ${selected.has(c.id) ? 'checked' : ''}/> merge</label>
+    </div>`;
+
+  const input = el.querySelector('input[type=text]');
+  el.querySelector('[data-act=save]').onclick = async () => {
+    await patch(c.id, { label: input.value.trim() || null });
+    reload();
+  };
+  el.querySelector('[data-act=ignore]').onclick = async () => {
+    await patch(c.id, { ignored: !c.ignored });
+    reload();
+  };
+  el.querySelector('[data-act=sel]').onchange = (e) => {
+    if (e.target.checked) selected.add(c.id); else selected.delete(c.id);
+    el.classList.toggle('sel', selected.has(c.id));
+    renderMergeBar();
+  };
+  return el;
+}
+
+async function patch(id, body) {
+  await fetch(`/api/${kind}/clusters/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+}
+
+async function load(reset) {
+  if (loading) return;
+  loading = true;
+  if (reset) { offset = 0; grid.innerHTML = ''; }
+  statusEl.textContent = 'Loading…';
+  const res = await fetch(`/api/${kind}/clusters?status=${status}&limit=50&offset=${offset}`);
+  const data = await res.json();
+  for (const c of data.clusters) grid.appendChild(card(c));
+  hasMore = data.hasMore;
+  offset += data.clusters.length;
+  statusEl.textContent = `${offset} cluster${offset === 1 ? '' : 's'} loaded`;
+  renderFooter();
+  loading = false;
+}
+
+function reload() { load(true); }
+
+function renderFooter() {
+  footer.innerHTML = '';
+  if (hasMore) {
+    const b = document.createElement('button');
+    b.className = 'act'; b.textContent = 'Load more';
+    b.onclick = () => load(false);
+    footer.appendChild(b);
+  } else if (offset === 0) {
+    footer.innerHTML = '<span class="muted">No clusters in this view.</span>';
+  }
+}
+
+function renderMergeBar() {
+  const bar = document.getElementById('mergeBar');
+  bar.classList.toggle('show', selected.size > 0);
+  document.getElementById('mergeInfo').textContent =
+    `${selected.size} selected — they merge into the lowest #id, keeping its label.`;
+}
+
+document.getElementById('mergeCancel').onclick = () => {
+  selected.clear(); renderMergeBar(); reload();
+};
+document.getElementById('mergeGo').onclick = async () => {
+  if (selected.size < 2) { alert('Select at least two clusters to merge.'); return; }
+  const ids = [...selected].sort((a, b) => a - b);
+  const targetId = ids[0];
+  const sourceIds = ids.slice(1);
+  await fetch(`/api/${kind}/clusters/merge`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceIds, targetId }),
+  });
+  selected.clear(); renderMergeBar(); reload();
+};
+
+document.getElementById('kind').onclick = (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  kind = b.dataset.kind;
+  for (const x of document.querySelectorAll('#kind button')) x.classList.toggle('active', x === b);
+  selected.clear(); renderMergeBar(); reload();
+};
+document.getElementById('statusTabs').onclick = (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  status = b.dataset.status;
+  for (const x of document.querySelectorAll('#statusTabs button')) x.classList.toggle('active', x === b);
+  selected.clear(); renderMergeBar(); reload();
+};
+
+reload();
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@
   "workspaces": [
     "shared",
     "backend",
-    "ingestion",
+    "offline-ingestion",
     "frontend"
   ],
   "scripts": {
@@ -17,14 +17,14 @@
     "db:generate": "npm run db:generate -w backend",
     "db:migrate": "npm run db:migrate -w backend",
     "db:studio": "npm run db:studio -w backend",
-    "ingest": "npm run ingest -w ingestion",
+    "ingest": "npm run ingest -w offline-ingestion",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
-    "sync-db": "npm run sync-db -w ingestion",
-    "sync-images": "npm run sync-images -w ingestion",
+    "sync-db": "npm run sync-db -w offline-ingestion",
+    "sync-images": "npm run sync-images -w offline-ingestion",
     "sync-code": "./deploy.sh",
     "sync-to-prod": "npm run sync-db && npm run sync-images && npm run sync-code"
   },
