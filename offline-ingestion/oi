@@ -168,6 +168,41 @@ native_has_model() { # <model> — already pulled into native Ollama?
 docker_ollama_ids() { # ids of any running Dockerized Ollama containers
   docker ps -q --filter ancestor=ollama/ollama 2>/dev/null
 }
+# The cli ALWAYS runs in Docker and reaches native Ollama over host.docker.internal,
+# which arrives on a non-loopback address. Ollama listens on 127.0.0.1 by default
+# (true on macOS too — the app does NOT open it up for you), so Docker can't reach
+# it and every tag request fails. These bind it to 0.0.0.0 automatically.
+ollama_loopback_only() { # listening on :11434 but only on loopback?
+  local l; l="$(lsof -nP -iTCP:11434 -sTCP:LISTEN 2>/dev/null)" || return 1
+  [[ -n "$l" ]] && ! grep -qE '(\*|0\.0\.0\.0):11434' <<<"$l"
+}
+ensure_ollama_lan_bind() {
+  ollama_loopback_only || return 0    # already on 0.0.0.0 (or lsof n/a) — nothing to do
+  if [[ "$(uname -s)" != Darwin ]]; then
+    # Non-macOS: we don't own the service, so set the knob and wait for the restart.
+    err "Ollama is bound to 127.0.0.1 only — the Docker cli can't reach it there."
+    err "Restart it open to all interfaces:  OLLAMA_HOST=0.0.0.0:11434 ollama serve"
+    printf "Waiting for Ollama on 0.0.0.0:11434"
+    until native_ollama_up && ! ollama_loopback_only; do printf "."; sleep 2; done
+    echo; ok "Ollama reachable on 0.0.0.0:11434."
+    return 0
+  fi
+  bold "Binding Ollama to 0.0.0.0 so the Docker cli can reach it..."
+  launchctl setenv OLLAMA_HOST "0.0.0.0:11434"          # persists for the app's next launch
+  osascript -e 'quit app "Ollama"' >/dev/null 2>&1 || pkill -x Ollama 2>/dev/null || true
+  sleep 1
+  open -a Ollama >/dev/null 2>&1 || true                # relaunch so it picks up OLLAMA_HOST
+  printf "Restarting Ollama on 0.0.0.0:11434"
+  local tries=0
+  until native_ollama_up && ! ollama_loopback_only; do
+    if [[ $tries -ge 15 ]]; then
+      echo; err "Ollama is still on loopback. Quit & reopen the Ollama app, then re-run ./oi."
+      exit 1
+    fi
+    printf "."; sleep 2; tries=$((tries + 1))
+  done
+  echo; ok "Ollama bound to 0.0.0.0:11434."
+}
 # Require a native Ollama. If it isn't up, show cross-platform install/start steps
 # and wait (loop) until it's reachable, walking the user through getting it up.
 ensure_native_ollama() {
@@ -187,20 +222,24 @@ ensure_native_ollama() {
       exit 1
     fi
   fi
-  native_ollama_up && return 0
-  echo
-  err "Native Ollama isn't running."
-  bold "Get Ollama running to continue (it uses your GPU):"
-  echo "  1. Install it if you haven't — Mac / Windows / Linux: https://ollama.com/download"
-  echo "  2. Start it:"
-  echo "       Mac / Windows : open the Ollama app"
-  echo "       Linux         : run 'ollama serve' (or start the service)"
-  echo "  3. Leave it running — ./oi will continue automatically once it's up."
-  echo
-  printf "Waiting for Ollama on localhost:11434"
-  until native_ollama_up; do printf "."; sleep 2; done
-  echo
-  ok "Ollama is up."
+  if ! native_ollama_up; then
+    echo
+    err "Native Ollama isn't running."
+    bold "Get Ollama running to continue (it uses your GPU):"
+    echo "  1. Install it if you haven't — Mac / Windows / Linux: https://ollama.com/download"
+    echo "  2. Start it:"
+    echo "       Mac / Windows : open the Ollama app"
+    echo "       Linux         : run 'ollama serve' (or start the service)"
+    echo "  3. Leave it running — ./oi will continue automatically once it's up."
+    echo
+    printf "Waiting for Ollama on localhost:11434"
+    until native_ollama_up; do printf "."; sleep 2; done
+    echo
+    ok "Ollama is up."
+  fi
+
+  # Make it reachable from the Docker cli (host.docker.internal needs a 0.0.0.0 bind).
+  ensure_ollama_lan_bind
 }
 
 # Point the cli at the model servers for a chosen host. localhost => this machine:
@@ -389,12 +428,8 @@ if [[ "$SERVER" == true ]]; then
         "http://localhost:${GATEWAY_PORT}/api/tags" >/dev/null 2>&1; then
     echo
     err "Gateway is up but can't reach the native Ollama at host.docker.internal:11434."
-    err "Ollama listens on 127.0.0.1 by default, which the gateway CONTAINER can't"
-    err "reach — it has to bind 0.0.0.0. This is true on macOS too (the app does NOT"
-    err "do it for you). Set OLLAMA_HOST, restart Ollama, then re-run ./oi --server:"
-    err "    macOS app : launchctl setenv OLLAMA_HOST \"0.0.0.0:11434\"  then quit & reopen Ollama"
-    err "    CLI/Linux : OLLAMA_HOST=0.0.0.0:11434 ollama serve"
-    err "Verify:  lsof -nP -iTCP:11434 -sTCP:LISTEN   (want *:11434, not 127.0.0.1:11434)"
+    err "ensure_ollama_lan_bind should have bound it to 0.0.0.0 — check the Ollama app"
+    err "and your firewall, then re-run ./oi --server."
     # Don't leave a half-up server that reports 'running' but silently fails every
     # tag request — that's the footgun. Tear the stack back down and fail hard.
     docker compose --profile server stop vision-server gateway >/dev/null 2>&1 || true
