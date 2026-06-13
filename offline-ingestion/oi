@@ -20,6 +20,7 @@ cd "$(dirname "$0")"
 VERBOSE=false
 DRY_RUN=false
 TAGGING_UI=false
+SERVER=false
 SHOW_HELP=false
 args=()
 for a in "$@"; do
@@ -27,6 +28,7 @@ for a in "$@"; do
     -v|--verbose) VERBOSE=true ;;
     --dry-run)    DRY_RUN=true ;;
     --tagging-ui) TAGGING_UI=true ;;
+    --server)     SERVER=true ;;
     -h|--help)    SHOW_HELP=true ;;
     *) args+=("$a") ;;
   esac
@@ -41,6 +43,10 @@ Offline Ingestion launcher.
 Usage:  ./oi [options] [photo-folder]
 
 Options:
+  --server       Turn THIS machine into the model server for another box: bring
+                 up the native Ollama (GPU) + vision-server behind a single
+                 token-protected gateway, and print the address/token to enter
+                 on the main machine. Nothing is ingested here.
   --tagging-ui   Skip ingestion; open the tagging/label UI and stay attached
                  (Ctrl-C or closing the terminal stops it).
   --dry-run      Preview the ingest file list, write nothing.
@@ -119,6 +125,13 @@ multiselect() {
     _ms_draw
   done
   tput cnorm 2>/dev/null                  # restore cursor
+}
+
+lan_ip() { # best-effort primary LAN IPv4 of this host (for the --server address)
+  case "$(uname -s)" in
+    Darwin) ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true ;;
+    *)      hostname -I 2>/dev/null | awk '{print $1}' || true ;;   # Linux/Git-bash
+  esac
 }
 
 os_default_photos() { # the conventional pictures folder for this OS
@@ -203,22 +216,32 @@ set_model_urls() { # set_model_urls <host>
     export MODEL_SERVER_HOST="http://host.docker.internal:11434"  # native Ollama on host
     HEALTH_HOST=localhost
   else
+    # Remote: everything is fronted by the auth gateway on one port. The cli appends
+    # /v1,/api (Ollama) and /detect,/health (vision) — the gateway path-routes both.
     models_local=false
-    export VISION_SERVER_HOST="http://${COMPUTE_HOST}:8090"
-    export MODEL_SERVER_HOST="http://${COMPUTE_HOST}:11434"
+    local gw="http://${COMPUTE_HOST}:${GATEWAY_PORT:-8443}"
+    export VISION_SERVER_HOST="$gw"
+    export MODEL_SERVER_HOST="$gw"
     HEALTH_HOST="$COMPUTE_HOST"
   fi
 }
 
 # Are the model servers the chosen tasks need reachable from here?
 check_models() { # check_models <host>
-  local h="$1"
+  local h="$1" vbase obase auth=()
+  if [[ "$models_local" == true ]]; then
+    vbase="http://${h}:8090"; obase="http://${h}:11434"           # raw ports, no auth
+  else
+    local gw="http://${h}:${GATEWAY_PORT:-8443}"                  # one gateway port
+    vbase="$gw"; obase="$gw"
+    auth=(-H "Authorization: Bearer ${GATEWAY_TOKEN:-}")          # gateway requires the token
+  fi
   if [[ "${do_faces:-false}" == true || "${do_dogs:-false}" == true ]]; then
-    curl -fsS "http://${h}:8090/health" >/dev/null 2>&1 || return 1
+    curl -fsS ${auth[@]+"${auth[@]}"} "${vbase}/health" >/dev/null 2>&1 || return 1
   fi
   if [[ "${do_tag:-false}" == true ]]; then
-    curl -fsS "http://${h}:11434/api/tags"  >/dev/null 2>&1 \
-      || curl -fsS "http://${h}:11434/v1/models" >/dev/null 2>&1 || return 1
+    curl -fsS ${auth[@]+"${auth[@]}"} "${obase}/api/tags"  >/dev/null 2>&1 \
+      || curl -fsS ${auth[@]+"${auth[@]}"} "${obase}/v1/models" >/dev/null 2>&1 || return 1
   fi
   return 0
 }
@@ -321,6 +344,74 @@ if [[ "$TAGGING_UI" == true ]]; then
   exit 0
 fi
 
+# --server: make THIS machine the model server for another box. Brings up the
+# native Ollama (GPU) + vision-server + auth gateway, then prints the address and
+# token to enter on the main machine. No ingestion happens here.
+if [[ "$SERVER" == true ]]; then
+  GATEWAY_PORT="$(env_get GATEWAY_PORT)"; GATEWAY_PORT="${GATEWAY_PORT:-8443}"
+  bold "=== Offline Ingestion — model server ==="
+  dim "Serving the tagging LLM (Ollama) + vision-server (faces/dogs) to other"
+  dim "machines on your LAN, behind one token-protected port. Nothing is ingested here."
+
+  # Token: reuse the saved one, or mint a fresh 24-byte hex token.
+  GATEWAY_TOKEN="$(env_get GATEWAY_TOKEN)"
+  if [[ -z "$GATEWAY_TOKEN" ]]; then
+    GATEWAY_TOKEN="$(openssl rand -hex 24 2>/dev/null \
+      || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    ok "Generated a new gateway token."
+  fi
+  export GATEWAY_TOKEN GATEWAY_PORT
+  env_set GATEWAY_TOKEN "$GATEWAY_TOKEN"
+
+  # Vision model to serve (pulled into native Ollama for tagging clients).
+  dmodel="$(env_get MODEL_SERVER_MODEL)"; dmodel="${dmodel:-qwen3-vl:8b}"
+  dim "Vision model to serve — Ollama 'name:tag' (browse: https://ollama.com/search?c=vision)."
+  export MODEL_SERVER_MODEL="$(ask "Vision model [$dmodel]: " "$dmodel")"
+  env_set MODEL_SERVER_MODEL "$MODEL_SERVER_MODEL"
+
+  # Native, GPU-backed Ollama: ensure it's up and the model is pulled (up front).
+  echo
+  bold "Setting up the tagging model (native Ollama)..."
+  setup_native_ollama
+
+  # Build + start vision-server and the gateway (server profile only).
+  echo
+  bold "Starting vision-server + gateway..."
+  dim "(building images — first time is slow; --verbose for full logs)"
+  compose_build vision-server gateway
+  docker compose --profile server up -d vision-server gateway
+
+  # Gate on the gateway answering, then confirm Ollama is reachable THROUGH it.
+  printf "Waiting for gateway on :%s" "$GATEWAY_PORT"
+  tries=0
+  until curl -fsS "http://localhost:${GATEWAY_PORT}/health" >/dev/null 2>&1; do
+    if [[ $tries -lt 30 ]]; then printf "."; sleep 1; tries=$((tries + 1)); continue; fi
+    echo
+    err "Gateway didn't come up. Inspect: docker compose --profile server logs gateway"
+    exit 1
+  done
+  echo; ok "Gateway up."
+  if ! curl -fsS -H "Authorization: Bearer $GATEWAY_TOKEN" \
+        "http://localhost:${GATEWAY_PORT}/api/tags" >/dev/null 2>&1; then
+    echo
+    err "Gateway is up but can't reach the native Ollama at host.docker.internal:11434."
+    err "On Linux, bind Ollama beyond loopback so the container can reach it:"
+    err "    OLLAMA_HOST=0.0.0.0:11434 ollama serve"
+    err "(The macOS Ollama app already works.) Fix that, then re-run ./oi --server."
+  fi
+
+  ip="$(lan_ip)"; ip="${ip:-<this-machine-LAN-IP>}"
+  echo
+  bold "Model server running. On your MAIN machine run ./oi and enter:"
+  echo "  Model server host : $ip"
+  echo "  Gateway token     : $GATEWAY_TOKEN"
+  echo
+  dim "Only port ${GATEWAY_PORT} is exposed, and it requires the token. The token"
+  dim "crosses the LAN in cleartext — fine on a trusted home network; tunnel it"
+  dim "(VPN/SSH) on anything less. Stop later:  docker compose --profile server down"
+  exit 0
+fi
+
 bold "=== Offline Ingestion ==="
 
 # ----- 1. source folder ------------------------------------------------------
@@ -379,18 +470,25 @@ multiselect
 # this one, or another. localhost = here; anything else = that machine's address.
 need_models=false
 [[ "$do_faces" == true || "$do_dogs" == true || "$do_tag" == true ]] && need_models=true
+GATEWAY_PORT="$(env_get GATEWAY_PORT)"; GATEWAY_PORT="${GATEWAY_PORT:-8443}"
 set_model_urls localhost
+export MODEL_SERVER_API_KEY="" VISION_SERVER_API_KEY=""   # local servers need no auth
 if [[ "$need_models" == true ]]; then
   echo
   dim "Where do the model servers run? Leave 'localhost' to use this machine"
   dim "(tagging uses a native Ollama on your GPU — ./oi checks it's running first)."
-  dim "Or enter another machine's IP/hostname."
+  dim "Or enter another machine's IP/hostname (one it's serving via ./oi --server)."
   dhost="$(env_get COMPUTE_HOST)"; dhost="${dhost:-localhost}"
   set_model_urls "$(ask "Model server host [$dhost]: " "$dhost")"
   env_set COMPUTE_HOST "$COMPUTE_HOST"
   if [[ "$models_local" == false ]]; then
-    dim "On $COMPUTE_HOST: run 'docker compose up -d' in offline-ingestion, get its IP"
-    dim "  (macOS: 'ipconfig getifaddr en0' · Linux: 'hostname -I'), and enter that here."
+    dim "That machine must be running './oi --server' — it prints its IP and a token."
+    # One token fronts both model servers via the gateway; the cli sends it to each.
+    GATEWAY_TOKEN="$(ask "Gateway token: " "$(env_get GATEWAY_TOKEN)")"
+    env_set GATEWAY_TOKEN "$GATEWAY_TOKEN"
+    export MODEL_SERVER_API_KEY="$GATEWAY_TOKEN" VISION_SERVER_API_KEY="$GATEWAY_TOKEN"
+    env_set MODEL_SERVER_API_KEY "$GATEWAY_TOKEN"
+    env_set VISION_SERVER_API_KEY "$GATEWAY_TOKEN"
   fi
 fi
 
@@ -401,14 +499,8 @@ if [[ "$do_tag" == true ]]; then
   dim "Pick one that fits your GPU/RAM. Rough sizes: 2B≈2GB, 4B≈3GB, 8B≈6GB, 27B≈17GB."
   export MODEL_SERVER_MODEL="$(ask "Vision model [$dmodel]: " "$dmodel")"
   env_set MODEL_SERVER_MODEL "$MODEL_SERVER_MODEL"
-  # A local Ollama needs no auth, so only ask for a key when talking to a remote
-  # model server.
-  if [[ "$models_local" == true ]]; then
-    export MODEL_SERVER_API_KEY=""
-  else
-    export MODEL_SERVER_API_KEY="$(ask "Model API key (blank if none): " "$(env_get MODEL_SERVER_API_KEY)")"
-  fi
-  env_set MODEL_SERVER_API_KEY "$MODEL_SERVER_API_KEY"
+  # Auth is handled once in the model-server section above: empty for a local
+  # Ollama, or the single gateway token when the servers are on another machine.
 fi
 
 # ----- summary ---------------------------------------------------------------

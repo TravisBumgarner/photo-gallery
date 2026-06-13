@@ -156,20 +156,47 @@ in `docker-compose.yml`, not here.)
 
 ## Model servers: local or remote
 
-The heavy models run in containers, so you can host them wherever you have the
-horsepower.
+Two model servers do the heavy lifting: the **vision-server** (faces + dogs, in
+Docker) and a native, GPU-backed **Ollama** (the vision LLM for text tags). You
+can run them on the same machine as the gallery, or offload them to a beefier box.
 
-- **Vision server (faces + dogs).** By default `./oi` runs it locally in Docker.
-  To use a **remote** box instead: run `docker compose up -d vision-server` over
-  there and answer "No" to "run vision-server locally?", then give its URL (or set
-  `VISION_SERVER_HOST`). Face/pet data is biometric-class — it never leaves your
-  machines and never goes to prod.
-- **Vision LLM (text tags).** Point `MODEL_SERVER_HOST` at any OpenAI-compatible
-  endpoint. To run one locally, enable the bundled service:
-  ```bash
-  docker compose --profile ollama up -d ollama
-  # pull a vision model, then set MODEL_SERVER_HOST=http://ollama:11434
-  ```
+`./oi` asks one question — **"Model server host"**:
+
+- **`localhost` (default):** both run here. Faces/dogs in Docker; tagging on a
+  native Ollama that `./oi` checks is up (it walks you through installing/starting
+  it — see <https://ollama.com/download>). Local servers need no auth.
+- **another machine's IP:** that box serves the models to this one. Run
+  **`./oi --server`** over there first (next section).
+
+Face/pet data is biometric-class — it stays on your machines and never goes to prod.
+
+### Serving models from another machine — `./oi --server`
+
+On the box with the GPU:
+
+```bash
+./oi --server
+```
+
+It pulls the vision model into native Ollama, starts the vision-server, and brings
+up an **auth gateway** (Caddy) — a single token-protected port (`8443`) that fronts
+both servers. The raw Ollama (`11434`) and vision-server (`8090`) ports are *not*
+exposed on the LAN; the gateway is the only way in. It prints two things:
+
+```
+Model server host : 192.168.1.42
+Gateway token     : 9f3c…
+```
+
+On your **main** machine, run `./oi`, enter that IP at "Model server host", and
+paste the token. `./oi` routes both servers through `http://<ip>:8443` and sends the
+token on every request.
+
+> The token crosses the LAN in cleartext (plain HTTP) — fine on a trusted home
+> network. Tunnel it (VPN/SSH) on anything you don't control. On **Linux**, Ollama
+> must be bound beyond loopback so the gateway container can reach it:
+> `OLLAMA_HOST=0.0.0.0:11434 ollama serve` (the macOS Ollama app already works).
+> Stop the server with `docker compose --profile server down`.
 
 ---
 
