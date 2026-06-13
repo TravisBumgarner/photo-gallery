@@ -206,7 +206,8 @@ ensure_ollama_lan_bind() {
       echo
       err "Ollama didn't come back bound to 0.0.0.0. Confirm the env took:"
       err "    launchctl getenv OLLAMA_HOST      # expect 0.0.0.0:11434"
-      err "then quit & reopen the Ollama app and re-run ./oi."
+      err "If a service manager (brew services / a login item) keeps relaunching"
+      err "Ollama on loopback, set OLLAMA_HOST there too. Then run this again."
       exit 1
     fi
     printf "."; sleep 2; tries=$((tries + 1))
