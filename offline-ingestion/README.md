@@ -3,7 +3,7 @@
 Everything needed to take a folder of photos and turn it into the gallery's
 searchable data — **text tags + vector search, people (faces), and dogs** — in
 one self-contained, Dockerized place. This replaces the old split across
-`face-server/`, `ingestion/`, and the tagging UI that used to live in
+`vision-server/`, `ingestion/`, and the tagging UI that used to live in
 `frontend/`.
 
 You point it at a photo collection, pick what you want, and it runs the whole
@@ -17,10 +17,10 @@ pipeline in containers. The only thing you install is **Docker**.
 | --- | --- | --- |
 | **`oi`** | Host launcher — the interactive menu that drives everything | Your machine (bash) |
 | **`prepare-lightroom`** | Optional prep: move Lightroom export copies into the ingestion folder | Your machine (bash) |
-| **`face-server/`** | Python vision sidecar: face + dog detection and embeddings | Docker (local or a remote box) |
+| **`vision-server/`** | Python vision sidecar: face + dog detection and embeddings | Docker (local or a remote box) |
 | **`src/`** | The pipeline: ingest, text-tag, detect/cluster faces & dogs, sync | Docker (`cli`) |
 | **`src/label-app/`** | Standalone web UI to label face/dog clusters | Docker (`label-app`) |
-| **`offline-ingestion.config.json`** | Tuning knobs (sizes, quality, concurrency, clustering) | — |
+| **`offline-ingestion.config.yaml`** | Tuning knobs (sizes, quality, concurrency, clustering) | — |
 | **`docker-compose.yml`** | Wires the services + volumes together | — |
 
 The orchestrator runs on the **host** (so it can check Docker, mount your photo
@@ -124,11 +124,11 @@ Copied from `.env.example`. Holds paths, hosts, and keys:
 | `SOURCE_DIR` | Default photo folder (the menu lets you override) |
 | `DATABASE_URL`, `DESTINATION_DIRECTORY` | Local DB + image output (host runs only — Docker overrides these) |
 | `MODEL_SERVER_HOST` / `_MODEL` / `_API_KEY` | Vision LLM for text tags |
-| `FACE_SERVER_HOST` / `_API_KEY` | Face server (defaults to the local container) |
+| `VISION_SERVER_HOST` / `_API_KEY` | Vision server (defaults to the local container) |
 | `SSH_HOST` | Target for sync-to-prod |
 | `INGEST_MODE`, `DRY_RUN`, `FILE_TRANSFER_MODE` | Run behavior (`copy` keeps originals; `cut` moves them) |
 
-### `offline-ingestion.config.json` — tuning knobs (committed)
+### `offline-ingestion.config.yaml` — tuning knobs (committed)
 
 Optional and partial — anything you omit uses the default. Edit only what you
 want to change; the menu and pipeline pick it up automatically (it's bind-mounted
@@ -147,7 +147,10 @@ into the containers).
 | `faces.cluster.{eps,minPts,stickyAssignDist}` | `0.45 / 3 / 0.45` | Face clustering thresholds |
 | `dogs.cluster.{eps,minPts,stickyAssignDist}` | `0.35 / 3 / 0.35` | Dog clustering (tighter — DINOv2 is noisier) |
 | `labelApp.port` / `.sampleFacesPerCluster` | `5180` / `9` | Tagging UI port + crops shown per cluster |
-| `faceServer.{detSize,dogDetConf,concurrency}` | `640 / 0.5 / 4` | Passed through to the Python face server |
+
+(The Python vision server's own knobs — detection size, dog confidence, its internal
+concurrency — are set via `VISION_DET_SIZE` / `VISION_DOG_DET_CONF` / `VISION_CONCURRENCY`
+in `docker-compose.yml`, not here.)
 
 ---
 
@@ -156,10 +159,10 @@ into the containers).
 The heavy models run in containers, so you can host them wherever you have the
 horsepower.
 
-- **Face server (faces + dogs).** By default `./oi` runs it locally in Docker.
-  To use a **remote** box instead: run `docker compose up -d face-server` over
-  there and answer "No" to "run face-server locally?", then give its URL (or set
-  `FACE_SERVER_HOST`). Face/pet data is biometric-class — it never leaves your
+- **Vision server (faces + dogs).** By default `./oi` runs it locally in Docker.
+  To use a **remote** box instead: run `docker compose up -d vision-server` over
+  there and answer "No" to "run vision-server locally?", then give its URL (or set
+  `VISION_SERVER_HOST`). Face/pet data is biometric-class — it never leaves your
   machines and never goes to prod.
 - **Vision LLM (text tags).** Point `MODEL_SERVER_HOST` at any OpenAI-compatible
   endpoint. To run one locally, enable the bundled service:
@@ -240,10 +243,10 @@ default to `../backend/...` in that mode.
         └───────┬───────────────┬───────────────┬──────────┘
                 │ up -d          │ run --rm      │ up -d
                 ▼                ▼               ▼
-        ┌─────────────┐   ┌─────────────┐  ┌──────────────┐
-        │ face-server │   │     cli     │  │  label-app   │
-        │ (Python ML) │◀──│  pipeline   │  │  tagging UI  │
-        └─────────────┘   └──────┬──────┘  └──────┬───────┘
+        ┌───────────────┐ ┌─────────────┐  ┌──────────────┐
+        │ vision-server │ │     cli     │  │  label-app   │
+        │  (Python ML)  │◀│  pipeline   │  │  tagging UI  │
+        └───────────────┘ └──────┬──────┘  └──────┬───────┘
                                  │                 │
                           ../backend (sqlite.db, public/images, thumbnails)
 ```

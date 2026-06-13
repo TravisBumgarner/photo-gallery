@@ -31,7 +31,7 @@ COPY backend/drizzle.config.ts backend/tsconfig.json backend/
 COPY offline-ingestion/ offline-ingestion/
 
 # Default config path (compose bind-mounts the host file over this so edits apply).
-ENV OI_CONFIG_PATH=/app/offline-ingestion/offline-ingestion.config.json
+ENV OI_CONFIG_PATH=/app/offline-ingestion/offline-ingestion.config.yaml
 
 WORKDIR /app/offline-ingestion
 

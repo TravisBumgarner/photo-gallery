@@ -5,15 +5,13 @@
   "scripts": {
     "label": "tsx src/label-app/server.ts",
     "ingest": "tsx src/index.ts",
+    "prefetch-embedder": "tsx src/prefetch-embedder.ts",
     "tag": "tsx src/tag.ts",
     "detect-faces": "tsx src/detect-faces.ts",
     "cluster-faces": "tsx src/cluster-faces.ts",
     "detect-dogs": "tsx src/detect-dogs.ts",
     "cluster-dogs": "tsx src/cluster-dogs.ts",
-    "clear-production-db": "tsx src/clear-production-db.ts",
-    "clear-local-db": "tsx src/clear-local-db.ts",
-    "sync-db": "tsx src/sync-db.ts",
-    "sync-images": "tsx src/sync-images.ts"
+    "clear-local-db": "tsx src/clear-local-db.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.0",
@@ -25,6 +23,7 @@
     "express": "^4.21.2",
     "shared": "*",
     "sharp": "^0.33.5",
+    "yaml": "^2.9.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

@@ -49,8 +49,8 @@ This installs dependencies, copies `.env.example` files, and runs database migra
 - `DESTINATION_DIRECTORY` - Local image root for ingest, also used as the remote root by `sync-to-prod` when reading `.env.production`
 - `MODEL_SERVER_HOST` - URL of the model server used for content tagging (e.g. `http://192.168.1.22:8080`). See [Model Server](#model-server) below.
 - `MODEL_SERVER_MODEL` - Vision-capable model name to use on the model server (e.g. `gemma4:e4b`, `moondream`, `llava`). Must match a model installed on the Ollama instance.
-- `FACE_SERVER_HOST` - URL of the local face-recognition server used for people search (e.g. `http://127.0.0.1:8090`). See [Face Server](#face-server) below.
-- `FACE_SERVER_API_KEY` - Optional bearer token for the face server. Leave empty if you didn't set one.
+- `VISION_SERVER_HOST` - URL of the local vision server used for people search (e.g. `http://127.0.0.1:8090`). See [Vision Server](#vision-server) below.
+- `VISION_SERVER_API_KEY` - Optional bearer token for the vision server. Leave empty if you didn't set one.
 
 ## Model Server
 
@@ -143,25 +143,25 @@ The tagging step (used for content search) calls a separate machine running [Oll
 
    On startup it prints the URL to use for `MODEL_SERVER_HOST`.
 
-## Face Server
+## Vision Server
 
 The people-search step calls a small local [InsightFace](https://github.com/deepinsight/insightface) server. It runs detection (SCRFD) and embedding (ArcFace, 512-d) on CPU — fast enough for a personal library. **Run it locally and never push face data off-machine** — embeddings are biometric data.
 
-Source lives in `face-server/`:
+Source lives in `vision-server/`:
 
 ```bash
-cd face-server
+cd vision-server
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python server.py
 ```
 
-On startup it prints the URL to use for `FACE_SERVER_HOST`. Models auto-download to `~/.insightface/models/` on first run (~330MB).
+On startup it prints the URL to use for `VISION_SERVER_HOST`. Models auto-download to `~/.insightface/models/` on first run (~330MB).
 
 Optional env vars:
 
 - `PORT` — defaults to `8090`
-- `FACE_SERVER_API_KEY` — if set, requires a matching `Authorization: Bearer …` header
+- `VISION_SERVER_API_KEY` — if set, requires a matching `Authorization: Bearer …` header
 - `DET_SIZE` — detection input size (default `640`). Larger catches smaller faces, slower.
 - `CONCURRENCY` — number of in-flight `/detect` calls (default `4`)
 
@@ -196,11 +196,11 @@ Tagging is resumable — each run only processes rows where `tags IS NULL`, so r
 
 ## People Search
 
-Run after ingestion to enable searching by labeled person ("mom", "alex"). Faces are detected and embedded by the local [face server](#face-server), then clustered locally and labeled by you in the `/people` UI.
+Run after ingestion to enable searching by labeled person ("mom", "alex"). Faces are detected and embedded by the local [vision server](#vision-server), then clustered locally and labeled by you in the `/people` UI.
 
 Two-step pipeline:
 
-1. `npm run detect-faces` — for each photo where `faces_processed_at IS NULL`, calls the face server, writes per-face rows (bbox + 512-d embedding) to the `faces` table, marks the photo processed. Resumable.
+1. `npm run detect-faces` — for each photo where `faces_processed_at IS NULL`, calls the vision server, writes per-face rows (bbox + 512-d embedding) to the `faces` table, marks the photo processed. Resumable.
 2. `npm run cluster-faces` — runs DBSCAN over all face embeddings (cosine distance, `eps=0.45`, `minPts=3`) and groups similar faces into `face_clusters` rows. Re-runnable: clusters you've already labeled or ignored stay sticky, and new faces close to a sticky centroid get auto-assigned to it.
 
 Then open the local gallery, sign in, and visit `/people` to label each cluster. Face thumbnails are cropped on the fly from the photo thumbnails using stored bbox coords. To make people search work in prod, run `npm run sync-to-prod` after labeling and restart the backend.
@@ -209,7 +209,7 @@ When you ingest more photos later, just re-run both scripts — `detect-faces` o
 
 ## Dog Search
 
-Mirrors the people pipeline but for individual dogs. The same local [face server](#face-server) handles dog detection too — `/detect-dogs` uses YOLOv8n for detection and DINOv2-small for instance-level embeddings (384-d). The dog models lazy-load on first call so face-only users don't pay the startup cost.
+Mirrors the people pipeline but for individual dogs. The same local [vision server](#vision-server) handles dog detection too — `/detect-dogs` uses YOLOv8n for detection and DINOv2-small for instance-level embeddings (384-d). The dog models lazy-load on first call so face-only users don't pay the startup cost.
 
 Quality note: dog identification is meaningfully noisier than human face recognition (no equivalent of ArcFace exists for individual dogs). Expect more split clusters of the same dog and use the merge button (or just label both clusters with the same name) to combine them.
 

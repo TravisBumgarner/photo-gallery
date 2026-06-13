@@ -28,7 +28,7 @@ import { settings } from '@/settings.js';
 // on the main backend or frontend. People (faces / personLabel) and dogs
 // (dogLabel) are near-identical, so both are driven from one KINDS table.
 
-const config = loadConfig('local');
+const config = loadConfig();
 if (!config.DATABASE_URL) {
   console.error('DATABASE_URL must be set in .env.local (path to sqlite).');
   process.exit(1);
@@ -133,7 +133,8 @@ app.get('/api/:kind/clusters', async (req, res) => {
     const offset = Math.max(Number(req.query.offset ?? 0), 0);
     const minCount = Math.max(
       Number(
-        req.query.minCount ?? (status === 'unlabeled' ? k.minUnlabeled : 0),
+        req.query.minCount ??
+          (status === 'unlabeled' ? k.minUnlabeled : status === 'all' ? 1 : 0),
       ),
       0,
     );
@@ -143,6 +144,10 @@ app.get('/api/:kind/clusters', async (req, res) => {
       whereParts.push(isNotNull(k.labelColumn));
     } else if (status === 'ignored') {
       whereParts.push(eq(k.ignoredColumn, true));
+    } else if (status === 'all') {
+      // Every real group (labeled + unlabeled), minus ignored junk. Drives the
+      // Merge tab, where you consolidate groups that are the same subject.
+      whereParts.push(eq(k.ignoredColumn, false));
     } else {
       whereParts.push(isNull(k.labelColumn));
       whereParts.push(eq(k.ignoredColumn, false));
@@ -315,6 +320,42 @@ app.get('/api/:kind/labels', async (req, res) => {
   } catch (err) {
     console.error(`GET /api/${req.params.kind}/labels failed:`, err);
     res.status(500).json({ error: 'Failed to fetch labels' });
+  }
+});
+
+// GET /api/:kind/ungrouped?limit=&offset= — individual detections that never
+// landed in a cluster (clusterId IS NULL): the singletons/noise that didn't meet
+// minPts. Returns crops so the "Ungrouped" tab can show the actual photos.
+app.get('/api/:kind/ungrouped', async (req, res) => {
+  const k = getKind(req, res);
+  if (!k) return;
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 500);
+    const offset = Math.max(Number(req.query.offset ?? 0), 0);
+
+    const rows = await db
+      .select({
+        itemId: k.itemId,
+        photoUuid: k.photoUuid,
+        thumbnailPath: photos.thumbnailPath,
+        bboxX: k.bboxX,
+        bboxY: k.bboxY,
+        bboxW: k.bboxW,
+        bboxH: k.bboxH,
+        detScore: k.detScore,
+      })
+      .from(k.items)
+      .innerJoin(photos, eq(photos.uuid, k.photoUuid))
+      .where(isNull(k.itemClusterId))
+      .orderBy(desc(k.detScore))
+      .limit(limit + 1) // fetch one extra to detect hasMore
+      .offset(offset);
+
+    const hasMore = rows.length > limit;
+    res.json({ items: rows.slice(0, limit), hasMore });
+  } catch (err) {
+    console.error(`GET /api/${req.params.kind}/ungrouped failed:`, err);
+    res.status(500).json({ error: 'Failed to fetch ungrouped items' });
   }
 });
 

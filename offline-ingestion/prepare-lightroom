@@ -24,10 +24,12 @@ expand() { echo "${1/#\~/$HOME}"; }
 
 src_default="${1:-$(env_get LIGHTROOM_DIR)}"
 SRC=$(expand "$(ask "Lightroom export folder [$src_default]: " "$src_default")")
+SRC="${SRC%/}"  # drop trailing slash, else the rel-path prefix strip below fails
 [[ -n "$SRC" && -d "$SRC" ]] || { err "Folder does not exist: '$SRC'"; exit 1; }
 
 dest_default="${2:-$(env_get SOURCE_DIR)}"
 DEST=$(expand "$(ask "Ingestion folder [$dest_default]: " "$dest_default")")
+DEST="${DEST%/}"
 [[ -n "$DEST" ]] || { err "No ingestion folder given."; exit 1; }
 mkdir -p "$DEST"
 

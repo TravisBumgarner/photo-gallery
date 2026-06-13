@@ -1,6 +1,6 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isNull, sql } from 'drizzle-orm';
+import sharp from 'sharp';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
 import { WasmEmbedder } from 'shared/embed';
@@ -8,6 +8,17 @@ import { imagesDir, loadConfig, modelCacheDir } from '@/config.js';
 import { settings } from '@/settings.js';
 
 const RETRY_DELAYS_MS = [500, 1500, 3500];
+
+// A vision model spends most of its time encoding the image, and that cost grows
+// with resolution — full-size photos can take minutes per image on CPU (and blow
+// past the fetch timeout). ~1024px is plenty for tag-level understanding and cuts
+// the encode time dramatically.
+const MAX_IMAGE_EDGE = 1024;
+
+// If this many requests fail in a row (with no success resetting the streak),
+// the server is down/dying (e.g. OOM-killed) — stop hammering it and abort the
+// run with a non-zero exit instead of "failing" every remaining image silently.
+const ABORT_AFTER_CONSECUTIVE_FAILURES = 5;
 
 async function callGenerateOnce(
   modelHost: string,
@@ -25,6 +36,11 @@ async function callGenerateOnce(
     headers,
     body: JSON.stringify({
       model,
+      // Stream so tokens flow as they're generated. A non-streaming request
+      // returns nothing until the whole generation finishes, which on a slow
+      // (CPU) server trips fetch's ~300s headers-timeout; streaming keeps the
+      // connection active and isn't killed by it.
+      stream: true,
       messages: [
         {
           role: 'user',
@@ -38,18 +54,42 @@ async function callGenerateOnce(
         },
       ],
     }),
-    // Vision LLM calls can be slow; no client-side timeout.
   });
-  if (!res.ok) {
-    const body = await res.text();
+  if (!res.ok || !res.body) {
+    const body = res.body ? await res.text() : '';
     const err = new Error(`generate failed ${res.status}: ${body}`);
     (err as Error & { status?: number }).status = res.status;
     throw err;
   }
-  const data = (await res.json()) as {
-    choices: { message: { content: string } }[];
-  };
-  return data.choices[0].message.content.trim();
+
+  // Parse the OpenAI-style SSE stream: each `data: {json}` line carries a token
+  // in choices[0].delta.content; `data: [DONE]` ends it.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let content = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') continue;
+      try {
+        const json = JSON.parse(data) as {
+          choices?: { delta?: { content?: string } }[];
+        };
+        content += json.choices?.[0]?.delta?.content ?? '';
+      } catch {
+        // ignore keep-alive / partial lines
+      }
+    }
+  }
+  return content.trim();
 }
 
 function isRetryable(err: unknown): boolean {
@@ -85,7 +125,7 @@ function vecToBuffer(vec: Float32Array): Buffer {
 }
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
 
   const modelHost = config.MODEL_SERVER_HOST;
   const model = config.MODEL_SERVER_MODEL;
@@ -132,15 +172,24 @@ async function main() {
     `  DB rows:      ${totalRows} (${alreadyTagged} tagged, ${untagged.length} untagged)`,
   );
 
+  let failed = 0;
+  let aborted: unknown = null;
+
   if (untagged.length === 0) {
     console.log('\nNothing to tag.');
   } else {
     console.log('\nLoading WASM embedder...');
     const embedder = await WasmEmbedder.create(cacheDir);
+    console.log('Embedder ready.');
+    console.log(
+      `\nTagging ${untagged.length} image(s) with '${model}'. The FIRST request makes the\n` +
+        'server load the model into memory, which can take a while for a large model\n' +
+        "(and is where it OOMs if the model doesn't fit) — later images are much faster.",
+    );
 
     const startTime = Date.now();
     let processed = 0;
-    let failed = 0;
+    let consecutiveFailures = 0;
     let nextIndex = 0;
     const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
@@ -148,14 +197,25 @@ async function main() {
     // as they're free, so a slow request doesn't stall faster ones in its batch.
     async function worker() {
       while (true) {
+        if (aborted) return; // a systemic failure was detected — stop taking work
         const i = nextIndex++;
         if (i >= untagged.length) return;
         const row = untagged[i];
         try {
           const t0 = Date.now();
           const filePath = path.join(localImagesDir, row.originalPath);
-          const buf = await fs.readFile(filePath);
-          const b64 = buf.toString('base64');
+          // Downscale to MAX_IMAGE_EDGE before sending — full-res photos make the
+          // vision encoder crawl on CPU. .rotate() applies EXIF orientation.
+          const b64 = (
+            await sharp(filePath)
+              .rotate()
+              .resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, {
+                fit: 'inside',
+                withoutEnlargement: true,
+              })
+              .jpeg({ quality: 85 })
+              .toBuffer()
+          ).toString('base64');
           const tRead = Date.now();
           const tags = await callGenerate(modelHost!, model!, apiKey, b64);
           const tUpload = Date.now();
@@ -171,6 +231,7 @@ async function main() {
             .where(sql`${photos.uuid} = ${row.uuid}`);
           const tDone = Date.now();
           processed++;
+          consecutiveFailures = 0; // a success clears the systemic-failure streak
           const firstFiveTags = tags
             .split(',')
             .slice(0, 5)
@@ -183,9 +244,13 @@ async function main() {
           );
         } catch (err) {
           failed++;
+          consecutiveFailures++;
           console.error(
             `  [${processed + failed}/${untagged.length}] ${row.filename} FAILED: ${err}`,
           );
+          if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
+            aborted = err;
+          }
         }
       }
     }
@@ -202,6 +267,20 @@ async function main() {
     console.log(
       `\n  Done: ${processed} ok, ${failed} failed in ${fmt(elapsed * 1000)} | ${rate.toFixed(2)} img/s`,
     );
+
+    if (aborted) {
+      console.error(
+        `\nAborted: ${ABORT_AFTER_CONSECUTIVE_FAILURES}+ requests failed in a row — the model server looks down.`,
+      );
+      console.error(`  Last error: ${aborted}`);
+      console.error(
+        "  'signal: killed' usually means the model was OOM-killed. Use a smaller",
+      );
+      console.error(
+        '  MODEL_SERVER_MODEL, or give Docker / the host machine more memory.',
+      );
+      process.exit(1);
+    }
   }
 
   const remainingUntagged = (
@@ -216,6 +295,12 @@ async function main() {
     } tagged, ${remainingUntagged} untagged).`,
   );
 
+  // Don't exit 0 if anything failed — otherwise the caller (oi) treats a fully
+  // failed run as success and the pipeline keeps going.
+  if (failed > 0) {
+    console.error(`\n${failed} image(s) failed to tag — exiting non-zero.`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

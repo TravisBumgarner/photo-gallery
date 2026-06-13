@@ -36,11 +36,27 @@
   button.act { background: #242832; color: #e6e8eb; border: 1px solid #2a2e36; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
   button.act:hover { background: #2d323c; }
   button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  .bar { position: sticky; bottom: 0; background: #1b1e24cc; backdrop-filter: blur(6px); border-top: 1px solid #2a2e36;
-    padding: 10px 20px; display: none; gap: 10px; align-items: center; }
-  .bar.show { display: flex; }
   footer { padding: 24px; text-align: center; }
   .muted { color: #8b919b; }
+  .crop.solo { aspect-ratio: 1; margin-bottom: 10px; }
+  .tabhelp { margin: 16px 20px 0; padding: 10px 14px; background: #1b1e24; border: 1px solid #2a2e36;
+    border-left: 3px solid #3b82f6; border-radius: 8px; color: #aeb4bd; font-size: 13px; }
+  .sel-btn { width: 100%; }
+  /* Merge tab: fixed left column of selected groups; grid shifts right. */
+  .merge-panel { position: fixed; left: 0; bottom: 0; width: 260px; z-index: 8;
+    background: #1b1e24; border-right: 1px solid #2a2e36; display: flex; flex-direction: column; }
+  .merge-panel[hidden] { display: none; }
+  .merge-panel h2 { font-size: 13px; font-weight: 600; margin: 0; padding: 12px 14px; border-bottom: 1px solid #2a2e36; }
+  #mergeList { flex: 1; overflow-y: auto; padding: 8px; }
+  .merge-item { display: flex; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; }
+  .merge-item:hover { background: #242832; }
+  .merge-item .mi-meta { flex: 1; font-size: 12px; min-width: 0; }
+  .merge-item .mi-x { padding: 0 9px; line-height: 1.5; }
+  .crop.mini { width: 42px; height: 42px; aspect-ratio: 1; flex: none; }
+  .merge-foot { padding: 10px; border-top: 1px solid #2a2e36; }
+  .merge-foot button { width: 100%; }
+  .merge-foot button:disabled { opacity: .5; cursor: default; }
+  body.merge-mode main, body.merge-mode .tabhelp, body.merge-mode footer { margin-left: 260px; }
 </style>
 </head>
 <body>
@@ -50,23 +66,40 @@
     <button type="button" data-kind="people" class="active">People</button>
     <button type="button" data-kind="dogs">Dogs</button>
   </div>
+  <!--
+    Status tabs:
+      Unlabeled — groups that formed (enough similar photos) but haven't been
+                  named yet. Type a name to label them.
+      Ungrouped — individual faces/dogs that never joined a group (too few
+                  similar photos to cluster). Add more photos of them and re-run
+                  clustering to surface them as a group here.
+      Merge     — all groups (labeled + unlabeled); select ones that are the same
+                  subject and merge them into one.
+      Labeled   — groups you've already given a name.
+      Ignored   — groups you've marked to skip (not a real person/dog, junk, etc.).
+  -->
   <div class="group" id="statusTabs">
     <button type="button" data-status="unlabeled" class="active">Unlabeled</button>
+    <button type="button" data-status="ungrouped">Ungrouped</button>
+    <button type="button" data-status="merge">Merge</button>
     <button type="button" data-status="labeled">Labeled</button>
     <button type="button" data-status="ignored">Ignored</button>
   </div>
   <span id="status"></span>
 </header>
 
+<p id="tabHelp" class="tabhelp"></p>
+
+<aside id="mergePanel" class="merge-panel" hidden>
+  <h2>Selected to merge</h2>
+  <div id="mergeList"></div>
+  <div class="merge-foot">
+    <button type="button" class="act primary" id="mergeGoBtn" disabled>Select 2+ to merge</button>
+  </div>
+</aside>
+
 <main id="grid"></main>
 <footer id="footer"></footer>
-
-<div class="bar" id="mergeBar">
-  <span id="mergeInfo" class="muted"></span>
-  <span style="flex:1"></span>
-  <button type="button" class="act" id="mergeCancel">Clear</button>
-  <button type="button" class="act primary" id="mergeGo">Merge selected →</button>
-</div>
 
 <script>
 const PAD = {
@@ -79,11 +112,34 @@ let status = 'unlabeled';
 let offset = 0;
 let loading = false;
 let hasMore = false;
-const selected = new Set();
+const selected = new Map(); // id -> cluster object (used by the Merge tab)
 
 const grid = document.getElementById('grid');
 const footer = document.getElementById('footer');
 const statusEl = document.getElementById('status');
+const tabHelpEl = document.getElementById('tabHelp');
+const mergePanel = document.getElementById('mergePanel');
+const mergeList = document.getElementById('mergeList');
+const mergeGoBtn = document.getElementById('mergeGoBtn');
+const headerEl = document.querySelector('header');
+
+const noun = (n) => (kind === 'people' ? 'face' : 'dog') + (n === 1 ? '' : 's');
+const who = () => (kind === 'people' ? 'person' : 'dog');
+
+// Shown under the header, explaining the active tab. {noun}/{who} are filled per
+// kind (people → faces/person, dogs → dogs/dog).
+const TAB_HELP = {
+  unlabeled: 'Groups that formed but aren’t named yet — type a name to label them.',
+  ungrouped: 'Individual {noun} that didn’t join a group (too few similar photos to cluster). Add more photos of them and re-run clustering to surface them as a group.',
+  merge:     'Same {who} split into separate groups? Select them, then merge into one — photos move into the lowest #id, which keeps its name. Ignored groups are hidden here.',
+  labeled:   'Groups you’ve already named.',
+  ignored:   'Groups you’ve marked to skip (not a real {who}, junk, etc.).',
+};
+
+function renderTabHelp() {
+  const n = kind === 'people' ? 'faces' : 'dogs';
+  tabHelpEl.textContent = (TAB_HELP[status] || '').replace('{noun}', n).replace('{who}', who());
+}
 
 function cropStyle(s) {
   const p = PAD[kind];
@@ -101,9 +157,10 @@ function cropStyle(s) {
   return `background-image:url('/${s.thumbnailPath}');background-size:${sizeX}% ${sizeY}%;background-position:${posX}% ${posY}%;`;
 }
 
+// Cluster card for the label tabs (Unlabeled / Labeled / Ignored): name + ignore.
 function card(c) {
   const el = document.createElement('div');
-  el.className = `card${selected.has(c.id) ? ' sel' : ''}`;
+  el.className = 'card';
   const crops = c.samples.map((s) => `<div class="crop" style="${cropStyle(s)}"></div>`).join('');
   el.innerHTML = `
     <div class="crops">${crops}</div>
@@ -114,8 +171,6 @@ function card(c) {
     </div>
     <div class="row">
       <button type="button" class="act" data-act="ignore">${c.ignored ? 'Un-ignore' : 'Ignore'}</button>
-      <span style="flex:1"></span>
-      <label class="muted"><input type="checkbox" data-act="sel" ${selected.has(c.id) ? 'checked' : ''}/> merge</label>
     </div>`;
 
   const input = el.querySelector('input[type=text]');
@@ -127,12 +182,61 @@ function card(c) {
     await patch(c.id, { ignored: !c.ignored });
     reload();
   };
-  el.querySelector('[data-act=sel]').onchange = (e) => {
-    if (e.target.checked) selected.add(c.id); else selected.delete(c.id);
-    el.classList.toggle('sel', selected.has(c.id));
-    renderMergeBar();
+  return el;
+}
+
+// Cluster card for the Merge tab: crops + a Select/Deselect toggle (no editing).
+function mergeCard(c) {
+  const el = document.createElement('div');
+  el.dataset.cid = c.id;
+  el.className = `card${selected.has(c.id) ? ' sel' : ''}`;
+  const crops = c.samples.map((s) => `<div class="crop" style="${cropStyle(s)}"></div>`).join('');
+  const sel = selected.has(c.id);
+  el.innerHTML = `
+    <div class="crops">${crops}</div>
+    <div class="meta">#${c.id} · ${c.count} ${kind === 'people' ? 'faces' : 'dogs'}${c.label ? ` · ${c.label}` : ''}</div>
+    <button type="button" class="act sel-btn ${sel ? '' : 'primary'}">${sel ? 'Deselect' : 'Select'}</button>`;
+  el.querySelector('.sel-btn').onclick = () => {
+    if (selected.has(c.id)) selected.delete(c.id); else selected.set(c.id, c);
+    syncMergeCard(el, c.id);
+    renderMergePanel();
   };
   return el;
+}
+
+function syncMergeCard(el, id) {
+  const sel = selected.has(id);
+  el.classList.toggle('sel', sel);
+  const btn = el.querySelector('.sel-btn');
+  if (btn) { btn.textContent = sel ? 'Deselect' : 'Select'; btn.classList.toggle('primary', !sel); }
+}
+
+// Left column: the groups currently selected to merge, + the Merge button.
+function renderMergePanel() {
+  const ids = [...selected.keys()].sort((a, b) => a - b);
+  mergeList.innerHTML = '';
+  if (ids.length === 0) {
+    mergeList.innerHTML = `<p class="muted" style="padding:8px">No groups selected. Click “Select” on groups that are the same ${who()}.</p>`;
+  } else {
+    for (const id of ids) {
+      const c = selected.get(id);
+      const item = document.createElement('div');
+      item.className = 'merge-item';
+      const crop = c.samples && c.samples[0] ? `<div class="crop mini" style="${cropStyle(c.samples[0])}"></div>` : '';
+      item.innerHTML = `${crop}
+        <div class="mi-meta">#${c.id}${c.label ? ` · ${c.label}` : ''}<br><span class="muted">${c.count} ${noun(c.count)}</span></div>
+        <button type="button" class="act mi-x" title="Remove">×</button>`;
+      item.querySelector('.mi-x').onclick = () => {
+        selected.delete(id);
+        const cardEl = grid.querySelector(`.card[data-cid="${id}"]`);
+        if (cardEl) syncMergeCard(cardEl, id);
+        renderMergePanel();
+      };
+      mergeList.appendChild(item);
+    }
+  }
+  mergeGoBtn.disabled = ids.length < 2;
+  mergeGoBtn.textContent = ids.length < 2 ? 'Select 2+ to merge' : `Merge ${ids.length} → #${ids[0]}`;
 }
 
 async function patch(id, body) {
@@ -141,17 +245,48 @@ async function patch(id, body) {
   });
 }
 
+// A single ungrouped detection: just its crop + confidence.
+function tile(it) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = `
+    <div class="crop solo" style="${cropStyle(it)}"></div>
+    <div class="meta">${Math.round(it.detScore * 100)}% confidence</div>`;
+  return el;
+}
+
 async function load(reset) {
   if (loading) return;
   loading = true;
   if (reset) { offset = 0; grid.innerHTML = ''; }
+  const mergeMode = status === 'merge';
+  document.body.classList.toggle('merge-mode', mergeMode);
+  mergePanel.hidden = !mergeMode;
+  if (mergeMode) { mergePanel.style.top = headerEl.offsetHeight + 'px'; renderMergePanel(); }
+  renderTabHelp();
   statusEl.textContent = 'Loading…';
-  const res = await fetch(`/api/${kind}/clusters?status=${status}&limit=50&offset=${offset}`);
-  const data = await res.json();
-  for (const c of data.clusters) grid.appendChild(card(c));
-  hasMore = data.hasMore;
-  offset += data.clusters.length;
-  statusEl.textContent = `${offset} cluster${offset === 1 ? '' : 's'} loaded`;
+  if (status === 'ungrouped') {
+    const res = await fetch(`/api/${kind}/ungrouped?limit=50&offset=${offset}`);
+    const data = await res.json();
+    for (const it of data.items) grid.appendChild(tile(it));
+    hasMore = data.hasMore;
+    offset += data.items.length;
+    statusEl.textContent = `${offset} ungrouped ${noun(offset)}`;
+  } else if (mergeMode) {
+    const res = await fetch(`/api/${kind}/clusters?status=all&limit=50&offset=${offset}`);
+    const data = await res.json();
+    for (const c of data.clusters) grid.appendChild(mergeCard(c));
+    hasMore = data.hasMore;
+    offset += data.clusters.length;
+    statusEl.textContent = `${offset} group${offset === 1 ? '' : 's'}`;
+  } else {
+    const res = await fetch(`/api/${kind}/clusters?status=${status}&limit=50&offset=${offset}`);
+    const data = await res.json();
+    for (const c of data.clusters) grid.appendChild(card(c));
+    hasMore = data.hasMore;
+    offset += data.clusters.length;
+    statusEl.textContent = `${offset} cluster${offset === 1 ? '' : 's'} loaded`;
+  }
   renderFooter();
   loading = false;
 }
@@ -166,43 +301,42 @@ function renderFooter() {
     b.onclick = () => load(false);
     footer.appendChild(b);
   } else if (offset === 0) {
-    footer.innerHTML = '<span class="muted">No clusters in this view.</span>';
+    const dn = kind === 'people' ? 'faces' : 'dogs';
+    footer.innerHTML =
+      status === 'ungrouped' ? `<span class="muted">No ungrouped ${dn} — everything detected landed in a group.</span>`
+      : status === 'merge'   ? '<span class="muted">No groups yet.</span>'
+      : '<span class="muted">No clusters in this view.</span>';
   }
 }
 
-function renderMergeBar() {
-  const bar = document.getElementById('mergeBar');
-  bar.classList.toggle('show', selected.size > 0);
-  document.getElementById('mergeInfo').textContent =
-    `${selected.size} selected — they merge into the lowest #id, keeping its label.`;
-}
-
-document.getElementById('mergeCancel').onclick = () => {
-  selected.clear(); renderMergeBar(); reload();
-};
-document.getElementById('mergeGo').onclick = async () => {
-  if (selected.size < 2) { alert('Select at least two clusters to merge.'); return; }
-  const ids = [...selected].sort((a, b) => a - b);
+mergeGoBtn.onclick = () => {
+  const ids = [...selected.keys()].sort((a, b) => a - b);
+  if (ids.length < 2) return;
   const targetId = ids[0];
   const sourceIds = ids.slice(1);
-  await fetch(`/api/${kind}/clusters/merge`, {
+  const proceed = confirm(
+    `Merge ${ids.length} groups into #${targetId}?\n\n` +
+    `Their photos move into #${targetId} (which keeps its name); the other ` +
+    `${sourceIds.length} group(s) are deleted. This can’t be undone.`
+  );
+  if (!proceed) return;
+  fetch(`/api/${kind}/clusters/merge`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sourceIds, targetId }),
-  });
-  selected.clear(); renderMergeBar(); reload();
+  }).then(() => { selected.clear(); reload(); });
 };
 
 document.getElementById('kind').onclick = (e) => {
   const b = e.target.closest('button'); if (!b) return;
   kind = b.dataset.kind;
   for (const x of document.querySelectorAll('#kind button')) x.classList.toggle('active', x === b);
-  selected.clear(); renderMergeBar(); reload();
+  selected.clear(); reload();
 };
 document.getElementById('statusTabs').onclick = (e) => {
   const b = e.target.closest('button'); if (!b) return;
   status = b.dataset.status;
   for (const x of document.querySelectorAll('#statusTabs button')) x.classList.toggle('active', x === b);
-  selected.clear(); renderMergeBar(); reload();
+  selected.clear(); reload();
 };
 
 reload();

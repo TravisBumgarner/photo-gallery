@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 // Tuning / behavior knobs, separate from environment & secrets (those live in
-// .env.local / .env.production and are loaded by config.ts). Everything here is
-// read from offline-ingestion.config.json at the package root. The file is
-// optional and partial: any key you omit falls back to the default below, so a
-// missing file reproduces the original hard-coded behavior exactly.
+// .env.local and are loaded by config.ts). Everything here is read from
+// offline-ingestion.config.yaml at the package root. The file is optional and
+// partial: any key you omit falls back to the default below, so a missing file
+// reproduces the original hard-coded behavior exactly.
 //
 // Override the file location with OI_CONFIG_PATH (the Docker image sets this).
 
@@ -95,14 +96,6 @@ const settingsSchema = z
         sampleFacesPerCluster: z.number().int().positive().default(9),
       })
       .default({}),
-    // Consumed by the Python face-server (passed through as env by compose).
-    faceServer: z
-      .object({
-        detSize: z.number().int().positive().default(640),
-        dogDetConf: z.number().min(0).max(1).default(0.5),
-        concurrency: z.number().int().positive().default(4),
-      })
-      .default({}),
   })
   .default({});
 
@@ -112,14 +105,14 @@ function resolveConfigPath(): string {
   if (process.env.OI_CONFIG_PATH)
     return path.resolve(process.env.OI_CONFIG_PATH);
   const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(here, '..', 'offline-ingestion.config.json');
+  return path.join(here, '..', 'offline-ingestion.config.yaml');
 }
 
 function loadSettings(): Settings {
   const configPath = resolveConfigPath();
   let raw: unknown = {};
   try {
-    raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    raw = parseYaml(fs.readFileSync(configPath, 'utf8')) ?? {};
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.warn(

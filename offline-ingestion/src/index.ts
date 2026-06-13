@@ -15,7 +15,7 @@ import { settings } from '@/settings.js';
 const PARALLEL_BATCH_SIZE = settings.ingest.batchSize;
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
 
   const rawSourceDir = config.SOURCE_DIR;
   const sourceDir = rawSourceDir.startsWith('~')

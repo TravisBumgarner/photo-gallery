@@ -6,9 +6,68 @@
 #
 #   ./oi                 interactive menu
 #   ./oi /path/to/photos interactive menu, pre-filling the source folder
+#   ./oi --verbose       also stream the full Docker build logs (quiet by default)
+#   ./oi --dry-run       preview the ingest file list, write nothing
+#
+# Tagging uses an Ollama vision model (MODEL_SERVER_MODEL in .env.local), named
+# in 'name:tag' form (e.g. qwen3-vl:8b). Browse vision-capable models at:
+#   https://ollama.com/search?c=vision
 set -euo pipefail
 
 cd "$(dirname "$0")"
+
+# Parse flags; anything else stays as positional args (e.g. the source folder).
+VERBOSE=false
+DRY_RUN=false
+TAGGING_UI=false
+SHOW_HELP=false
+args=()
+for a in "$@"; do
+  case "$a" in
+    -v|--verbose) VERBOSE=true ;;
+    --dry-run)    DRY_RUN=true ;;
+    --tagging-ui) TAGGING_UI=true ;;
+    -h|--help)    SHOW_HELP=true ;;
+    *) args+=("$a") ;;
+  esac
+done
+set -- ${args[@]+"${args[@]}"}
+export DRY_RUN   # read by the ingest task (preview-only when true)
+
+usage() {
+  cat <<'EOF'
+Offline Ingestion launcher.
+
+Usage:  ./oi [options] [photo-folder]
+
+Options:
+  --tagging-ui   Skip ingestion; open the tagging/label UI and stay attached
+                 (Ctrl-C or closing the terminal stops it).
+  --dry-run      Preview the ingest file list, write nothing.
+  --verbose, -v  Stream the full Docker build logs (quiet by default).
+  --help, -h     Show this help and exit.
+
+With no options it runs the interactive menu. A photo-folder argument
+pre-fills the source folder.
+EOF
+}
+[[ "$SHOW_HELP" == true ]] && { usage; exit 0; }
+
+# docker compose build — silent by default; full plain logs with --verbose. When
+# quiet, output is captured and only shown if the build actually fails.
+compose_build() { # compose_build <service>...
+  if [[ "$VERBOSE" == true ]]; then
+    docker compose build --progress=plain "$@"
+    return
+  fi
+  local log; log="$(mktemp)"
+  if docker compose build "$@" >"$log" 2>&1; then
+    rm -f "$log"
+  else
+    err "Build failed — output below (re-run with --verbose for live logs):"
+    cat "$log"; rm -f "$log"; return 1
+  fi
+}
 
 bold()  { printf '\033[1m%s\033[0m\n' "$1"; }
 dim()   { printf '\033[2m%s\033[0m\n' "$1"; }
@@ -17,6 +76,50 @@ ok()    { printf '\033[32m%s\033[0m\n' "$1"; }
 ask()   { local p="$1" d="${2:-}" a; read -rp "$p" a; echo "${a:-$d}"; }
 yes()   { local a; a=$(ask "$1 [y/N] " ""); [[ "$a" =~ ^[Yy] ]]; }   # default No
 yesd()  { local a; a=$(ask "$1 [Y/n] " "y"); [[ ! "$a" =~ ^[Nn] ]]; } # default Yes
+
+# Interactive checklist: ↑/↓ (or k/j) move, Space toggles, Enter confirms. Redraws
+# in place via terminfo (tput cuu/ed), so it uses the cursor-control sequence the
+# terminal actually advertises instead of hardcoded escapes. Reads labels from the
+# global MS_OPTIONS array and initial on/off state from MS_SELECTED; updates
+# MS_SELECTED in place. Pure bash 3.2.
+multiselect() {
+  local n=${#MS_OPTIONS[@]} cur=0 key rest i
+
+  _ms_draw() {
+    for ((i = 0; i < n; i++)); do
+      local mark=' '; [[ "${MS_SELECTED[$i]}" == on ]] && mark='x'
+      if [[ $i -eq $cur ]]; then
+        printf '\033[7m> [%s] %s\033[0m\n' "$mark" "${MS_OPTIONS[$i]}"   # reverse-video current row
+      else
+        printf '  [%s] %s\n' "$mark" "${MS_OPTIONS[$i]}"
+      fi
+    done
+  }
+
+  tput civis 2>/dev/null                 # hide cursor
+  _ms_draw
+  while true; do
+    IFS= read -rsn1 key || break
+    case "$key" in
+      '')  break ;;                                                         # Enter
+      ' ') [[ "${MS_SELECTED[$cur]}" == on ]] && MS_SELECTED[$cur]=off || MS_SELECTED[$cur]=on ;;
+      k|K) cur=$(( cur > 0     ? cur - 1 : cur )) ;;
+      j|J) cur=$(( cur < n - 1 ? cur + 1 : cur )) ;;
+      $'\033')                              # arrow keys: ESC [ A/B  or  ESC O A/B
+        # Integer timeout only: macOS bash 3.2 rejects fractional -t. The 2 bytes
+        # are already buffered after ESC, so this returns instantly (never waits 1s).
+        read -rsn2 -t 1 rest || true
+        case "$rest" in
+          '[A'|'OA') cur=$(( cur > 0     ? cur - 1 : cur )) ;;             # up
+          '[B'|'OB') cur=$(( cur < n - 1 ? cur + 1 : cur )) ;;             # down
+        esac ;;
+    esac
+    tput cuu "$n"                          # back up to the first row
+    tput ed                                # clear from there to end of screen
+    _ms_draw
+  done
+  tput cnorm 2>/dev/null                  # restore cursor
+}
 
 os_default_photos() { # the conventional pictures folder for this OS
   case "$(uname -s)" in
@@ -37,20 +140,71 @@ env_set() { # persist KEY=VALUE to .env.local (so it's the next-run default)
   mv .env.local.tmp .env.local
 }
 
-# Point the cli at the model servers for a chosen host. localhost => run them in
-# Docker here (cli reaches them by service name); any other host => they run on
-# that machine and we talk to it directly. HEALTH_HOST is the host-reachable
-# address we curl to confirm they're up.
+# ----- native Ollama ---------------------------------------------------------
+# Tagging runs the vision model on a NATIVE Ollama (it uses your GPU). We do NOT
+# fall back to a Dockerized CPU Ollama — it's unusably slow for vision work. The
+# cli (in Docker) reaches the host's Ollama via host.docker.internal; from the
+# host we talk to it on localhost:11434.
+native_ollama_up() { # is a native Ollama serving on the host?
+  curl -fsS http://localhost:11434/api/tags  >/dev/null 2>&1 \
+    || curl -fsS http://localhost:11434/v1/models >/dev/null 2>&1
+}
+native_has_model() { # <model> — already pulled into native Ollama?
+  curl -fsS http://localhost:11434/api/tags 2>/dev/null | grep -q "\"$1\""
+}
+docker_ollama_ids() { # ids of any running Dockerized Ollama containers
+  docker ps -q --filter ancestor=ollama/ollama 2>/dev/null
+}
+# Require a native Ollama. If it isn't up, show cross-platform install/start steps
+# and wait (loop) until it's reachable, walking the user through getting it up.
+ensure_native_ollama() {
+  # A leftover Dockerized (CPU) Ollama answers on :11434 too and would be
+  # mistaken for native — it masks your GPU Ollama. Clear it out first.
+  local ids
+  ids="$(docker_ollama_ids)"
+  if [[ -n "$ids" ]]; then
+    echo
+    err "A Dockerized (CPU) Ollama is running on :11434 — it's the slow one we no"
+    err "longer use, and it hides your native GPU Ollama."
+    if yes "Stop and remove it now?"; then
+      docker rm -f $ids >/dev/null 2>&1 || true
+      ok "Removed the Docker Ollama."
+    else
+      err "Remove it and re-run:  docker rm -f $ids"
+      exit 1
+    fi
+  fi
+  native_ollama_up && return 0
+  echo
+  err "Native Ollama isn't running — and we don't tag on CPU (far too slow for vision)."
+  bold "Get Ollama running to continue (it uses your GPU):"
+  echo "  1. Install it if you haven't — Mac / Windows / Linux: https://ollama.com/download"
+  echo "  2. Start it:"
+  echo "       Mac / Windows : open the Ollama app"
+  echo "       Linux         : run 'ollama serve' (or start the service)"
+  echo "  3. Leave it running — ./oi will continue automatically once it's up."
+  echo
+  printf "Waiting for Ollama on localhost:11434"
+  until native_ollama_up; do printf "."; sleep 2; done
+  echo
+  ok "Ollama is up."
+}
+
+# Point the cli at the model servers for a chosen host. localhost => this machine:
+# face/dog detection in Docker, and tagging on a NATIVE Ollama reached via
+# host.docker.internal (GPU; no CPU fallback). Any other host => everything runs
+# there and we talk to it directly. HEALTH_HOST is the host-reachable address we
+# curl to confirm they're up.
 set_model_urls() { # set_model_urls <host>
   COMPUTE_HOST="$1"
   if [[ "$COMPUTE_HOST" == localhost || "$COMPUTE_HOST" == 127.0.0.1 ]]; then
     models_local=true
-    export FACE_SERVER_HOST="http://face-server:8090"   # docker-internal
-    export MODEL_SERVER_HOST="http://ollama:11434"
+    export VISION_SERVER_HOST="http://vision-server:8090"             # docker-internal
+    export MODEL_SERVER_HOST="http://host.docker.internal:11434"  # native Ollama on host
     HEALTH_HOST=localhost
   else
     models_local=false
-    export FACE_SERVER_HOST="http://${COMPUTE_HOST}:8090"
+    export VISION_SERVER_HOST="http://${COMPUTE_HOST}:8090"
     export MODEL_SERVER_HOST="http://${COMPUTE_HOST}:11434"
     HEALTH_HOST="$COMPUTE_HOST"
   fi
@@ -69,20 +223,66 @@ check_models() { # check_models <host>
   return 0
 }
 
-# Build + start, on THIS machine, the model servers the chosen tasks need.
+# Native Ollama (GPU) setup for tagging. Runs BEFORE any Docker work so the
+# is-it-running check / start prompt happens up front, not behind a slow build.
+setup_native_ollama() {
+  ensure_native_ollama
+  if ! native_has_model "$MODEL_SERVER_MODEL"; then
+    bold "Pulling '$MODEL_SERVER_MODEL' into Ollama (one-time)..."
+    if command -v ollama >/dev/null 2>&1; then
+      ollama pull "$MODEL_SERVER_MODEL" || true   # clean single-line progress bar
+    else
+      # No host CLI: fall back to the API. Discard its per-chunk JSON stream so we
+      # don't spew thousands of lines; just wait for it to finish.
+      dim "(downloading via API — install the ollama CLI for a progress bar)"
+      curl -fsS -X POST http://localhost:11434/api/pull \
+        -d "{\"name\":\"$MODEL_SERVER_MODEL\"}" >/dev/null || true
+    fi
+    # A bad name streams an error but still returns HTTP 200, so re-verify the
+    # model actually landed rather than trusting the pull's exit code.
+    if ! native_has_model "$MODEL_SERVER_MODEL"; then
+      err "'$MODEL_SERVER_MODEL' isn't available in Ollama after pulling."
+      err "Check the name (browse: https://ollama.com/search?c=vision) and run:"
+      err "  ollama pull $MODEL_SERVER_MODEL"
+      exit 1
+    fi
+  fi
+  ok "Model '$MODEL_SERVER_MODEL' ready on native Ollama (GPU)."
+}
+
+# Build + start, on THIS machine, the Dockerized model server(s) the chosen tasks
+# need (just the face/dog detector — tagging uses native Ollama, set up earlier).
 start_local_models() {
   if [[ "$do_faces" == true || "$do_dogs" == true ]]; then
-    bold "Starting face-server (this machine)..."
-    dim "(building the Python vision image — PyTorch wheels are large; watch the pip lines)"
-    docker compose build --progress=plain face-server
-    docker compose up -d face-server
+    bold "Starting vision-server (this machine)..."
+    dim "(building the Python vision image — large; first time takes a while. --verbose for full logs)"
+    compose_build vision-server
+    docker compose up -d vision-server
   fi
-  if [[ "$do_tag" == true ]]; then
-    bold "Starting Ollama (this machine)..."
-    docker compose up -d ollama
-    bold "Pulling model '$MODEL_SERVER_MODEL' (one-time, can be several GB)..."
-    docker compose exec -T ollama ollama pull "$MODEL_SERVER_MODEL" \
-      || err "Model pull failed — retry later: docker compose exec ollama ollama pull $MODEL_SERVER_MODEL"
+}
+
+# Build (if needed), start, and open the tagging/label UI in the browser.
+# open_label_app [foreground] — with "foreground", stay attached to the UI's logs
+# and stop the container when you Ctrl-C or close the terminal; otherwise leave it
+# running detached.
+open_label_app() {
+  dim "Building the tagging UI image (first time / after changes — this'll take a sec)..."
+  compose_build label-app
+  docker compose up -d label-app
+  local url="http://localhost:${LABEL_PORT:-5180}"
+  ok "Tagging UI: $url"
+  # Open in the default browser (best-effort; ignore if no opener exists).
+  case "$(uname -s)" in
+    Darwin) open "$url" >/dev/null 2>&1 || true ;;            # macOS
+    Linux)  xdg-open "$url" >/dev/null 2>&1 || true ;;        # Linux
+    *)      command -v start >/dev/null 2>&1 && start "$url" >/dev/null 2>&1 || true ;; # Windows/Git-bash
+  esac
+  if [[ "${1:-}" == foreground ]]; then
+    dim "Leave this running — Ctrl-C (or closing the terminal) stops the tagging UI."
+    trap 'echo; dim "Stopping tagging UI..."; docker compose stop label-app >/dev/null 2>&1 || true; exit 0' INT TERM HUP
+    docker compose logs -f label-app || true   # blocks until interrupted
+  else
+    dim "Stop it later with: docker compose stop label-app"
   fi
 }
 
@@ -114,6 +314,13 @@ if [[ ! -f .env.local ]]; then
   exit 1
 fi
 
+# --tagging-ui: skip all the prompts/pipeline and jump straight to the label UI.
+if [[ "$TAGGING_UI" == true ]]; then
+  bold "Opening the tagging UI..."
+  open_label_app foreground
+  exit 0
+fi
+
 bold "=== Offline Ingestion ==="
 
 # ----- 1. source folder ------------------------------------------------------
@@ -138,16 +345,34 @@ echo
 dim "Create = wipe the local DB + images and start fresh."
 dim "Update = keep existing data; add new photos and process only what's new."
 MODE=update
-if yes "Start FRESH (wipe local data)?"; then MODE=create; fi
+if yes "Start FRESH (wipe local data)?"; then
+  echo
+  err "⚠️  This PERMANENTLY DELETES the local DB and all ingested images."
+  err "    Everything will be re-ingested from scratch. This cannot be undone."
+  if yes "Type y again to confirm you want to WIPE local data"; then
+    MODE=create
+  else
+    ok "Keeping existing data (update mode)."
+  fi
+fi
 ok "Mode: $MODE"
 
 # ----- 3. tasks --------------------------------------------------------------
 echo
 bold "Pick tasks:"
-yesd "  Ingest photos (scan, thumbnails, EXIF)?"  && do_ingest=true || do_ingest=false
-yesd "  Text-tag + vector search (vision LLM)?"    && do_tag=true    || do_tag=false
-yesd "  Detect + cluster people (faces)?"          && do_faces=true  || do_faces=false
-yesd "  Detect + cluster dogs?"                    && do_dogs=true   || do_dogs=false
+dim "(↑/↓ move · space toggles · enter confirms)"
+MS_OPTIONS=(
+  "Ingest photos (scan, thumbnails, EXIF)"
+  "Text-tag + vector search (vision LLM)"
+  "Detect + cluster people (faces)"
+  "Detect + cluster dogs"
+)
+MS_SELECTED=(on on on on)   # all default to on
+multiselect
+[[ "${MS_SELECTED[0]}" == on ]] && do_ingest=true || do_ingest=false
+[[ "${MS_SELECTED[1]}" == on ]] && do_tag=true    || do_tag=false
+[[ "${MS_SELECTED[2]}" == on ]] && do_faces=true  || do_faces=false
+[[ "${MS_SELECTED[3]}" == on ]] && do_dogs=true   || do_dogs=false
 
 # ----- 4. model servers ------------------------------------------------------
 # One machine runs the heavy model work (face/dog detection + the tagging LLM):
@@ -157,8 +382,9 @@ need_models=false
 set_model_urls localhost
 if [[ "$need_models" == true ]]; then
   echo
-  dim "Where do the model servers run? Leave 'localhost' to run them here, or"
-  dim "enter another machine's IP/hostname."
+  dim "Where do the model servers run? Leave 'localhost' to use this machine"
+  dim "(tagging uses a native Ollama on your GPU — ./oi checks it's running first)."
+  dim "Or enter another machine's IP/hostname."
   dhost="$(env_get COMPUTE_HOST)"; dhost="${dhost:-localhost}"
   set_model_urls "$(ask "Model server host [$dhost]: " "$dhost")"
   env_set COMPUTE_HOST "$COMPUTE_HOST"
@@ -171,17 +397,19 @@ fi
 # Tagging model + optional key — only when tagging.
 if [[ "$do_tag" == true ]]; then
   dmodel="$(env_get MODEL_SERVER_MODEL)"; dmodel="${dmodel:-llama3.2-vision}"
+  dim "Use Ollama 'name:tag' (e.g. qwen3-vl:8b) — browse: https://ollama.com/search?c=vision"
+  dim "Pick one that fits your GPU/RAM. Rough sizes: 2B≈2GB, 4B≈3GB, 8B≈6GB, 27B≈17GB."
   export MODEL_SERVER_MODEL="$(ask "Vision model [$dmodel]: " "$dmodel")"
   env_set MODEL_SERVER_MODEL "$MODEL_SERVER_MODEL"
-  export MODEL_SERVER_API_KEY="$(ask "Model API key (blank if none): " "$(env_get MODEL_SERVER_API_KEY)")"
+  # A local Ollama needs no auth, so only ask for a key when talking to a remote
+  # model server.
+  if [[ "$models_local" == true ]]; then
+    export MODEL_SERVER_API_KEY=""
+  else
+    export MODEL_SERVER_API_KEY="$(ask "Model API key (blank if none): " "$(env_get MODEL_SERVER_API_KEY)")"
+  fi
   env_set MODEL_SERVER_API_KEY "$MODEL_SERVER_API_KEY"
 fi
-
-# ----- 5. dry run / sync -----------------------------------------------------
-export DRY_RUN=false
-if [[ "$do_ingest" == true ]] && yes "Dry run ingest (preview, no changes)?"; then export DRY_RUN=true; fi
-do_sync=false
-if yes "Sync to production when done (rsync over SSH)?"; then do_sync=true; fi
 
 # ----- summary ---------------------------------------------------------------
 echo
@@ -192,16 +420,24 @@ echo "  tasks  : $([[ $do_ingest == true ]] && echo -n 'ingest ')$([[ $do_tag ==
 echo "  models : $([[ $need_models == true ]] && { [[ $models_local == true ]] && echo 'this machine' || echo "$COMPUTE_HOST"; } || echo n/a)"
 [[ "$do_tag" == true ]] && echo "  model  : $MODEL_SERVER_MODEL"
 echo "  dryrun : $DRY_RUN"
-echo "  sync   : $do_sync"
 echo
 yes "Proceed?" || { echo "Aborted."; exit 0; }
 
+# ----- native Ollama (before any Docker work) --------------------------------
+# Tagging runs on a native, GPU-backed Ollama. Check it's up (prompt + wait if
+# not) and pull the model first — up front, not behind the slower image build.
+if [[ "$do_tag" == true && "$models_local" == true ]]; then
+  echo
+  bold "Setting up the tagging model (native Ollama)..."
+  setup_native_ollama
+fi
+
 # ----- build images ----------------------------------------------------------
-# --progress=plain streams the full, uncollapsed build log (each RUN + pip line),
-# so a slow/stuck step is visible instead of hidden behind the collapsed view.
-bold "Building images (first run downloads/compiles; cached after)..."
-dim "(full build output below — this can take a while on a slow connection)"
-docker compose build --progress=plain cli label-app
+# Collapsed by default; pass --verbose to stream the full uncollapsed build log
+# (each RUN + pip line) when a step looks slow or stuck.
+bold "Building images..."
+dim "(compiles on first run / after code changes — slow then, fast cache-check otherwise; --verbose for logs)"
+compose_build cli label-app
 
 run_task() { # run_task <npm-script> <label>
   bold ">>> $2"
@@ -231,23 +467,21 @@ if [[ "$need_models" == true ]]; then
 fi
 
 # ----- run pipeline ----------------------------------------------------------
+# Warm the text-embedding model first so its one-time ~33MB download happens
+# visibly up front (with progress), not silently mid-tagging. No-op once cached.
+[[ "$do_tag"    == true ]] && run_task prefetch-embedder "Fetching text-embedding model"
 [[ "$MODE" == create ]] && run_task clear-local-db "Wiping local data"
 [[ "$do_ingest" == true ]] && run_task ingest "Ingesting photos"
 [[ "$do_tag"    == true ]] && run_task tag "Text-tagging + embedding"
 [[ "$do_faces"  == true ]] && { run_task detect-faces "Detecting faces"; run_task cluster-faces "Clustering faces"; }
 [[ "$do_dogs"   == true ]] && { run_task detect-dogs "Detecting dogs"; run_task cluster-dogs "Clustering dogs"; }
 
-if [[ "$do_sync" == true ]]; then
-  run_task sync-db "Syncing DB to prod"
-  run_task sync-images "Syncing images to prod"
-fi
-
 # ----- label app -------------------------------------------------------------
-echo
-if [[ "$do_faces" == true || "$do_dogs" == true ]] && yesd "Open the tagging UI to label people/dogs now?"; then
-  docker compose up -d label-app
-  ok "Tagging UI: http://localhost:${LABEL_PORT:-5180}"
-  dim "Stop it later with: docker compose stop label-app"
+# If we detected/clustered people or dogs, open the tagging UI automatically so
+# the fresh clusters are ready to label.
+if [[ "$do_faces" == true || "$do_dogs" == true ]]; then
+  echo
+  open_label_app
 fi
 
 ok "Done."

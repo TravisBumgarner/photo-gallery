@@ -8,14 +8,8 @@ import { confirmTyped } from './prompt.js';
 import { expandHome } from './util.js';
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
 
-  if (config.INGEST_MODE !== 'local') {
-    console.error(
-      `Refusing to run: INGEST_MODE in .env.local is "${config.INGEST_MODE}", expected "local".`,
-    );
-    process.exit(1);
-  }
   if (!config.DATABASE_URL) {
     console.error('Refusing to run: DATABASE_URL is not set in .env.local.');
     process.exit(1);

@@ -10,19 +10,19 @@ name: offline-ingestion
 
 services:
   # Python vision sidecar (faces + dogs). Runs locally here; to use a remote box
-  # instead, run this service there and set FACE_SERVER_HOST to its URL.
-  face-server:
+  # instead, run this service there and set VISION_SERVER_HOST to its URL.
+  vision-server:
     build:
-      context: ./face-server
-    image: offline-ingestion-face-server
+      context: ./vision-server
+    image: offline-ingestion-vision-server
     ports:
-      - "${FACE_SERVER_PORT:-8090}:8090"
+      - "${VISION_SERVER_PORT:-8090}:8090"
     environment:
       PORT: "8090"
-      FACE_SERVER_API_KEY: "${FACE_SERVER_API_KEY:-}"
-      DET_SIZE: "${FACE_DET_SIZE:-640}"
-      DOG_DET_CONF: "${FACE_DOG_DET_CONF:-0.5}"
-      CONCURRENCY: "${FACE_CONCURRENCY:-4}"
+      VISION_SERVER_API_KEY: "${VISION_SERVER_API_KEY:-}"
+      DET_SIZE: "${VISION_DET_SIZE:-640}"
+      DOG_DET_CONF: "${VISION_DOG_DET_CONF:-0.5}"
+      CONCURRENCY: "${VISION_CONCURRENCY:-4}"
     volumes:
       - insightface-cache:/root/.insightface
       - hf-cache:/root/.cache/huggingface
@@ -45,7 +45,7 @@ services:
       MODEL_CACHE_DIR: /data/models/bge-small-en-v1.5
     volumes:
       - ../backend:/data
-      - ./offline-ingestion.config.json:/app/offline-ingestion/offline-ingestion.config.json:ro
+      - ./offline-ingestion.config.yaml:/app/offline-ingestion/offline-ingestion.config.yaml:ro
     restart: unless-stopped
 
   # One-shot task runner. Never started by `up` (profile gates it); the launcher
@@ -63,36 +63,34 @@ services:
       DESTINATION_DIRECTORY: /data/public
       MODEL_CACHE_DIR: /data/models/bge-small-en-v1.5
       SOURCE_DIR: /photos
-      INGEST_MODE: "${INGEST_MODE:-local}"
       DRY_RUN: "${DRY_RUN:-false}"
       FILE_TRANSFER_MODE: "${FILE_TRANSFER_MODE:-copy}"
       ASSUME_YES: "${ASSUME_YES:-1}"
       # Model server URLs are set by ./oi from the one "model server host" you
-      # pick (local containers by default, or another machine). Defaults here are
-      # the local Docker services.
-      FACE_SERVER_HOST: "${FACE_SERVER_HOST:-http://face-server:8090}"
-      MODEL_SERVER_HOST: "${MODEL_SERVER_HOST:-http://ollama:11434}"
+      # pick. Defaults here are for running compose directly: the Docker
+      # vision-server, and a native Ollama on the host (reached via host.docker.internal).
+      VISION_SERVER_HOST: "${VISION_SERVER_HOST:-http://vision-server:8090}"
+      MODEL_SERVER_HOST: "${MODEL_SERVER_HOST:-http://host.docker.internal:11434}"
       MODEL_SERVER_MODEL: "${MODEL_SERVER_MODEL:-}"
       MODEL_SERVER_API_KEY: "${MODEL_SERVER_API_KEY:-}"
+    # Lets the container reach a NATIVE model server running on the host (e.g. a
+    # GPU-backed Ollama) via host.docker.internal. Automatic on Docker Desktop
+    # (Mac/Win); this line makes it work on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ../backend:/data
       # Your photo library (set by ./oi). Read-write so 'cut' transfer mode works.
       - "${SOURCE_DIR:?set SOURCE_DIR (the host photo folder) before running cli}:/photos"
-      - ./offline-ingestion.config.json:/app/offline-ingestion/offline-ingestion.config.json:ro
+      - ./offline-ingestion.config.yaml:/app/offline-ingestion/offline-ingestion.config.yaml:ro
       # SSH keys for sync-to-prod (harmless if unused).
       - "${HOME}/.ssh:/root/.ssh:ro"
 
-  # Local vision LLM for text tagging. ./oi starts this (and pulls the model)
-  # when you tag with "this machine" as the model server host.
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
-    volumes:
-      - ollama:/root/.ollama
-    restart: unless-stopped
+  # Tagging's vision LLM runs on a NATIVE Ollama on the host (GPU), not in Docker —
+  # a CPU-only container is unusably slow for vision. ./oi walks you through
+  # installing it (https://ollama.com/download); the cli reaches it via
+  # host.docker.internal.
 
 volumes:
   insightface-cache:
   hf-cache:
-  ollama:

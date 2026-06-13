@@ -5,7 +5,7 @@ import { dogClusters, dogs } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
 import { settings } from '@/settings.js';
 
-// Tunables (see dogs.cluster in offline-ingestion.config.json). Dog (DINOv2)
+// Tunables (see dogs.cluster in offline-ingestion.config.yaml). Dog (DINOv2)
 // embeddings are noisier than ArcFace face embeddings. Same-dog distances are
 // typically 0.15-0.4; different dogs cluster around 0.5+. Tighter thresholds
 // than faces favor splits over false merges — merging the wrong two dogs is
@@ -98,7 +98,7 @@ async function chunked<T>(
 }
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
   if (!config.DATABASE_URL) {
     console.error('DATABASE_URL must be set.');
     process.exit(1);

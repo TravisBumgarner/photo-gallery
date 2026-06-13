@@ -2,28 +2,28 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
+// Most of these come from docker-compose.yml (container paths, run flags); only
+// the model host/model/keys originate in .env.local. Secrets are the *_API_KEY
+// fields. See .env.example for what a user actually fills in.
 const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   SOURCE_DIR: z.string(),
   DESTINATION_DIRECTORY: z.string(),
-  INGEST_MODE: z.enum(['local', 'production']),
   DRY_RUN: z.string(),
   FILE_TRANSFER_MODE: z.enum(['copy', 'cut']),
-  SSH_HOST: z.string().optional(),
   MODEL_SERVER_HOST: z.string().optional(),
   MODEL_SERVER_MODEL: z.string().optional(),
   MODEL_SERVER_API_KEY: z.string().optional(),
-  FACE_SERVER_HOST: z.string().optional(),
-  FACE_SERVER_API_KEY: z.string().optional(),
+  VISION_SERVER_HOST: z.string().optional(),
+  VISION_SERVER_API_KEY: z.string().optional(),
   // Optional override for the BGE embedder cache (defaults next to the images).
   MODEL_CACHE_DIR: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;
 
-export function loadConfig(env: 'local' | 'production'): Config {
-  const envFile = path.resolve(`.env.${env}`);
-  dotenv.config({ path: envFile });
+export function loadConfig(): Config {
+  dotenv.config({ path: path.resolve('.env.local') });
   return envSchema.parse(process.env);
 }
 

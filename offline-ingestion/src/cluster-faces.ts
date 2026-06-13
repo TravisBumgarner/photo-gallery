@@ -5,7 +5,7 @@ import { faceClusters, faces } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
 import { settings } from '@/settings.js';
 
-// Tunables (see faces.cluster in offline-ingestion.config.json). ArcFace
+// Tunables (see faces.cluster in offline-ingestion.config.yaml). ArcFace
 // embeddings are L2-normalized so cosine distance = 1 - dot. Same-person
 // distances cluster around 0.1-0.4; different-people start around 0.7+.
 // Conservative thresholds favor splits over false merges — the UI lets you
@@ -101,7 +101,7 @@ function dbscan(points: Float32Array[], eps: number, minPts: number): number[] {
 }
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
   if (!config.DATABASE_URL) {
     console.error('DATABASE_URL must be set.');
     process.exit(1);
