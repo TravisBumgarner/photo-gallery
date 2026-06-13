@@ -9,8 +9,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   SOURCE_DIR: z.string(),
   DESTINATION_DIRECTORY: z.string(),
-  DRY_RUN: z.string(),
-  FILE_TRANSFER_MODE: z.enum(['copy', 'cut']),
+  // Ingest-only (used only by index.ts). Default them so non-ingest entrypoints
+  // — the label app shares this loadConfig() — don't have to set them. The cli
+  // always passes them explicitly via compose, so these defaults never apply there.
+  DRY_RUN: z.string().default('false'),
+  FILE_TRANSFER_MODE: z.enum(['copy', 'cut']).default('copy'),
   MODEL_SERVER_HOST: z.string().optional(),
   MODEL_SERVER_MODEL: z.string().optional(),
   MODEL_SERVER_API_KEY: z.string().optional(),
