@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 
 // Most of these come from docker-compose.yml (container paths, run flags); only
-// the model host/model/keys originate in .env.local. Secrets are the *_API_KEY
-// fields. See .env.example for what a user actually fills in.
+// the model host/model/keys originate in .env.local, which ./oi creates and fills
+// in from its prompts. Secrets are the *_API_KEY fields.
 const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   SOURCE_DIR: z.string(),

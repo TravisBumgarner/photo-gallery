@@ -43,8 +43,7 @@ are no Python/Node/ML dependencies to install).
 
 ```bash
 cd offline-ingestion
-cp .env.example .env.local      # then edit: SOURCE_DIR, MODEL_SERVER_HOST, etc.
-./oi                            # interactive menu
+./oi                            # interactive menu — asks for everything it needs
 ```
 
 `./oi` will:
@@ -117,7 +116,9 @@ Configuration is split by kind:
 
 ### `.env.local` — environment & secrets (per machine, gitignored)
 
-Copied from `.env.example`. Holds paths, hosts, and keys:
+Created automatically on first run and filled in as you answer `./oi`'s prompts —
+you don't write it by hand. It just remembers your answers between runs. Holds
+paths, hosts, and keys:
 
 | Key | Meaning |
 | --- | --- |

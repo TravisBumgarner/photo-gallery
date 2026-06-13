@@ -189,7 +189,7 @@ ensure_native_ollama() {
   fi
   native_ollama_up && return 0
   echo
-  err "Native Ollama isn't running — and we don't tag on CPU (far too slow for vision)."
+  err "Native Ollama isn't running."
   bold "Get Ollama running to continue (it uses your GPU):"
   echo "  1. Install it if you haven't — Mac / Windows / Linux: https://ollama.com/download"
   echo "  2. Start it:"
@@ -327,15 +327,9 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 # ----- preflight: env --------------------------------------------------------
-if [[ ! -f .env.local ]]; then
-  err ".env.local not found."
-  if [[ -f .env.example ]] && yes "Create it from .env.example now?"; then
-    cp .env.example .env.local
-    ok "Wrote .env.local — set SOURCE_DIR (the rest is asked interactively)."
-  fi
-  echo "Edit .env.local, then re-run ./oi."
-  exit 1
-fi
+# .env.local just caches your answers between runs; ./oi creates and fills it as
+# you go (env_set), so there's nothing to set up by hand on a fresh checkout.
+touch .env.local
 
 # --tagging-ui: skip all the prompts/pipeline and jump straight to the label UI.
 if [[ "$TAGGING_UI" == true ]]; then
