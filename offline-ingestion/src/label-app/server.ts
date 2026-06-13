@@ -30,7 +30,7 @@ import { settings } from '@/settings.js';
 
 const config = loadConfig();
 if (!config.DATABASE_URL) {
-  console.error('DATABASE_URL must be set in .env.local (path to sqlite).');
+  console.error('DATABASE_URL must be set in .cli-cache (path to sqlite).');
   process.exit(1);
 }
 const db = createDb(path.resolve(config.DATABASE_URL));

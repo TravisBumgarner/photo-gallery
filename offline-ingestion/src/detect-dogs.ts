@@ -86,7 +86,7 @@ async function main() {
   const apiKey = config.VISION_SERVER_API_KEY || undefined;
   if (!visionHost) {
     console.error(
-      'VISION_SERVER_HOST must be set in .env.local (see README "Vision Server").',
+      'VISION_SERVER_HOST must be set in .cli-cache (see README "Vision Server").',
     );
     process.exit(1);
   }

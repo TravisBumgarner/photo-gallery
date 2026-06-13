@@ -5,7 +5,7 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 // Tuning / behavior knobs, separate from environment & secrets (those live in
-// .env.local and are loaded by config.ts). Everything here is read from
+// .cli-cache and are loaded by config.ts). Everything here is read from
 // offline-ingestion.config.yaml at the package root. The file is optional and
 // partial: any key you omit falls back to the default below, so a missing file
 // reproduces the original hard-coded behavior exactly.

@@ -106,7 +106,7 @@ your Lightroom folders.
    viewing copies, mirroring your Lightroom layout, and ingests cleanly.
 
 Set `LIGHTROOM_DIR` (export source) and `SOURCE_DIR` (ingestion folder) in
-`.env.local` so the prompts pre-fill.
+`.cli-cache` so the prompts pre-fill.
 
 ---
 
@@ -114,7 +114,7 @@ Set `LIGHTROOM_DIR` (export source) and `SOURCE_DIR` (ingestion folder) in
 
 Configuration is split by kind:
 
-### `.env.local` — environment & secrets (per machine, gitignored)
+### `.cli-cache` — environment & secrets (per machine, gitignored)
 
 Created automatically on first run and filled in as you answer `./oi`'s prompts —
 you don't write it by hand. It just remembers your answers between runs. Holds

@@ -132,7 +132,7 @@ async function main() {
   const apiKey = config.MODEL_SERVER_API_KEY;
   if (!modelHost || !model) {
     console.error(
-      'MODEL_SERVER_HOST and MODEL_SERVER_MODEL must be set in .env.local (see README "Model Server").',
+      'MODEL_SERVER_HOST and MODEL_SERVER_MODEL must be set in .cli-cache (see README "Model Server").',
     );
     process.exit(1);
   }

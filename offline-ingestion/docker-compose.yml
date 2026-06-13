@@ -62,7 +62,7 @@ services:
     ports:
       - "${LABEL_PORT:-5180}:5180"
     env_file:
-      - .env.local
+      - .cli-cache
     environment:
       DATABASE_URL: /data/sqlite.db
       DESTINATION_DIRECTORY: /data/public
@@ -81,7 +81,7 @@ services:
     image: offline-ingestion-app
     profiles: ["cli"]
     env_file:
-      - .env.local
+      - .cli-cache
     environment:
       DATABASE_URL: /data/sqlite.db
       DESTINATION_DIRECTORY: /data/public

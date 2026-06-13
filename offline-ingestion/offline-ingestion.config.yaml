@@ -1,6 +1,6 @@
 # Offline Ingestion — tuning knobs (behaviour only; no secrets, no host/paths).
 # Every key is optional: omit one to use its built-in default. Secrets live in
-# .env.local; container paths and ports live in docker-compose.yml.
+# .cli-cache; container paths and ports live in docker-compose.yml.
 
 images:
   thumbnail:

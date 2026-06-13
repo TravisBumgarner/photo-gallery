@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 
 // Most of these come from docker-compose.yml (container paths, run flags); only
-// the model host/model/keys originate in .env.local, which ./oi creates and fills
+// the model host/model/keys originate in .cli-cache, which ./oi creates and fills
 // in from its prompts. Secrets are the *_API_KEY fields.
 const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
@@ -23,7 +23,7 @@ const envSchema = z.object({
 export type Config = z.infer<typeof envSchema>;
 
 export function loadConfig(): Config {
-  dotenv.config({ path: path.resolve('.env.local') });
+  dotenv.config({ path: path.resolve('.cli-cache') });
   return envSchema.parse(process.env);
 }
 

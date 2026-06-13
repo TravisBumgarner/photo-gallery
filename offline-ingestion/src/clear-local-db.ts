@@ -11,7 +11,7 @@ async function main() {
   const config = loadConfig();
 
   if (!config.DATABASE_URL) {
-    console.error('Refusing to run: DATABASE_URL is not set in .env.local.');
+    console.error('Refusing to run: DATABASE_URL is not set in .cli-cache.');
     process.exit(1);
   }
 
