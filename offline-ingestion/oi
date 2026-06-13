@@ -544,7 +544,14 @@ if [[ "$need_models" == true ]]; then
   if [[ "$models_local" == false ]]; then
     dim "That machine must be running './oi --server' — it prints its IP and a token."
     # One token fronts both model servers via the gateway; the cli sends it to each.
-    GATEWAY_TOKEN="$(ask "Gateway token: " "$(env_get GATEWAY_TOKEN)")"
+    # The token is saved in .cli-cache, so on repeat runs we mask it as ****** and
+    # just Enter reuses it — paste a new value only to change it.
+    saved_token="$(env_get GATEWAY_TOKEN)"
+    if [[ -n "$saved_token" ]]; then
+      GATEWAY_TOKEN="$(ask "Gateway token [****** — Enter to reuse saved]: " "$saved_token")"
+    else
+      GATEWAY_TOKEN="$(ask "Gateway token: " "")"
+    fi
     env_set GATEWAY_TOKEN "$GATEWAY_TOKEN"
     export MODEL_SERVER_API_KEY="$GATEWAY_TOKEN" VISION_SERVER_API_KEY="$GATEWAY_TOKEN"
     env_set MODEL_SERVER_API_KEY "$GATEWAY_TOKEN"
