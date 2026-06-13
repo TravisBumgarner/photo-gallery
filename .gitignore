@@ -20,3 +20,7 @@ face-server/yolov8n.pt
 
 # Local SQLite backups (manual snapshots) — too large for git.
 db_backups/
+
+# Expo / Tamagui generated caches — never commit.
+**/.expo/
+**/.tamagui/
