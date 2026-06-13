@@ -389,9 +389,16 @@ if [[ "$SERVER" == true ]]; then
         "http://localhost:${GATEWAY_PORT}/api/tags" >/dev/null 2>&1; then
     echo
     err "Gateway is up but can't reach the native Ollama at host.docker.internal:11434."
-    err "On Linux, bind Ollama beyond loopback so the container can reach it:"
-    err "    OLLAMA_HOST=0.0.0.0:11434 ollama serve"
-    err "(The macOS Ollama app already works.) Fix that, then re-run ./oi --server."
+    err "Ollama listens on 127.0.0.1 by default, which the gateway CONTAINER can't"
+    err "reach — it has to bind 0.0.0.0. This is true on macOS too (the app does NOT"
+    err "do it for you). Set OLLAMA_HOST, restart Ollama, then re-run ./oi --server:"
+    err "    macOS app : launchctl setenv OLLAMA_HOST \"0.0.0.0:11434\"  then quit & reopen Ollama"
+    err "    CLI/Linux : OLLAMA_HOST=0.0.0.0:11434 ollama serve"
+    err "Verify:  lsof -nP -iTCP:11434 -sTCP:LISTEN   (want *:11434, not 127.0.0.1:11434)"
+    # Don't leave a half-up server that reports 'running' but silently fails every
+    # tag request — that's the footgun. Tear the stack back down and fail hard.
+    docker compose --profile server stop vision-server gateway >/dev/null 2>&1 || true
+    exit 1
   fi
 
   ip="$(lan_ip)"; ip="${ip:-<this-machine-LAN-IP>}"
