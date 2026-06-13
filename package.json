@@ -6,13 +6,16 @@
     "shared",
     "backend",
     "offline-ingestion",
-    "frontend"
+    "frontend",
+    "frontend-v2"
   ],
   "scripts": {
     "setup": "bash bootstrap.sh",
     "dev:backend": "npm run dev -w backend",
-    "dev:frontend": "npm run dev -w frontend",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm run start -w frontend-v2",
+    "dev:frontend-legacy": "npm run dev -w frontend",
+    "dev:frontend-web": "npm run web -w frontend-v2",
+    "dev:frontend-ios": "npm run ios -w frontend-v2",
     "build": "npm run build -w backend && npm run build -w frontend",
     "db:generate": "npm run db:generate -w backend",
     "db:migrate": "npm run db:migrate -w backend",

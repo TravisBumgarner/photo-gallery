@@ -9,6 +9,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   like,
   lt,
   lte,
@@ -17,7 +18,13 @@ import {
 } from 'drizzle-orm';
 import { Router } from 'express';
 import { createDb } from 'shared/db';
-import { photos } from 'shared/db/schema';
+import {
+  dogClusters,
+  dogs as dogsTable,
+  faceClusters,
+  faces,
+  photos,
+} from 'shared/db/schema';
 import { photoFiltersSchema, statsFiltersSchema } from 'shared/schemas';
 import type { StatsResponse } from 'shared/types';
 import { config } from '../config.js';
@@ -356,6 +363,7 @@ router.get('/photos', async (req, res) => {
           photos: [],
           pagination: {
             page: pageNum,
+            offset,
             limit: limitNum,
             total: 0,
             totalPages: 0,
@@ -412,7 +420,11 @@ router.get('/photos', async (req, res) => {
     const orderFn = sortOrder === 'asc' ? asc : desc;
     const orderByColumn = validSortColumns[sortBy] ?? photos.dateCaptured;
 
-    // Execute query with window function to get total count in a single pass
+    // Execute query with window function to get total count in a single pass.
+    // The id tiebreaker makes the order deterministic across page fetches AND
+    // keeps it in lockstep with /photos/sections — without it, ties in the
+    // primary sort column (e.g. dateCaptured) could resolve differently between
+    // queries, so jump-to-section's firstOffset would land on the wrong page.
     const rows = await db
       .select({
         ...getTableColumns(photos),
@@ -420,7 +432,7 @@ router.get('/photos', async (req, res) => {
       })
       .from(photos)
       .where(whereClause)
-      .orderBy(orderFn(orderByColumn))
+      .orderBy(orderFn(orderByColumn), asc(photos.id))
       .limit(limitNum)
       .offset(offset);
 
@@ -504,14 +516,53 @@ router.get('/photos/autocomplete', async (req, res) => {
       }
     });
 
-    // Combine all suggestions
-    const suggestions = [
-      ...filenameMatches.map((f) => f.value),
-      ...cameraMatches.map((c) => c.value),
-      ...Array.from(keywords).slice(0, 10),
-    ]
-      .filter(Boolean)
-      .slice(0, 20);
+    // Get matching people labels
+    const personMatches = await db
+      .selectDistinct({ value: faceClusters.personLabel })
+      .from(faceClusters)
+      .where(
+        and(
+          isNotNull(faceClusters.personLabel),
+          like(faceClusters.personLabel, `%${searchTerm}%`),
+        ),
+      )
+      .limit(10);
+
+    // Get matching dog labels
+    const dogMatches = await db
+      .selectDistinct({ value: dogClusters.dogLabel })
+      .from(dogClusters)
+      .where(
+        and(
+          isNotNull(dogClusters.dogLabel),
+          like(dogClusters.dogLabel, `%${searchTerm}%`),
+        ),
+      )
+      .limit(10);
+
+    // Combine all suggestions (tagged with kind so the client knows whether to
+    // treat the selection as a text query or a structured filter).
+    type Suggestion = {
+      value: string;
+      kind: 'file' | 'camera' | 'keyword' | 'person' | 'dog';
+    };
+    const suggestions: Suggestion[] = [
+      ...personMatches
+        .filter((p) => p.value)
+        .map((p) => ({ value: p.value as string, kind: 'person' as const })),
+      ...dogMatches
+        .filter((d) => d.value)
+        .map((d) => ({ value: d.value as string, kind: 'dog' as const })),
+      ...Array.from(keywords)
+        .slice(0, 10)
+        .map((k) => ({ value: k, kind: 'keyword' as const })),
+      ...cameraMatches
+        .filter((c) => c.value)
+        .map((c) => ({ value: c.value as string, kind: 'camera' as const })),
+      ...filenameMatches
+        .filter((f) => f.value)
+        .map((f) => ({ value: f.value as string, kind: 'file' as const })),
+    ].slice(0, 20);
 
     res.json(suggestions);
   } catch (error) {
@@ -570,10 +621,38 @@ router.get('/photos/suggestions', async (_req, res) => {
       .orderBy(desc(photos.createdAt))
       .limit(6);
 
+    // Top people by face count
+    const topPeople = await db
+      .select({
+        value: faceClusters.personLabel,
+        count: sql<number>`count(${faces.id})`,
+      })
+      .from(faceClusters)
+      .leftJoin(faces, eq(faces.clusterId, faceClusters.id))
+      .where(isNotNull(faceClusters.personLabel))
+      .groupBy(faceClusters.personLabel)
+      .orderBy(desc(sql`count(${faces.id})`))
+      .limit(8);
+
+    // Top dogs by detection count
+    const topDogs = await db
+      .select({
+        value: dogClusters.dogLabel,
+        count: sql<number>`count(${dogsTable.id})`,
+      })
+      .from(dogClusters)
+      .leftJoin(dogsTable, eq(dogsTable.clusterId, dogClusters.id))
+      .where(isNotNull(dogClusters.dogLabel))
+      .groupBy(dogClusters.dogLabel)
+      .orderBy(desc(sql`count(${dogsTable.id})`))
+      .limit(8);
+
     res.json({
       cameras: topCameras.map((c) => c.value),
       keywords: topKeywords,
       files: recentFiles.map((f) => f.value),
+      people: topPeople.map((p) => p.value).filter(Boolean),
+      dogs: topDogs.map((d) => d.value).filter(Boolean),
     });
   } catch (error) {
     console.error('Error fetching suggestions:', error);
@@ -611,16 +690,24 @@ router.get('/photos/meta', async (req, res) => {
         ? and(notNullCondition, filterCondition)
         : notNullCondition;
 
-    const cameras = await db
-      .selectDistinct({ camera: photos.camera })
+    const cameraGroups = await db
+      .select({
+        value: photos.camera,
+        count: sql<number>`count(*)`,
+      })
       .from(photos)
       .where(withFilter(sql`${photos.camera} IS NOT NULL`))
+      .groupBy(photos.camera)
       .orderBy(asc(photos.camera));
 
-    const lenses = await db
-      .selectDistinct({ lens: photos.lens })
+    const lensGroups = await db
+      .select({
+        value: photos.lens,
+        count: sql<number>`count(*)`,
+      })
       .from(photos)
       .where(withFilter(sql`${photos.lens} IS NOT NULL`))
+      .groupBy(photos.lens)
       .orderBy(asc(photos.lens));
 
     const isoValues = await db
@@ -654,7 +741,7 @@ router.get('/photos/meta', async (req, res) => {
       .orderBy(desc(sql`DATE(date_captured, 'unixepoch')`));
 
     // Use filtered IDs approach for raw SQL queries when filters are active
-    let keywordRows: { value: string }[];
+    let keywordRows: { value: string; count: number }[];
     let folderRows: { keywords: string }[];
 
     if (hasFilters) {
@@ -668,12 +755,15 @@ router.get('/photos/meta', async (req, res) => {
       if (filteredIds.length === 0) {
         const emptyData = {
           cameras: [],
+          cameraCounts: {},
           lenses: [],
+          lensCounts: {},
           isoValues: [],
           apertureValues: [],
           dates: [],
           dateCounts: {},
           keywords: [],
+          keywordCounts: {},
           labels: [],
           folders: [],
         };
@@ -683,9 +773,9 @@ router.get('/photos/meta', async (req, res) => {
       const idList = filteredIds.join(',');
       keywordRows = db.$client
         .prepare(
-          `SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL AND photos.id IN (${idList}) ORDER BY value`,
+          `SELECT value, COUNT(*) as count FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL AND photos.id IN (${idList}) GROUP BY value ORDER BY value`,
         )
-        .all() as { value: string }[];
+        .all() as { value: string; count: number }[];
       folderRows = db.$client
         .prepare(
           `SELECT keywords FROM photos WHERE keywords IS NOT NULL AND id IN (${idList})`,
@@ -694,9 +784,9 @@ router.get('/photos/meta', async (req, res) => {
     } else {
       keywordRows = db.$client
         .prepare(
-          'SELECT DISTINCT value FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL ORDER BY value',
+          'SELECT value, COUNT(*) as count FROM photos, json_each(photos.keywords) WHERE keywords IS NOT NULL GROUP BY value ORDER BY value',
         )
-        .all() as { value: string }[];
+        .all() as { value: string; count: number }[];
       folderRows = db.$client
         .prepare('SELECT keywords FROM photos WHERE keywords IS NOT NULL')
         .all() as { keywords: string }[];
@@ -729,14 +819,30 @@ router.get('/photos/meta', async (req, res) => {
     });
     const folders = Array.from(folderSet).sort((a, b) => a.localeCompare(b));
 
+    const cameraCounts: Record<string, number> = {};
+    cameraGroups.forEach((g) => {
+      if (g.value) cameraCounts[g.value] = g.count;
+    });
+    const lensCounts: Record<string, number> = {};
+    lensGroups.forEach((g) => {
+      if (g.value) lensCounts[g.value] = g.count;
+    });
+    const keywordCounts: Record<string, number> = {};
+    keywordRows.forEach((r) => {
+      keywordCounts[r.value] = r.count;
+    });
+
     const data = {
-      cameras: cameras.map((c) => c.camera),
-      lenses: lenses.map((l) => l.lens),
+      cameras: cameraGroups.map((g) => g.value).filter(Boolean),
+      cameraCounts,
+      lenses: lensGroups.map((g) => g.value).filter(Boolean),
+      lensCounts,
       isoValues: isoValues.map((i) => i.iso),
       apertureValues: apertureValues.map((a) => a.aperture),
       dates: dates.map((d) => d.date),
       dateCounts,
       keywords: keywordRows.map((r) => r.value),
+      keywordCounts,
       labels: labels.map((l) => l.label),
       folders,
     };

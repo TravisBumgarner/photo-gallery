@@ -25,9 +25,10 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // Middleware
+const allowedOrigins = config.CORS_ORIGIN.split(',').map((o) => o.trim());
 app.use(
   cors({
-    origin: config.CORS_ORIGIN,
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     credentials: true,
   }),
 );
@@ -92,14 +93,27 @@ if (config.NODE_ENV === 'production') {
 // Auth barrier — everything below requires authentication
 app.use(requireAuth);
 
-// Serve static files (protected) with immutable caching
+// Serve static files (protected) with immutable caching.
+// CORP override: helmet's default `same-origin` blocks embedding from other origins
+// (e.g. the frontend-v2 dev server on a different port). These are public media URLs,
+// so `cross-origin` is appropriate.
 const staticCacheOptions = { maxAge: '1y', immutable: true };
+const allowCrossOriginEmbed = (
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+};
 app.use(
   '/images',
+  allowCrossOriginEmbed,
   express.static(path.join(__dirname, '../public/images'), staticCacheOptions),
 );
 app.use(
   '/thumbnails',
+  allowCrossOriginEmbed,
   express.static(
     path.join(__dirname, '../public/thumbnails'),
     staticCacheOptions,
