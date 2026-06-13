@@ -402,7 +402,15 @@ if [[ "$SERVER" == true ]]; then
   echo
   dim "Only port ${GATEWAY_PORT} is exposed, and it requires the token. The token"
   dim "crosses the LAN in cleartext — fine on a trusted home network; tunnel it"
-  dim "(VPN/SSH) on anything less. Stop later:  docker compose --profile server down"
+  dim "(VPN/SSH) on anything less."
+
+  # Stay attached and stream logs so you can watch requests come in. Ctrl-C (or
+  # closing the terminal) stops the servers. Native Ollama isn't a compose service,
+  # so its logs show in its own app/terminal — these are the gateway + vision-server.
+  echo
+  bold "Streaming request logs — Ctrl-C to stop the server."
+  trap 'echo; dim "Stopping model server..."; docker compose --profile server stop vision-server gateway >/dev/null 2>&1 || true; exit 0' INT TERM HUP
+  docker compose --profile server logs -f vision-server gateway || true
   exit 0
 fi
 
