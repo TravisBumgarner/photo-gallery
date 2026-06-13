@@ -55,52 +55,43 @@ interface Kind {
   minUnlabeled: number;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
-const fc = faceClusters as any;
-// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
-const fa = faces as any;
-// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
-const dc = dogClusters as any;
-// biome-ignore lint/suspicious/noExplicitAny: drizzle table column access
-const dg = dogs as any;
-
 const KINDS: Record<string, Kind> = {
   people: {
     clusters: faceClusters,
     items: faces,
-    clusterId: fa.clusterId,
-    clusterPk: fc.id,
-    labelColumn: fc.personLabel,
+    clusterId: faces.clusterId,
+    clusterPk: faceClusters.id,
+    labelColumn: faceClusters.personLabel,
     labelKey: 'personLabel',
-    ignoredColumn: fc.ignored,
-    itemId: fa.id,
-    itemClusterId: fa.clusterId,
-    photoUuid: fa.photoUuid,
-    bboxX: fa.bboxX,
-    bboxY: fa.bboxY,
-    bboxW: fa.bboxW,
-    bboxH: fa.bboxH,
-    detScore: fa.detScore,
-    updatedAt: fc.updatedAt,
+    ignoredColumn: faceClusters.ignored,
+    itemId: faces.id,
+    itemClusterId: faces.clusterId,
+    photoUuid: faces.photoUuid,
+    bboxX: faces.bboxX,
+    bboxY: faces.bboxY,
+    bboxW: faces.bboxW,
+    bboxH: faces.bboxH,
+    detScore: faces.detScore,
+    updatedAt: faceClusters.updatedAt,
     minUnlabeled: 5,
   },
   dogs: {
     clusters: dogClusters,
     items: dogs,
-    clusterId: dg.clusterId,
-    clusterPk: dc.id,
-    labelColumn: dc.dogLabel,
+    clusterId: dogs.clusterId,
+    clusterPk: dogClusters.id,
+    labelColumn: dogClusters.dogLabel,
     labelKey: 'dogLabel',
-    ignoredColumn: dc.ignored,
-    itemId: dg.id,
-    itemClusterId: dg.clusterId,
-    photoUuid: dg.photoUuid,
-    bboxX: dg.bboxX,
-    bboxY: dg.bboxY,
-    bboxW: dg.bboxW,
-    bboxH: dg.bboxH,
-    detScore: dg.detScore,
-    updatedAt: dc.updatedAt,
+    ignoredColumn: dogClusters.ignored,
+    itemId: dogs.id,
+    itemClusterId: dogs.clusterId,
+    photoUuid: dogs.photoUuid,
+    bboxX: dogs.bboxX,
+    bboxY: dogs.bboxY,
+    bboxW: dogs.bboxW,
+    bboxH: dogs.bboxH,
+    detScore: dogs.detScore,
+    updatedAt: dogClusters.updatedAt,
     minUnlabeled: 3,
   },
 };
