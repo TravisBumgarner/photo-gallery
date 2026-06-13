@@ -1,10 +1,8 @@
-import type { photos, users } from './db/schema.js';
+import type { photos } from './db/schema.js';
 
 // DB-level types (Date objects for timestamp columns)
 export type Photo = typeof photos.$inferSelect;
 export type PhotoInsert = typeof photos.$inferInsert;
-export type User = typeof users.$inferSelect;
-export type UserInsert = typeof users.$inferInsert;
 
 // API-level type: dates are serialized to strings over JSON
 export type ApiPhoto = Omit<

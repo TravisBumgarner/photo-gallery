@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -121,34 +123,14 @@ beforeAll(() => {
   sqlite = new Database(':memory:');
   db = drizzle(sqlite);
 
-  // Create tables using raw SQL matching the schema
-  sqlite.exec(`
-    CREATE TABLE photos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      uuid TEXT NOT NULL UNIQUE,
-      filename TEXT NOT NULL,
-      original_path TEXT NOT NULL,
-      thumbnail_path TEXT NOT NULL,
-      blurhash TEXT NOT NULL,
-      width INTEGER NOT NULL,
-      height INTEGER NOT NULL,
-      aspect_ratio REAL NOT NULL,
-      camera TEXT,
-      lens TEXT,
-      date_captured INTEGER,
-      iso INTEGER,
-      shutter_speed TEXT,
-      aperture REAL,
-      focal_length REAL,
-      keywords TEXT,
-      rating INTEGER,
-      label TEXT,
-      file_size INTEGER,
-      mime_type TEXT,
-      created_at INTEGER,
-      updated_at INTEGER
-    );
-  `);
+  // Build the schema from the real migrations so this test can never drift
+  // from the production schema (the previous hand-written CREATE TABLE went
+  // stale when columns like `tags` were added).
+  const migrationsFolder = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../drizzle',
+  );
+  migrate(db, { migrationsFolder });
 
   seedPhotos();
 });

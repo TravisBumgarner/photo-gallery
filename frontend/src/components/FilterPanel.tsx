@@ -826,8 +826,8 @@ const FilterPanel = memo(function FilterPanel({
                   color="text.secondary"
                   sx={{ display: 'block', px: 1, py: 1 }}
                 >
-                  No people labeled yet. Visit the People page from the menu to
-                  start labeling face clusters.
+                  No people labeled yet. Label face clusters in the
+                  offline-ingestion tool to filter by person here.
                 </Typography>
               ) : (
                 <List dense disablePadding sx={{ pt: 0.5 }}>
@@ -922,8 +922,8 @@ const FilterPanel = memo(function FilterPanel({
                   color="text.secondary"
                   sx={{ display: 'block', px: 1, py: 1 }}
                 >
-                  No dogs labeled yet. Visit the Dogs page from the menu to
-                  start labeling.
+                  No dogs labeled yet. Label dog clusters in the
+                  offline-ingestion tool to filter by dog here.
                 </Typography>
               ) : (
                 <List dense disablePadding sx={{ pt: 0.5 }}>

@@ -1,11 +1,9 @@
 import { Box, CircularProgress } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import DogsPage from '@/components/DogsPage';
 import GalleryPage from '@/components/GalleryPage';
 import LoginPage from '@/components/LoginPage';
 import NavMenu from '@/components/NavMenu';
-import PeoplePage from '@/components/PeoplePage';
 import StatsPage from '@/components/StatsPage';
 import AppThemeProvider from '@/styles/Theme';
 
@@ -79,8 +77,6 @@ function App() {
         <Routes>
           <Route path="/" element={<GalleryPage onLogout={handleLogout} />} />
           <Route path="/stats" element={<StatsPage />} />
-          <Route path="/people" element={<PeoplePage />} />
-          <Route path="/dogs" element={<DogsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
