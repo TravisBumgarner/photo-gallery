@@ -176,41 +176,41 @@ ollama_loopback_only() { # listening on :11434 but only on loopback?
   local l; l="$(lsof -nP -iTCP:11434 -sTCP:LISTEN 2>/dev/null)" || return 1
   [[ -n "$l" ]] && ! grep -qE '(\*|0\.0\.0\.0):11434' <<<"$l"
 }
+# (Re)start Ollama bound to 0.0.0.0. The model-server box runs the `ollama serve`
+# CLI, so when that's present we own the process: kill the loopback instance and
+# relaunch it ourselves (backgrounded, survives ./oi exiting). Fall back to the
+# macOS menubar app (launchctl + relaunch) only when there's no CLI.
+ollama_serve_bound() {
+  OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+}
+ollama_restart_bound() {
+  if command -v ollama >/dev/null 2>&1; then
+    pkill -ix ollama 2>/dev/null || true            # stop the loopback `ollama serve`
+    local t=0; while native_ollama_up; do [[ $t -ge 10 ]] && break; sleep 1; t=$((t + 1)); done
+    ollama_serve_bound
+  else
+    launchctl setenv OLLAMA_HOST "0.0.0.0:11434" 2>/dev/null || true
+    osascript -e 'quit app "Ollama"' >/dev/null 2>&1 || true
+    local t=0; while native_ollama_up; do [[ $t -ge 10 ]] && break; sleep 1; t=$((t + 1)); done
+    open -a Ollama >/dev/null 2>&1 || true           # relaunch picks up OLLAMA_HOST
+  fi
+}
 ensure_ollama_lan_bind() {
   ollama_loopback_only || return 0    # already on 0.0.0.0 (or lsof n/a) — nothing to do
-  if [[ "$(uname -s)" != Darwin ]]; then
-    # Non-macOS: we don't own the service, so set the knob and wait for the restart.
-    err "Ollama is bound to 127.0.0.1 only — the Docker cli can't reach it there."
-    err "Restart it open to all interfaces:  OLLAMA_HOST=0.0.0.0:11434 ollama serve"
-    printf "Waiting for Ollama on 0.0.0.0:11434"
-    until native_ollama_up && ! ollama_loopback_only; do printf "."; sleep 2; done
-    echo; ok "Ollama reachable on 0.0.0.0:11434."
-    return 0
-  fi
-  bold "Binding Ollama to 0.0.0.0 so the Docker cli can reach it..."
-  launchctl setenv OLLAMA_HOST "0.0.0.0:11434"          # honored by the app's NEXT launch
-  # Quit the running instance and WAIT for it to fully exit. If we relaunch too
-  # soon, `open -a` just reactivates the old (loopback) process and never re-reads
-  # OLLAMA_HOST — which leaves it stuck on 127.0.0.1 forever.
-  osascript -e 'quit app "Ollama"' >/dev/null 2>&1 || true
+  bold "Ollama is on 127.0.0.1 — rebinding to 0.0.0.0 so the Docker cli can reach it..."
+  ollama_restart_bound
   printf "Restarting Ollama on 0.0.0.0:11434"
   local tries=0
-  until [[ -z "$(pgrep -ix ollama 2>/dev/null)" ]] && ! native_ollama_up; do
-    [[ $tries -ge 10 ]] && { pkill -ix ollama 2>/dev/null || true; sleep 1; break; }
-    printf "."; sleep 1; tries=$((tries + 1))
-  done
-  open -a Ollama >/dev/null 2>&1 || true                # fresh launch — now picks up OLLAMA_HOST
-  tries=0
   until native_ollama_up && ! ollama_loopback_only; do
     if [[ $tries -ge 20 ]]; then
       echo
-      err "Ollama didn't come back bound to 0.0.0.0. Confirm the env took:"
-      err "    launchctl getenv OLLAMA_HOST      # expect 0.0.0.0:11434"
-      err "If a service manager (brew services / a login item) keeps relaunching"
-      err "Ollama on loopback, set OLLAMA_HOST there too. Then run this again."
+      err "Couldn't get Ollama listening on 0.0.0.0:11434. Start it yourself with:"
+      err "    OLLAMA_HOST=0.0.0.0:11434 ollama serve"
+      err "leave it running, then run this again."
       exit 1
     fi
-    printf "."; sleep 2; tries=$((tries + 1))
+    printf "."; sleep 1; tries=$((tries + 1))
   done
   echo; ok "Ollama bound to 0.0.0.0:11434."
 }
@@ -234,14 +234,18 @@ ensure_native_ollama() {
     fi
   fi
   if ! native_ollama_up; then
-    echo
-    err "Native Ollama isn't running."
-    bold "Get Ollama running to continue (it uses your GPU):"
-    echo "  1. Install it if you haven't — Mac / Windows / Linux: https://ollama.com/download"
-    echo "  2. Start it:"
-    echo "       Mac / Windows : open the Ollama app"
-    echo "       Linux         : run 'ollama serve' (or start the service)"
-    echo "  3. Leave it running — ./oi will continue automatically once it's up."
+    if command -v ollama >/dev/null 2>&1; then
+      # CLI present — start it ourselves, already bound to 0.0.0.0 (no later rebind).
+      bold "Starting native Ollama, bound to 0.0.0.0 for the Docker cli..."
+      ollama_serve_bound
+    else
+      echo
+      err "Native Ollama isn't running, and the 'ollama' CLI isn't installed."
+      bold "Get Ollama running to continue (it uses your GPU):"
+      echo "  1. Install it — Mac / Windows / Linux: https://ollama.com/download"
+      echo "  2. Open the Ollama app (or run 'ollama serve')."
+      echo "  3. Leave it running — ./oi continues automatically once it's up."
+    fi
     echo
     printf "Waiting for Ollama on localhost:11434"
     until native_ollama_up; do printf "."; sleep 2; done
@@ -249,7 +253,8 @@ ensure_native_ollama() {
     ok "Ollama is up."
   fi
 
-  # Make it reachable from the Docker cli (host.docker.internal needs a 0.0.0.0 bind).
+  # The Docker cli reaches Ollama via host.docker.internal, which needs a 0.0.0.0
+  # bind. If we started it above it's already correct; otherwise rebind it.
   ensure_ollama_lan_bind
 }
 
