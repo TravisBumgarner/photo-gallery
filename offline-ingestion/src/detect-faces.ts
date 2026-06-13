@@ -3,10 +3,8 @@ import path from 'node:path';
 import { isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { faces, photos } from 'shared/db/schema';
-import { loadConfig } from '@/config.js';
-
-const PARALLEL = 4;
-const LOCAL_IMAGES_DIR = path.resolve('../backend/public/images');
+import { imagesDir, loadConfig } from '@/config.js';
+import { settings } from '@/settings.js';
 
 interface DetectedFace {
   bbox: [number, number, number, number]; // [x1, y1, x2, y2] in pixels
@@ -22,8 +20,13 @@ interface DetectResponse {
 
 const RETRY_DELAYS_MS = [500, 1500, 3500];
 
+// If this many requests fail in a row (with no success resetting the streak),
+// the server is down/dying (crashed, OOM-killed, or unreachable) — stop and
+// abort with a non-zero exit instead of "failing" every remaining image silently.
+const ABORT_AFTER_CONSECUTIVE_FAILURES = 5;
+
 async function detectOnce(
-  faceHost: string,
+  visionHost: string,
   apiKey: string | undefined,
   imageBase64: string,
 ): Promise<DetectResponse> {
@@ -31,7 +34,7 @@ async function detectOnce(
     'Content-Type': 'application/json',
   };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const res = await fetch(`${faceHost}/detect`, {
+  const res = await fetch(`${visionHost}/detect`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ image: imageBase64 }),
@@ -53,14 +56,14 @@ function isRetryable(err: unknown): boolean {
 }
 
 async function detectWithRetry(
-  faceHost: string,
+  visionHost: string,
   apiKey: string | undefined,
   imageBase64: string,
 ): Promise<DetectResponse> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
-      return await detectOnce(faceHost, apiKey, imageBase64);
+      return await detectOnce(visionHost, apiKey, imageBase64);
     } catch (err) {
       lastErr = err;
       if (attempt === RETRY_DELAYS_MS.length || !isRetryable(err)) throw err;
@@ -75,13 +78,13 @@ function vecToBuffer(vec: Float32Array): Buffer {
 }
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
 
-  const faceHost = config.FACE_SERVER_HOST;
-  const apiKey = config.FACE_SERVER_API_KEY || undefined;
-  if (!faceHost) {
+  const visionHost = config.VISION_SERVER_HOST;
+  const apiKey = config.VISION_SERVER_API_KEY || undefined;
+  if (!visionHost) {
     console.error(
-      'FACE_SERVER_HOST must be set in .env.local (see README "Face Server").',
+      'VISION_SERVER_HOST must be set in .cli-cache (see README "Vision Server").',
     );
     process.exit(1);
   }
@@ -93,13 +96,14 @@ async function main() {
   }
 
   const db = createDb(path.resolve(localDbPath));
+  const localImagesDir = imagesDir(config);
 
-  // Sanity-check the face server is up before kicking off a long run.
+  // Sanity-check the vision server is up before kicking off a long run.
   try {
-    const res = await fetch(`${faceHost}/health`);
+    const res = await fetch(`${visionHost}/health`);
     if (!res.ok) throw new Error(`health ${res.status}`);
   } catch (err) {
-    console.error(`Face server not reachable at ${faceHost}: ${err}`);
+    console.error(`Vision server not reachable at ${visionHost}: ${err}`);
     process.exit(1);
   }
 
@@ -121,9 +125,9 @@ async function main() {
   const alreadyProcessed = totalRows - unprocessed.length;
 
   console.log(`--- Detect faces ---`);
-  console.log(`  Face server:  ${faceHost}${apiKey ? ' [auth]' : ''}`);
+  console.log(`  Vision server:  ${visionHost}${apiKey ? ' [auth]' : ''}`);
   console.log(`  Local DB:     ${localDbPath}`);
-  console.log(`  Images dir:   ${LOCAL_IMAGES_DIR}`);
+  console.log(`  Images dir:   ${localImagesDir}`);
   console.log(
     `  DB rows:      ${totalRows} (${alreadyProcessed} processed, ${unprocessed.length} pending)`,
   );
@@ -136,22 +140,25 @@ async function main() {
   const startTime = Date.now();
   let processed = 0;
   let failed = 0;
+  let consecutiveFailures = 0;
+  let aborted: unknown = null;
   let totalFacesFound = 0;
   let nextIndex = 0;
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
   async function worker() {
     while (true) {
+      if (aborted) return; // a systemic failure was detected — stop taking work
       const i = nextIndex++;
       if (i >= unprocessed.length) return;
       const row = unprocessed[i];
       try {
         const t0 = Date.now();
-        const filePath = path.join(LOCAL_IMAGES_DIR, row.originalPath);
+        const filePath = path.join(localImagesDir, row.originalPath);
         const buf = await fs.readFile(filePath);
         const b64 = buf.toString('base64');
         const tRead = Date.now();
-        const result = await detectWithRetry(faceHost!, apiKey, b64);
+        const result = await detectWithRetry(visionHost!, apiKey, b64);
         const tDetect = Date.now();
 
         // Normalize bbox to 0..1 against the image dims the server actually saw.
@@ -184,6 +191,7 @@ async function main() {
 
         const tDone = Date.now();
         processed++;
+        consecutiveFailures = 0; // a success clears the systemic-failure streak
         totalFacesFound += result.faces.length;
         const elapsed = (tDone - startTime) / 1000;
         const rate = processed / elapsed || 0;
@@ -192,16 +200,23 @@ async function main() {
         );
       } catch (err) {
         failed++;
+        consecutiveFailures++;
         console.error(
           `  [${processed + failed}/${unprocessed.length}] ${row.filename} FAILED: ${err}`,
         );
+        if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
+          aborted = err;
+        }
       }
     }
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(PARALLEL, unprocessed.length) }, () =>
-      worker(),
+    Array.from(
+      {
+        length: Math.min(settings.faces.detect.concurrency, unprocessed.length),
+      },
+      () => worker(),
     ),
   );
 
@@ -211,6 +226,24 @@ async function main() {
     `\n  Done: ${processed} ok, ${failed} failed, ${totalFacesFound} faces total in ${fmt(elapsed * 1000)} | ${rate.toFixed(2)} img/s`,
   );
 
+  if (aborted) {
+    console.error(
+      `\nAborted: ${ABORT_AFTER_CONSECUTIVE_FAILURES}+ requests failed in a row — the vision server looks down.`,
+    );
+    console.error(`  Last error: ${aborted}`);
+    console.error(
+      '  A crashed/OOM-killed or unreachable server. Check it is running and has',
+    );
+    console.error('  enough memory, then re-run.');
+    process.exit(1);
+  }
+
+  // Don't exit 0 if anything failed — otherwise the caller (oi) treats a fully
+  // failed run as success and the pipeline keeps going.
+  if (failed > 0) {
+    console.error(`\n${failed} image(s) failed — exiting non-zero.`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

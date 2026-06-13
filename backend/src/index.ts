@@ -7,7 +7,6 @@ import session from 'express-session';
 import helmet from 'helmet';
 import { config } from './config.js';
 import { requireAuth } from './middleware/auth.js';
-import { router as apiRouter } from './routes/api.js';
 import { router as authRouter } from './routes/auth.js';
 import { router as dogsRouter } from './routes/dogs.js';
 import { router as peopleRouter } from './routes/people.js';
@@ -108,7 +107,6 @@ app.use(
 );
 
 // Routes (protected)
-app.use('/api', apiRouter);
 app.use('/api', photosRouter);
 app.use('/api', peopleRouter);
 app.use('/api', dogsRouter);

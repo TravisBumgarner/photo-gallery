@@ -3,15 +3,19 @@ import { eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { faceClusters, faces } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
+import { settings } from '@/settings.js';
 
-// Tunables. ArcFace embeddings are L2-normalized so cosine distance = 1 - dot.
-// Same-person distances cluster around 0.1-0.4; different-people start around
-// 0.7+. Conservative thresholds to favor splits over false merges — the UI lets
-// you merge two clusters of the same person, but unmerging a wrong-merge means
+// Tunables (see faces.cluster in offline-ingestion.config.yaml). ArcFace
+// embeddings are L2-normalized so cosine distance = 1 - dot. Same-person
+// distances cluster around 0.1-0.4; different-people start around 0.7+.
+// Conservative thresholds favor splits over false merges — the UI lets you
+// merge two clusters of the same person, but unmerging a wrong-merge means
 // re-labeling everything.
-const DBSCAN_EPS = 0.45;
-const DBSCAN_MIN_PTS = 3;
-const STICKY_ASSIGN_DIST = 0.45; // join an existing labeled/ignored cluster if within this
+const {
+  eps: DBSCAN_EPS,
+  minPts: DBSCAN_MIN_PTS,
+  stickyAssignDist: STICKY_ASSIGN_DIST,
+} = settings.faces.cluster;
 
 interface FaceRow {
   id: number;
@@ -62,11 +66,7 @@ function meanNormalized(vecs: Float32Array[]): Float32Array {
   return out;
 }
 
-function dbscan(
-  points: Float32Array[],
-  eps: number,
-  minPts: number,
-): number[] {
+function dbscan(points: Float32Array[], eps: number, minPts: number): number[] {
   const n = points.length;
   const labels = new Array<number>(n).fill(-2); // -2 unvisited, -1 noise, >=0 cluster id
   let next = 0;
@@ -101,7 +101,7 @@ function dbscan(
 }
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
   if (!config.DATABASE_URL) {
     console.error('DATABASE_URL must be set.');
     process.exit(1);
@@ -119,8 +119,9 @@ async function main() {
     .from(faces);
 
   const faceData: FaceRow[] = faceRows
-    .filter((r): r is { id: number; embedding: Buffer; clusterId: number | null } =>
-      Buffer.isBuffer(r.embedding),
+    .filter(
+      (r): r is { id: number; embedding: Buffer; clusterId: number | null } =>
+        Buffer.isBuffer(r.embedding),
     )
     .map((r) => ({
       id: r.id,
@@ -177,7 +178,10 @@ async function main() {
   // Persist the clear in DB and remove transient cluster rows.
   if (transientIds.length > 0) {
     await chunked(transientIds, 500, (slice) =>
-      db.update(faces).set({ clusterId: null }).where(inArray(faces.clusterId, slice)),
+      db
+        .update(faces)
+        .set({ clusterId: null })
+        .where(inArray(faces.clusterId, slice)),
     );
     await chunked(transientIds, 500, (slice) =>
       db.delete(faceClusters).where(inArray(faceClusters.id, slice)),
@@ -208,7 +212,10 @@ async function main() {
     }
     for (const [cid, faceIds] of updatesByCluster) {
       await chunked(faceIds, 500, (slice) =>
-        db.update(faces).set({ clusterId: cid }).where(inArray(faces.id, slice)),
+        db
+          .update(faces)
+          .set({ clusterId: cid })
+          .where(inArray(faces.id, slice)),
       );
       assignedToSticky += faceIds.length;
     }
@@ -217,7 +224,9 @@ async function main() {
 
   // DBSCAN over the still-unassigned faces.
   const unassigned = faceData.filter((f) => f.clusterId === null);
-  console.log(`  Running DBSCAN on ${unassigned.length} remaining faces (eps=${DBSCAN_EPS}, minPts=${DBSCAN_MIN_PTS})...`);
+  console.log(
+    `  Running DBSCAN on ${unassigned.length} remaining faces (eps=${DBSCAN_EPS}, minPts=${DBSCAN_MIN_PTS})...`,
+  );
   const t0 = Date.now();
   const labels = dbscan(
     unassigned.map((f) => f.embedding),
@@ -248,7 +257,10 @@ async function main() {
       .returning({ id: faceClusters.id });
     const newId = inserted[0].id;
     await chunked(faceIds, 500, (slice) =>
-      db.update(faces).set({ clusterId: newId }).where(inArray(faces.id, slice)),
+      db
+        .update(faces)
+        .set({ clusterId: newId })
+        .where(inArray(faces.id, slice)),
     );
   }
 

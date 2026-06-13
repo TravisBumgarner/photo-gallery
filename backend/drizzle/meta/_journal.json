@@ -36,6 +36,13 @@
       "when": 1777584140127,
       "tag": "0004_dogs",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1781326369364,
+      "tag": "0005_drop_users",
+      "breakpoints": true
     }
   ]
 }

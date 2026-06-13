@@ -12,7 +12,7 @@ Usage:
     pip install -r requirements.txt
     python server.py
 
-On startup it prints the URL to use for FACE_SERVER_HOST in ingestion/.env.
+On startup it prints the URL to use for VISION_SERVER_HOST in ingestion/.env.
 The dog models are loaded lazily on first /detect-dogs call so face-only users
 don't pay the cost.
 """
@@ -27,11 +27,12 @@ import numpy as np
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from insightface.app import FaceAnalysis
+
 from PIL import Image
 from pydantic import BaseModel
 
 PORT = int(os.environ.get("PORT", 8090))
-API_KEY = os.environ.get("FACE_SERVER_API_KEY")  # optional bearer token
+API_KEY = os.environ.get("VISION_SERVER_API_KEY")  # optional bearer token
 DET_SIZE = int(os.environ.get("DET_SIZE", 640))  # bigger = catches smaller faces, slower
 DOG_DET_CONF = float(os.environ.get("DOG_DET_CONF", 0.5))
 

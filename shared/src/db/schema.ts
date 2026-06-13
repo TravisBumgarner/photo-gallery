@@ -161,12 +161,3 @@ export const dogs = sqliteTable(
     clusterIdIdx: index('idx_dogs_cluster_id').on(table.clusterId),
   }),
 );
-
-export const users = sqliteTable('users', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  email: text('email').notNull().unique(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(
-    () => new Date(),
-  ),
-});

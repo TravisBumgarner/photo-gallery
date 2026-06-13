@@ -1,0 +1,125 @@
+name: offline-ingestion
+
+# Spin up the model servers + label UI with `docker compose up -d`, and run
+# pipeline tasks through the one-shot `cli` service. The `./oi` launcher wraps
+# all of this with an interactive menu — you normally don't call compose directly.
+#
+# Paths are relative to this file (offline-ingestion/). Host data lives in
+# ../backend (sqlite.db, public/images, public/thumbnails, models) and is bind-
+# mounted at /data so writes persist on the host.
+
+services:
+  # Python vision sidecar (faces + dogs). The cli reaches it over the compose
+  # network (vision-server:8090); the host port is bound to 127.0.0.1 only, so it
+  # is NOT exposed on the LAN. Remote access goes through the auth gateway below
+  # (./oi --server), never this port directly.
+  vision-server:
+    build:
+      context: ./vision-server
+    image: offline-ingestion-vision-server
+    ports:
+      - "127.0.0.1:${VISION_SERVER_PORT:-8090}:8090"
+    environment:
+      PORT: "8090"
+      VISION_SERVER_API_KEY: "${VISION_SERVER_API_KEY:-}"
+      DET_SIZE: "${VISION_DET_SIZE:-640}"
+      DOG_DET_CONF: "${VISION_DOG_DET_CONF:-0.5}"
+      CONCURRENCY: "${VISION_CONCURRENCY:-4}"
+    volumes:
+      - insightface-cache:/root/.insightface
+      - hf-cache:/root/.cache/huggingface
+    restart: unless-stopped
+
+  # Auth gateway for serving the model servers to another machine. Started only by
+  # `./oi --server` (profile-gated, so normal local runs never bring it up). It is
+  # the ONLY port exposed on the LAN: a single bearer token (GATEWAY_TOKEN) fronts
+  # both the native Ollama (tagging) and the vision-server (faces/dogs). See
+  # Caddyfile for the routing.
+  gateway:
+    image: caddy:2-alpine
+    profiles: ["server"]
+    ports:
+      - "${GATEWAY_PORT:-8443}:8443"
+    environment:
+      # Set by `./oi --server` (it generates the token). Left empty otherwise — and
+      # an empty token makes Caddy demand a literal "Bearer " on every route, so it
+      # fails CLOSED. Don't use a mandatory (:?) guard here: compose interpolates
+      # this service even for unrelated commands (a plain local ingest, --tagging-ui),
+      # which would then error out on a token they never needed.
+      GATEWAY_TOKEN: "${GATEWAY_TOKEN:-}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    # Reach the host's native Ollama (GPU) from inside the container. Automatic on
+    # Docker Desktop (Mac/Win); host-gateway makes it work on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - vision-server
+    restart: unless-stopped
+
+  # Standalone tagging web UI (replaces the old frontend People/Dogs pages).
+  label-app:
+    build:
+      context: ..
+      dockerfile: offline-ingestion/Dockerfile
+    image: offline-ingestion-app
+    command: ["npm", "run", "label"]
+    ports:
+      - "${LABEL_PORT:-5180}:5180"
+    env_file:
+      - .cli-cache
+    environment:
+      DATABASE_URL: /data/sqlite.db
+      DESTINATION_DIRECTORY: /data/public
+      MODEL_CACHE_DIR: /data/models/bge-small-en-v1.5
+    volumes:
+      - ../backend:/data
+      - ./offline-ingestion.config.yaml:/app/offline-ingestion/offline-ingestion.config.yaml:ro
+    restart: unless-stopped
+
+  # One-shot task runner. Never started by `up` (profile gates it); the launcher
+  # invokes `docker compose run --rm cli npm run <task>`.
+  cli:
+    build:
+      context: ..
+      dockerfile: offline-ingestion/Dockerfile
+    image: offline-ingestion-app
+    profiles: ["cli"]
+    env_file:
+      - .cli-cache
+    environment:
+      DATABASE_URL: /data/sqlite.db
+      DESTINATION_DIRECTORY: /data/public
+      MODEL_CACHE_DIR: /data/models/bge-small-en-v1.5
+      SOURCE_DIR: /photos
+      DRY_RUN: "${DRY_RUN:-false}"
+      FILE_TRANSFER_MODE: "${FILE_TRANSFER_MODE:-copy}"
+      ASSUME_YES: "${ASSUME_YES:-1}"
+      # Model server URLs are set by ./oi from the one "model server host" you
+      # pick. Defaults here are for running compose directly: the Docker
+      # vision-server, and a native Ollama on the host (reached via host.docker.internal).
+      VISION_SERVER_HOST: "${VISION_SERVER_HOST:-http://vision-server:8090}"
+      MODEL_SERVER_HOST: "${MODEL_SERVER_HOST:-http://host.docker.internal:11434}"
+      MODEL_SERVER_MODEL: "${MODEL_SERVER_MODEL:-}"
+      MODEL_SERVER_API_KEY: "${MODEL_SERVER_API_KEY:-}"
+    # Lets the container reach a NATIVE model server running on the host (e.g. a
+    # GPU-backed Ollama) via host.docker.internal. Automatic on Docker Desktop
+    # (Mac/Win); this line makes it work on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../backend:/data
+      # Your photo library. ./oi sets SOURCE_DIR (and validates the folder exists)
+      # before running cli; the default only keeps compose parseable for the other
+      # services/subcommands that never start cli. Read-write so 'cut' mode works.
+      - "${SOURCE_DIR:-/nonexistent}:/photos"
+      - ./offline-ingestion.config.yaml:/app/offline-ingestion/offline-ingestion.config.yaml:ro
+
+  # Tagging's vision LLM runs on a NATIVE Ollama on the host (GPU), not in Docker —
+  # a CPU-only container is unusably slow for vision. ./oi walks you through
+  # installing it (https://ollama.com/download); the cli reaches it via
+  # host.docker.internal.
+
+volumes:
+  insightface-cache:
+  hf-cache:

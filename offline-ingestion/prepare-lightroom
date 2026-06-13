@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Lightroom prep step. Moves the export preset's viewing copies
+# (*_exported_for_viewing_locally.<ext>) OUT of your Lightroom export directory
+# and INTO the gallery's ingestion folder, preserving the nested folder
+# structure. Originals/RAW are left untouched in the Lightroom directory.
+#
+# Result: a clean ingestion folder containing only the viewing copies, mirroring
+# your Lightroom folders. Run this, then run ./oi pointed at that folder.
+#
+#   ./prepare-lightroom [LIGHTROOM_DIR] [INGESTION_DIR]
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# The suffix Lightroom's "export for viewing locally" preset appends.
+SUFFIX="_exported_for_viewing_locally"
+
+bold() { printf '\033[1m%s\033[0m\n' "$1"; }
+err()  { printf '\033[31m%s\033[0m\n' "$1" >&2; }
+ok()   { printf '\033[32m%s\033[0m\n' "$1"; }
+ask()  { local p="$1" d="${2:-}" a; read -rp "$p" a; echo "${a:-$d}"; }
+yes()  { local a; a=$(ask "$1 [y/N] " ""); [[ "$a" =~ ^[Yy] ]]; }
+env_get() { [[ -f .cli-cache ]] && grep -E "^$1=" .cli-cache | tail -1 | cut -d= -f2- || true; }
+expand() { echo "${1/#\~/$HOME}"; }
+
+src_default="${1:-$(env_get LIGHTROOM_DIR)}"
+SRC=$(expand "$(ask "Lightroom export folder [$src_default]: " "$src_default")")
+SRC="${SRC%/}"  # drop trailing slash, else the rel-path prefix strip below fails
+[[ -n "$SRC" && -d "$SRC" ]] || { err "Folder does not exist: '$SRC'"; exit 1; }
+
+dest_default="${2:-$(env_get SOURCE_DIR)}"
+DEST=$(expand "$(ask "Ingestion folder [$dest_default]: " "$dest_default")")
+DEST="${DEST%/}"
+[[ -n "$DEST" ]] || { err "No ingestion folder given."; exit 1; }
+mkdir -p "$DEST"
+
+if [[ "$SRC" -ef "$DEST" ]]; then
+  err "Lightroom folder and ingestion folder are the same — nothing to move."
+  exit 1
+fi
+
+count=$(find "$SRC" -type f -name "*${SUFFIX}.*" | wc -l | tr -d ' ')
+bold "Found $count *${SUFFIX} files under $SRC"
+[[ "$count" -gt 0 ]] || { ok "Nothing to move."; exit 0; }
+echo "They'll be MOVED into $DEST (folder structure preserved; originals left in place)."
+yes "Proceed?" || { echo "Aborted."; exit 0; }
+
+moved=0
+# -print0 / read -d '' so paths with spaces are safe.
+while IFS= read -r -d '' f; do
+  rel="${f#"$SRC"/}"
+  mkdir -p "$DEST/$(dirname "$rel")"
+  mv "$f" "$DEST/$rel"
+  moved=$((moved + 1))
+done < <(find "$SRC" -type f -name "*${SUFFIX}.*" -print0)
+
+ok "Moved $moved files into $DEST"
+echo "Next: ./oi  (point it at $DEST)"

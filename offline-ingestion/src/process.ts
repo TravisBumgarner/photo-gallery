@@ -7,6 +7,7 @@ import {
   approximateAspectRatio,
   createThumbnail,
   generateBlurhash,
+  transferFullImage,
 } from '@/image.js';
 import { deriveTagsFromPath } from '@/scan.js';
 
@@ -33,10 +34,7 @@ export interface PhotoRecord {
   keywords: string | null;
 }
 
-function generateUUID(
-  relativePath: string,
-  dateCaptured: Date | null,
-): string {
+function generateUUID(relativePath: string, dateCaptured: Date | null): string {
   const dateStr = dateCaptured ? dateCaptured.toISOString() : 'no-date';
   const uniqueString = `${relativePath}-${dateStr}`;
   return createHash('sha256')
@@ -83,11 +81,15 @@ export async function processImage(
   // Generate blurhash from source
   const blurhash = await generateBlurhash(imagePath);
 
-  // Transfer original to output with hash-based name
-  await fs.copyFile(imagePath, outputImagePath);
+  // Transfer original to output with hash-based name (optionally downscaled
+  // per images.full.maxDimension). Returns new metadata only when re-encoded.
+  const transferred = await transferFullImage(imagePath, outputImagePath);
   if (fileTransferMode === 'cut') {
     await fs.unlink(imagePath);
   }
+  const outWidth = transferred?.width ?? width;
+  const outHeight = transferred?.height ?? height;
+  const outSize = transferred?.size ?? size;
 
   // Derive tags from folder structure
   const tags = deriveTagsFromPath(imagePath, sourceDir);
@@ -95,7 +97,7 @@ export async function processImage(
 
   // Calculate aspect ratio
   const aspectRatio =
-    width && height ? approximateAspectRatio(width, height) : 1;
+    outWidth && outHeight ? approximateAspectRatio(outWidth, outHeight) : 1;
 
   return {
     uuid,
@@ -103,10 +105,10 @@ export async function processImage(
     originalPath: hashFilename,
     thumbnailPath: `thumbnails/${thumbnailFilename}`,
     blurhash,
-    width,
-    height,
+    width: outWidth,
+    height: outHeight,
     aspectRatio,
-    fileSize: size,
+    fileSize: outSize,
     mimeType: format ? `image/${format}` : 'image/jpeg',
     ...exifData,
     keywords,

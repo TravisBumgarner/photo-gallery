@@ -11,6 +11,9 @@ const VALID_IMAGE_EXTENSIONS = [
   '.webp',
 ];
 
+// Recursively collect every valid image file under `dir`. The ingest is
+// preprocessing-agnostic — it processes whatever is in the folder, however it
+// got there (see README "Prepare the Photo Ingestion Directory").
 export async function scanDirectory(dir: string): Promise<string[]> {
   const files: string[] = [];
 
@@ -24,14 +27,7 @@ export async function scanDirectory(dir: string): Promise<string[]> {
         await scan(fullPath);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
-        const nameWithoutExt = path.basename(
-          entry.name,
-          path.extname(entry.name),
-        );
-        if (
-          VALID_IMAGE_EXTENSIONS.includes(ext) &&
-          nameWithoutExt.endsWith('_exported_for_viewing_locally')
-        ) {
+        if (VALID_IMAGE_EXTENSIONS.includes(ext)) {
           files.push(fullPath);
         }
       }

@@ -1,38 +1,21 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import readline from 'node:readline';
 import { sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
 import { endExiftool } from '@/exif.js';
-import { processImage } from '@/process.js';
 import type { PhotoRecord } from '@/process.js';
+import { processImage } from '@/process.js';
+import { confirm } from '@/prompt.js';
 import { scanDirectory } from '@/scan.js';
+import { settings } from '@/settings.js';
 
-const PARALLEL_BATCH_SIZE = 20;
-
-function prompt(message: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question(message, (answer) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase());
-    });
-  });
-}
-
-async function confirm(message: string): Promise<boolean> {
-  const answer = await prompt(`${message} (y/n) `);
-  return answer === 'y';
-}
+const PARALLEL_BATCH_SIZE = settings.ingest.batchSize;
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
 
   const rawSourceDir = config.SOURCE_DIR;
   const sourceDir = rawSourceDir.startsWith('~')
@@ -74,7 +57,7 @@ async function main() {
   const imagePaths = await scanDirectory(sourceDir);
   console.log(`Found ${imagePaths.length} images\n`);
 
-  let records: PhotoRecord[] = [];
+  const records: PhotoRecord[] = [];
 
   if (imagePaths.length === 0) {
     console.log('No images found in SOURCE_DIR.');

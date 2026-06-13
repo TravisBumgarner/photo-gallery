@@ -16,6 +16,12 @@ const FILES = {
 
 export const EMBED_DIM = 384;
 
+// Abort a download if no bytes arrive for this long. A progressing (even slow)
+// download keeps resetting it; only a truly stalled/unreachable host trips it —
+// so the first-run fetch can't hang forever with no feedback.
+const DOWNLOAD_STALL_TIMEOUT_MS = 60_000;
+const DOWNLOAD_RETRIES = 3;
+
 async function downloadIfMissing(
   cacheDir: string,
   filename: string,
@@ -23,17 +29,74 @@ async function downloadIfMissing(
   const local = path.join(cacheDir, path.basename(filename));
   try {
     await fsp.access(local);
-    return local;
+    return local; // already cached — instant
   } catch {
     // not cached
   }
   await fsp.mkdir(cacheDir, { recursive: true });
   const url = `https://huggingface.co/${MODEL_REPO}/resolve/main/${filename}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`download failed ${res.status} for ${url}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  await fsp.writeFile(local, buf);
-  return local;
+  const base = path.basename(filename);
+  const tmp = `${local}.part`;
+  const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`;
+
+  for (let attempt = 1; attempt <= DOWNLOAD_RETRIES; attempt++) {
+    const ctrl = new AbortController();
+    let timer = setTimeout(() => ctrl.abort(), DOWNLOAD_STALL_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.body) throw new Error('empty response body');
+      const total = Number(res.headers.get('content-length') ?? 0);
+      console.log(
+        `  Downloading ${base}${total ? ` (${mb(total)})` : ''} from HuggingFace — one-time, cached after.`,
+      );
+
+      // Stream to a .part file, resetting the stall timer on each chunk, then
+      // rename into place so an interrupted download never leaves a corrupt
+      // cache file that would poison later runs.
+      const out = fs.createWriteStream(tmp);
+      let received = 0;
+      let nextMark = 0.25;
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        clearTimeout(timer);
+        timer = setTimeout(() => ctrl.abort(), DOWNLOAD_STALL_TIMEOUT_MS);
+        out.write(Buffer.from(value));
+        received += value.length;
+        if (total > 5e6 && received / total >= nextMark) {
+          console.log(`    ${base}: ${Math.round((received / total) * 100)}%`);
+          nextMark += 0.25;
+        }
+      }
+      await new Promise<void>((resolve, reject) => {
+        out.on('error', reject);
+        out.end(() => resolve());
+      });
+      clearTimeout(timer);
+      await fsp.rename(tmp, local);
+      return local;
+    } catch (err) {
+      clearTimeout(timer);
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+      const reason =
+        (err as Error)?.name === 'AbortError'
+          ? `stalled (no data for ${DOWNLOAD_STALL_TIMEOUT_MS / 1000}s)`
+          : String((err as Error)?.message ?? err);
+      if (attempt === DOWNLOAD_RETRIES) {
+        throw new Error(
+          `Failed to download ${base} from ${url} after ${DOWNLOAD_RETRIES} attempts: ${reason}`,
+        );
+      }
+      console.error(
+        `  ${base} download failed (${reason}) — retrying (${attempt}/${DOWNLOAD_RETRIES})…`,
+      );
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+  // Unreachable: the loop either returns or throws on the final attempt.
+  throw new Error(`Failed to download ${base}`);
 }
 
 export class WasmEmbedder {

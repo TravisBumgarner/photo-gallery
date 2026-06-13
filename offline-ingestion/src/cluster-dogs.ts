@@ -3,14 +3,18 @@ import { eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { dogClusters, dogs } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
+import { settings } from '@/settings.js';
 
-// Dog (DINOv2) embeddings are noisier than ArcFace face embeddings. Same-dog
-// distances are typically 0.15-0.4; different dogs cluster around 0.5+. Use
-// tighter thresholds than faces to favor splits over false merges — merging
-// the wrong two dogs is hard to undo without re-labeling.
-const DBSCAN_EPS = 0.35;
-const DBSCAN_MIN_PTS = 3;
-const STICKY_ASSIGN_DIST = 0.35;
+// Tunables (see dogs.cluster in offline-ingestion.config.yaml). Dog (DINOv2)
+// embeddings are noisier than ArcFace face embeddings. Same-dog distances are
+// typically 0.15-0.4; different dogs cluster around 0.5+. Tighter thresholds
+// than faces favor splits over false merges — merging the wrong two dogs is
+// hard to undo without re-labeling.
+const {
+  eps: DBSCAN_EPS,
+  minPts: DBSCAN_MIN_PTS,
+  stickyAssignDist: STICKY_ASSIGN_DIST,
+} = settings.dogs.cluster;
 
 interface DogRow {
   id: number;
@@ -49,11 +53,7 @@ function meanNormalized(vecs: Float32Array[]): Float32Array {
   return out;
 }
 
-function dbscan(
-  points: Float32Array[],
-  eps: number,
-  minPts: number,
-): number[] {
+function dbscan(points: Float32Array[], eps: number, minPts: number): number[] {
   const n = points.length;
   const labels = new Array<number>(n).fill(-2);
   let next = 0;
@@ -98,7 +98,7 @@ async function chunked<T>(
 }
 
 async function main() {
-  const config = loadConfig('local');
+  const config = loadConfig();
   if (!config.DATABASE_URL) {
     console.error('DATABASE_URL must be set.');
     process.exit(1);
@@ -116,8 +116,9 @@ async function main() {
     .from(dogs);
 
   const dogData: DogRow[] = dogRows
-    .filter((r): r is { id: number; embedding: Buffer; clusterId: number | null } =>
-      Buffer.isBuffer(r.embedding),
+    .filter(
+      (r): r is { id: number; embedding: Buffer; clusterId: number | null } =>
+        Buffer.isBuffer(r.embedding),
     )
     .map((r) => ({
       id: r.id,
@@ -167,7 +168,10 @@ async function main() {
 
   if (transientIds.length > 0) {
     await chunked(transientIds, 500, (slice) =>
-      db.update(dogs).set({ clusterId: null }).where(inArray(dogs.clusterId, slice)),
+      db
+        .update(dogs)
+        .set({ clusterId: null })
+        .where(inArray(dogs.clusterId, slice)),
     );
     await chunked(transientIds, 500, (slice) =>
       db.delete(dogClusters).where(inArray(dogClusters.id, slice)),
