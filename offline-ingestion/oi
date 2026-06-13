@@ -374,7 +374,9 @@ start_local_models() {
     bold "Starting vision-server (this machine)..."
     dim "(building the Python vision image — large; first time takes a while. --verbose for full logs)"
     compose_build vision-server
-    docker compose up -d vision-server
+    # --remove-orphans clears the pre-rename 'face-server' container, which would
+    # otherwise still hold port 8090 and block vision-server from binding it.
+    docker compose up -d --remove-orphans vision-server
   fi
 }
 
@@ -467,7 +469,9 @@ if [[ "$SERVER" == true ]]; then
   bold "Starting vision-server + gateway..."
   dim "(building images — first time is slow; --verbose for full logs)"
   compose_build vision-server gateway
-  docker compose --profile server up -d vision-server gateway
+  # --remove-orphans clears the pre-rename 'face-server' container that would
+  # otherwise still hold port 8090 and block vision-server from binding it.
+  docker compose --profile server up -d --remove-orphans vision-server gateway
 
   # Gate on the gateway answering, then confirm Ollama is reachable THROUGH it.
   printf "Waiting for gateway on :%s" "$GATEWAY_PORT"
