@@ -21,18 +21,13 @@ if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
 fi
 
-if [ ! -f offline-ingestion/.env.local ]; then
-  echo "Creating offline-ingestion/.env.local from .env.example..."
-  cp offline-ingestion/.env.example offline-ingestion/.env.local
-fi
-
 # Apply existing Drizzle migrations to SQLite
 echo "Running database migrations..."
 npm run db:migrate
 
 # Next steps:
-#   1. Edit backend/.env and ingestion/.env with your settings (see README for details)
+#   1. Edit backend/.env with your settings (see README for details)
 #   2. Run 'npm run dev' to start (frontend on :5200, backend on :8084)
-#   3. See README for ingestion and deployment instructions
+#   3. For ingestion, run ./oi from offline-ingestion/ (see offline-ingestion/README.md)
 echo ""
 echo "Done! Edit .env files if needed, then run 'npm run dev' to start."

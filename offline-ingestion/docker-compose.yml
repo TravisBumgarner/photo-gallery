@@ -114,8 +114,6 @@ services:
       # services/subcommands that never start cli. Read-write so 'cut' mode works.
       - "${SOURCE_DIR:-/nonexistent}:/photos"
       - ./offline-ingestion.config.yaml:/app/offline-ingestion/offline-ingestion.config.yaml:ro
-      # SSH keys for sync-to-prod (harmless if unused).
-      - "${HOME}/.ssh:/root/.ssh:ro"
 
   # Tagging's vision LLM runs on a NATIVE Ollama on the host (GPU), not in Docker —
   # a CPU-only container is unusably slow for vision. ./oi walks you through

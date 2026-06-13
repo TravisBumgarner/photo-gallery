@@ -4,9 +4,9 @@
 # `backend`'s drizzle migrations when creating a fresh database.
 FROM node:20-bookworm-slim
 
-# better-sqlite3 compiles from source; openssh-client is for sync-to-prod.
+# better-sqlite3 compiles from source.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 make g++ openssh-client ca-certificates \
+      python3 make g++ ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
