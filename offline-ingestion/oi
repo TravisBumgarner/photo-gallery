@@ -301,6 +301,45 @@ check_models() { # check_models <host>
   return 0
 }
 
+# Verify the cli can reach a REMOTE gateway from inside a CONTAINER — the path it
+# actually uses. The host being able to curl it is NOT enough: Docker Desktop on
+# macOS reaches the internet and the host fine but not other LAN machines unless
+# Docker is granted the "Local Network" privacy permission. We probe with the
+# project's own image (no extra download); only a not-yet-built image (first run)
+# falls back to a host curl. Prints the verdict itself; returns 0 only when good.
+check_gateway() { # check_gateway <host> ; uses $GATEWAY_TOKEN, $GATEWAY_PORT
+  local h="$1" gw="http://${1}:${GATEWAY_PORT:-8443}" rc code have_img=false
+  docker image inspect offline-ingestion-app >/dev/null 2>&1 && have_img=true
+  [[ "$have_img" == false ]] && dim "(cli image not built yet — probing from the host this run; the in-container check runs next time)"
+  printf "Checking the model server at %s ... " "$gw"
+  if [[ "$have_img" == true ]]; then
+    docker run --rm offline-ingestion-app node -e '
+const [base, tok] = process.argv.slice(1);
+fetch(base + "/api/tags", { headers: { Authorization: "Bearer " + tok }, signal: AbortSignal.timeout(8000) })
+  .then(r => process.exit(r.ok ? 0 : ((r.status === 401 || r.status === 403) ? 2 : 3)))
+  .catch(() => process.exit(1));
+' "$gw" "$GATEWAY_TOKEN" >/dev/null 2>&1
+    rc=$?
+  else
+    code="$(curl -s -m 8 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GATEWAY_TOKEN" "${gw}/api/tags" 2>/dev/null)"
+    case "$code" in 2*) rc=0 ;; 401|403) rc=2 ;; ''|000) rc=1 ;; *) rc=3 ;; esac
+  fi
+  case "$rc" in
+    0) ok "reachable." ; return 0 ;;
+    2) echo; err "Reached the gateway, but the token was rejected — check it and re-enter." ; return 1 ;;
+    3) echo; err "Reached the gateway, but it couldn't serve /api/tags — the model server"
+       err "(Ollama) on $h may be down. Start it there, or re-enter the host." ; return 1 ;;
+    *) echo; err "Couldn't reach the gateway at $gw from a container:"
+       err "  • Is $h on and running './oi --server'?  Is the IP/port correct?"
+       if [[ "$(uname -s)" == Darwin ]]; then
+         err "  • macOS: System Settings → Privacy & Security → Local Network → turn ON Docker."
+         err "    Docker Desktop reaches the internet and this Mac but NOT other LAN"
+         err "    machines without that permission — restart Docker Desktop after enabling."
+       fi
+       return 1 ;;
+  esac
+}
+
 # Native Ollama (GPU) setup for tagging. Runs BEFORE any Docker work so the
 # is-it-running check / start prompt happens up front, not behind a slow build.
 setup_native_ollama() {
@@ -539,24 +578,35 @@ if [[ "$need_models" == true ]]; then
   dim "(tagging uses a native Ollama on your GPU — ./oi checks it's running first)."
   dim "Or enter another machine's IP/hostname (one it's serving via ./oi --server)."
   dhost="$(env_get COMPUTE_HOST)"; dhost="${dhost:-localhost}"
-  set_model_urls "$(ask "Model server host [$dhost]: " "$dhost")"
-  env_set COMPUTE_HOST "$COMPUTE_HOST"
-  if [[ "$models_local" == false ]]; then
+  # Re-ask host (+token) until the gateway is actually reachable, or 'localhost'.
+  while :; do
+    set_model_urls "$(ask "Model server host [$dhost]: " "$dhost")"
+    dhost="$COMPUTE_HOST"                       # a reprompt defaults to what was just tried
+    if [[ "$models_local" == true ]]; then
+      env_set COMPUTE_HOST "$COMPUTE_HOST"      # local Ollama is checked later (setup_native_ollama)
+      break
+    fi
     dim "That machine must be running './oi --server' — it prints its IP and a token."
     # One token fronts both model servers via the gateway; the cli sends it to each.
-    # The token is saved in .cli-cache, so on repeat runs we mask it as ****** and
-    # just Enter reuses it — paste a new value only to change it.
+    # Saved in .cli-cache, so on repeat runs we mask it as ****** and Enter reuses it.
     saved_token="$(env_get GATEWAY_TOKEN)"
     if [[ -n "$saved_token" ]]; then
       GATEWAY_TOKEN="$(ask "Gateway token [****** — Enter to reuse saved]: " "$saved_token")"
     else
       GATEWAY_TOKEN="$(ask "Gateway token: " "")"
     fi
-    env_set GATEWAY_TOKEN "$GATEWAY_TOKEN"
     export MODEL_SERVER_API_KEY="$GATEWAY_TOKEN" VISION_SERVER_API_KEY="$GATEWAY_TOKEN"
-    env_set MODEL_SERVER_API_KEY "$GATEWAY_TOKEN"
-    env_set VISION_SERVER_API_KEY "$GATEWAY_TOKEN"
-  fi
+    # Confirm the cli can actually reach it before committing to a long run. On
+    # failure check_gateway explains why and we loop back to re-ask host + token.
+    if check_gateway "$COMPUTE_HOST"; then
+      env_set COMPUTE_HOST "$COMPUTE_HOST"
+      env_set GATEWAY_TOKEN "$GATEWAY_TOKEN"
+      env_set MODEL_SERVER_API_KEY "$GATEWAY_TOKEN"
+      env_set VISION_SERVER_API_KEY "$GATEWAY_TOKEN"
+      break
+    fi
+    echo; dim "Re-enter the host (or type 'localhost' to run the models on this machine)."
+  done
 fi
 
 # Tagging model + optional key — only when tagging.
