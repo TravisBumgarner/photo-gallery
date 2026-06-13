@@ -95,7 +95,7 @@ app.use(requireAuth);
 
 // Serve static files (protected) with immutable caching.
 // CORP override: helmet's default `same-origin` blocks embedding from other origins
-// (e.g. the frontend-v2 dev server on a different port). These are public media URLs,
+// (e.g. the frontend dev server on a different port). These are public media URLs,
 // so `cross-origin` is appropriate.
 const staticCacheOptions = { maxAge: '1y', immutable: true };
 const allowCrossOriginEmbed = (

@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Full-stack deploy of backend + frontend-v2 (Expo web export) to the v2 NFS site.
+# Full-stack deploy of backend + frontend (Expo web export) to the v2 NFS site.
 #   Site:  https://photo-gallery-v2.nfshost.com/
 #   SSH:   nfs_photo-gallery-v2  (alias in ~/.ssh/config, same nfs_key as v1)
 #
-# Mirrors deploy.sh but: targets the v2 site, and builds the frontend-v2 Expo
+# Mirrors deploy.sh but: targets the v2 site, and builds the frontend Expo
 # web export (instead of the Vite frontend) into the frontend-dist the backend serves.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,9 +20,9 @@ echo "🧱 Building project locally..."
 echo "📦 Installing dependencies..."
 npm install
 
-echo "🎨 Building frontend-v2 (Expo web static export, API: $API_BASE_URL)..."
-rm -rf frontend-v2/dist
-( cd frontend-v2 && EXPO_PUBLIC_API_BASE_URL="$API_BASE_URL" \
+echo "🎨 Building frontend (Expo web static export, API: $API_BASE_URL)..."
+rm -rf frontend/dist
+( cd frontend && EXPO_PUBLIC_API_BASE_URL="$API_BASE_URL" \
     npx expo export --platform web --output-dir dist )
 
 echo "🖥️ Building backend (TypeScript)..."
@@ -84,10 +84,10 @@ rsync -azPh --delete \
   backend/drizzle/ \
   "$REMOTE:$REMOTE_DIR/drizzle/"
 
-echo "🎨 Syncing frontend-v2 dist..."
+echo "🎨 Syncing frontend dist..."
 rsync -azPh --delete \
   --timeout=300 \
-  frontend-v2/dist/ \
+  frontend/dist/ \
   "$REMOTE:$REMOTE_DIR/frontend-dist/"
 
 # Generate the production .env: clone local backend/.env, but force prod values.

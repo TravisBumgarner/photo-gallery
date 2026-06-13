@@ -15,7 +15,6 @@
 # don't need its source or deps in the image.
 frontend
 !frontend/package.json
-frontend-v2
 claude-brain
 designs
 readme

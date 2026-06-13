@@ -1,22 +1,20 @@
 {
   "name": "photo-gallery",
   "version": "1.0.0",
-  "description": "Full-stack app with React, Vite, Express, and Drizzle ORM",
+  "description": "Full-stack app with React Native (Expo), Express, and Drizzle ORM",
   "workspaces": [
     "shared",
     "backend",
     "offline-ingestion",
-    "frontend",
-    "frontend-v2"
+    "frontend"
   ],
   "scripts": {
     "setup": "bash bootstrap.sh",
     "dev:backend": "npm run dev -w backend",
-    "dev:frontend": "npm run start -w frontend-v2",
-    "dev:frontend-legacy": "npm run dev -w frontend",
-    "dev:frontend-web": "npm run web -w frontend-v2",
-    "dev:frontend-ios": "npm run ios -w frontend-v2",
-    "build": "npm run build -w backend && npm run build -w frontend",
+    "dev:frontend": "npm run start -w frontend",
+    "dev:frontend-web": "npm run web -w frontend",
+    "dev:frontend-ios": "npm run ios -w frontend",
+    "build": "npm run build -w backend",
     "db:generate": "npm run db:generate -w backend",
     "db:migrate": "npm run db:migrate -w backend",
     "db:studio": "npm run db:studio -w backend",
