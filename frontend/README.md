@@ -1,4 +1,4 @@
-# frontend-v2
+# frontend
 
 Expo (React Native) client for the photo-gallery app — runs on iOS, Android, and web.
 

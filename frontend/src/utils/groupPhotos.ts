@@ -1,4 +1,4 @@
-import type { Photo } from '@/types';
+import type { Photo } from '../lib/types';
 
 export interface PhotoSection {
   key: string;
@@ -44,9 +44,7 @@ function getGroupLabel(key: string, sortBy: string): string {
       return `${monthName} ${year}`;
     }
     case 'camera':
-      return key;
     case 'filename':
-      return key;
     default:
       return key;
   }

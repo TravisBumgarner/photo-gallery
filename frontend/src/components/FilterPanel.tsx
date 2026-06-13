@@ -1,1748 +1,1343 @@
+import { MaterialIcons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import { apiFetch } from '../lib/api';
 import {
-  CalendarMonth as CalendarMonthIcon,
-  Check as CheckIcon,
-  ChevronLeft as ChevronLeftIcon,
-  ExpandLess as ExpandLessIcon,
-  ExpandMore as ExpandMoreIcon,
-  Logout as LogoutIcon,
-  Star as StarIcon,
-} from '@mui/icons-material';
-import {
-  Box,
-  Button,
-  Chip,
-  Collapse,
-  IconButton,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  MenuItem,
-  Rating,
-  Select,
-  Slider,
-  Stack,
-  Typography,
-} from '@mui/material';
-import {
-  eachDayOfInterval,
-  endOfMonth,
-  format,
-  getDay,
-  parseISO,
-  startOfMonth,
-} from 'date-fns';
-import { memo, useEffect, useState } from 'react';
-import SearchBar from '@/components/SearchBar';
-import type { PhotoFilters } from '@/types';
+  FILTER_SECTIONS,
+  type FilterSectionKey,
+  setAllFilterSectionsExpanded,
+  toggleFilterSectionExpanded,
+  useSettings,
+} from '../lib/settings';
+import type { PhotoFilters } from '../lib/types';
+import { FONT_SIZES, SPACING } from '../styles/styleConsts';
+import { usePalette } from '../styles/usePalette';
+import SharedCollapsibleSection from './CollapsibleSection';
+import DateRangeCalendar from './DateRangeCalendar';
+import FilterListModal, {
+  type FilterListOption,
+} from './FilterListModal';
+import RangeSlider from './RangeSlider';
+import { Tooltip } from './Tooltip';
+
+type ListModalKey = 'camera' | 'lens' | 'keywords' | 'people' | 'dogs';
 
 interface FilterPanelProps {
   filters: PhotoFilters;
   onFilterChange: (filters: Partial<PhotoFilters>) => void;
-  onClose: () => void;
-  onLogout: () => void;
 }
 
-const sectionSx = {
-  bgcolor: 'action.hover',
-  p: 0.75,
+const LABEL_OPTIONS = ['Red', 'Yellow', 'Green', 'Blue', 'Purple'];
+const ASPECT_OPTIONS = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16'];
+const ORIENTATION_OPTIONS = ['landscape', 'portrait', 'square'];
+const LABEL_COLORS: Record<string, string> = {
+  Red: '#f44336',
+  Yellow: '#ffeb3b',
+  Green: '#4caf50',
+  Blue: '#2196f3',
+  Purple: '#9c27b0',
 };
 
-const aspectRatioOptions = [
-  { label: '1x1', value: '1' },
-  { label: '2x3', value: '0.67' },
-  { label: '4x5', value: '0.8' },
-  { label: '5x7', value: '0.71' },
-  { label: '9x16', value: '0.56' },
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
-const orientationOptions = [
-  { label: 'Landscape', value: 'landscape' },
-  { label: 'Portrait', value: 'portrait' },
-  { label: 'Square', value: 'square' },
-];
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-type AccordionSection =
-  | 'general'
-  | 'camera'
-  | 'lens'
-  | 'people'
-  | 'dogs'
-  | 'aspectRatio'
-  | 'dates'
-  | 'tags';
-
-function toggleInList(current: string | undefined, value: string): string {
-  const items = current ? current.split(',').filter(Boolean) : [];
-  const index = items.indexOf(value);
-  if (index >= 0) {
-    items.splice(index, 1);
-  } else {
-    items.push(value);
-  }
-  return items.join(',');
-}
-
-function isInList(current: string | undefined, value: string): boolean {
-  if (!current) return false;
-  return current.split(',').includes(value);
-}
-
-function SectionHeader({
-  label,
-  section,
-  expandedSection,
-  onToggle,
-  hasActiveFilter,
-  onClear,
-}: {
+interface LabelOption {
   label: string;
-  section: AccordionSection;
-  expandedSection: AccordionSection | null;
-  onToggle: (section: AccordionSection) => void;
-  hasActiveFilter: boolean;
-  onClear: () => void;
-}) {
-  const isExpanded = expandedSection === section;
-  return (
-    <Box
-      onClick={() => onToggle(section)}
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        py: { xs: 1.5, sm: 0.5 },
-        px: { xs: 1, sm: 0.25 },
-        cursor: 'pointer',
-        '&:hover': { bgcolor: 'action.hover' },
-        borderRadius: 0.5,
-      }}
-    >
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
-        <Typography variant="caption" fontWeight="600">
-          {label}
-        </Typography>
-        {hasActiveFilter && (
-          <Typography
-            variant="caption"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClear();
-            }}
-            sx={{
-              cursor: 'pointer',
-              color: 'text.secondary',
-              '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
-              fontSize: '0.65rem',
-              px: 0.75,
-              py: 0.25,
-              borderRadius: 0.5,
-              border: '1px solid',
-              borderColor: 'text.secondary',
-            }}
-          >
-            Clear
-          </Typography>
-        )}
-      </Stack>
-      {isExpanded ? (
-        <ExpandLessIcon sx={{ fontSize: 16 }} />
-      ) : (
-        <ExpandMoreIcon sx={{ fontSize: 16 }} />
-      )}
-    </Box>
-  );
+  count: number;
 }
 
-const FilterPanel = memo(function FilterPanel({
+function countCsv(value: string | undefined): number {
+  if (!value) return 0;
+  return value.split(',').filter(Boolean).length;
+}
+
+function getSectionActiveCount(
+  key: FilterSectionKey,
+  filters: PhotoFilters,
+): number {
+  switch (key) {
+    case 'rating':
+      return filters.rating && filters.rating > 0 ? 1 : 0;
+    case 'label':
+      return filters.label ? 1 : 0;
+    case 'aspectRatio':
+      return filters.aspectRatio ? 1 : 0;
+    case 'orientation':
+      return filters.orientation ? 1 : 0;
+    case 'camera':
+      return countCsv(filters.camera);
+    case 'lens':
+      return countCsv(filters.lens);
+    case 'dateRange':
+      return filters.startDate || filters.endDate ? 1 : 0;
+    case 'calendar':
+      return countCsv(filters.selectedMonths) + countCsv(filters.selectedDates);
+    case 'iso':
+      return filters.minIso !== undefined || filters.maxIso !== undefined
+        ? 1
+        : 0;
+    case 'aperture':
+      return filters.minAperture !== undefined ||
+        filters.maxAperture !== undefined
+        ? 1
+        : 0;
+    case 'keywords':
+      return countCsv(filters.keyword);
+    case 'people':
+      return countCsv(filters.people);
+    case 'dogs':
+      return countCsv(filters.dogs);
+    default:
+      return 0;
+  }
+}
+
+/** Filter-key patch that resets a section to its inactive state. */
+function getSectionClear(key: FilterSectionKey): Partial<PhotoFilters> {
+  switch (key) {
+    case 'rating':
+      return { rating: undefined };
+    case 'label':
+      return { label: undefined };
+    case 'aspectRatio':
+      return { aspectRatio: undefined };
+    case 'orientation':
+      return { orientation: undefined };
+    case 'camera':
+      return { camera: undefined };
+    case 'lens':
+      return { lens: undefined };
+    case 'dateRange':
+      return { startDate: undefined, endDate: undefined };
+    case 'calendar':
+      return { selectedMonths: undefined, selectedDates: undefined };
+    case 'iso':
+      return { minIso: undefined, maxIso: undefined };
+    case 'aperture':
+      return { minAperture: undefined, maxAperture: undefined };
+    case 'keywords':
+      return { keyword: undefined };
+    case 'people':
+      return { people: undefined };
+    case 'dogs':
+      return { dogs: undefined };
+    default:
+      return {};
+  }
+}
+
+export default function FilterPanel({
   filters,
   onFilterChange,
-  onClose,
-  onLogout,
 }: FilterPanelProps) {
+  const palette = usePalette();
+  const {
+    visibleFilterSections: visibleSections,
+    expandedFilterSections: expandedSections,
+    filterSectionMode,
+    filterSectionOrder,
+  } = useSettings();
+
+  const [people, setPeople] = useState<LabelOption[]>([]);
+  const [dogs, setDogs] = useState<LabelOption[]>([]);
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordCounts, setKeywordCounts] = useState<Record<string, number>>(
+    {},
+  );
   const [cameras, setCameras] = useState<string[]>([]);
+  const [cameraCounts, setCameraCounts] = useState<Record<string, number>>({});
   const [lenses, setLenses] = useState<string[]>([]);
-  const [people, setPeople] = useState<{ label: string; count: number }[]>([]);
-  const [dogs, setDogs] = useState<{ label: string; count: number }[]>([]);
+  const [lensCounts, setLensCounts] = useState<Record<string, number>>({});
   const [dates, setDates] = useState<string[]>([]);
   const [dateCounts, setDateCounts] = useState<Record<string, number>>({});
-  const [keywords, setKeywords] = useState<string[]>([]);
   const [isoValues, setIsoValues] = useState<number[]>([]);
   const [apertureValues, setApertureValues] = useState<number[]>([]);
-  const [isoRange, setIsoRange] = useState<[number, number] | null>(null);
-  const [apertureRange, setApertureRange] = useState<[number, number] | null>(
-    null,
-  );
-  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
-  const [expandedSection, setExpandedSection] =
-    useState<AccordionSection | null>(null);
+  const [openListModal, setOpenListModal] = useState<ListModalKey | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    const { sortBy: _, sortOrder: _so, search: _s, ...filterParams } = filters;
-    Object.entries(filterParams).forEach(([key, value]) => {
-      if (value !== undefined && value !== '' && value !== null) {
-        params.append(key, String(value));
-      }
-    });
-    const qs = params.toString();
-    const url = qs ? `/api/photos/meta?${qs}` : '/api/photos/meta';
-
-    fetch(url, { credentials: 'include' })
-      .then((res) => res.json())
+    let cancelled = false;
+    apiFetch('/api/people/labels')
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        setCameras(data.cameras || []);
-        setLenses(data.lenses || []);
-        setDates(data.dates || []);
-        setDateCounts(data.dateCounts || {});
-        setKeywords(data.keywords || []);
-        setIsoValues(data.isoValues || []);
-        setApertureValues(data.apertureValues || []);
-      })
-      .catch((err) => console.error('Failed to fetch metadata:', err));
-  }, [filters]);
-
-  // People + dog labels are independent of the photo metadata cache and won't
-  // change mid-session — fetch once on mount.
-  useEffect(() => {
-    fetch('/api/people/labels', { credentials: 'include' })
-      .then((res) => res.json())
-      .then((data) => {
+        if (cancelled || !data) return;
         const rows: { personLabel: string; faceCount: number }[] =
           data.labels ?? [];
         setPeople(
           rows.map((r) => ({ label: r.personLabel, count: r.faceCount })),
         );
       })
-      .catch((err) => console.error('Failed to fetch people:', err));
-
-    fetch('/api/dogs/labels', { credentials: 'include' })
-      .then((res) => res.json())
+      .catch(() => {});
+    apiFetch('/api/dogs/labels')
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        const rows: { dogLabel: string; dogCount: number }[] = data.labels ?? [];
-        setDogs(rows.map((r) => ({ label: r.dogLabel, count: r.dogCount })));
+        if (cancelled || !data) return;
+        const rows: { dogLabel: string; dogCount: number }[] =
+          data.labels ?? [];
+        setDogs(
+          rows.map((r) => ({ label: r.dogLabel, count: r.dogCount })),
+        );
       })
-      .catch((err) => console.error('Failed to fetch dogs:', err));
+      .catch(() => {});
+    apiFetch('/api/photos/meta')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setKeywords(data.keywords ?? []);
+        setKeywordCounts(data.keywordCounts ?? {});
+        setCameras(data.cameras ?? []);
+        setCameraCounts(data.cameraCounts ?? {});
+        setLenses(data.lenses ?? []);
+        setLensCounts(data.lensCounts ?? {});
+        setDates(data.dates ?? []);
+        setDateCounts(data.dateCounts ?? {});
+        setIsoValues(
+          Array.isArray(data.isoValues)
+            ? (data.isoValues as number[]).filter((v) => Number.isFinite(v))
+            : [],
+        );
+        setApertureValues(
+          Array.isArray(data.apertureValues)
+            ? (data.apertureValues as number[]).filter((v) =>
+                Number.isFinite(v),
+              )
+            : [],
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const toggleSection = (section: AccordionSection) => {
-    setExpandedSection((prev) => (prev === section ? null : section));
+  // A section is shown only when toggled visible AND it has data to filter on.
+  const sectionAvailable: Record<FilterSectionKey, boolean> = {
+    rating: true,
+    label: true,
+    aspectRatio: true,
+    orientation: true,
+    camera: cameras.length > 0,
+    lens: lenses.length > 0,
+    dateRange: true,
+    calendar: true,
+    iso: isoValues.length >= 2,
+    aperture: apertureValues.length >= 2,
+    keywords: keywords.length > 0,
+    people: people.length > 0,
+    dogs: dogs.length > 0,
   };
 
-  // Compute active filter state per section
-  const hasGeneralFilter = !!(
-    filters.label ||
-    filters.rating !== undefined ||
-    filters.minIso !== undefined ||
-    filters.maxIso !== undefined ||
-    filters.minAperture !== undefined ||
-    filters.maxAperture !== undefined
+  // Sections render in the user's saved order (configured in Settings); the
+  // sidebar itself is not reorderable.
+  const orderedKeys = filterSectionOrder.filter(
+    (k) => visibleSections[k] && sectionAvailable[k],
   );
-  const hasCameraFilter = !!filters.camera;
-  const hasLensFilter = !!filters.lens;
-  const hasPeopleFilter = !!filters.people;
-  const hasDogsFilter = !!filters.dogs;
-  const hasAspectRatioFilter = !!(filters.aspectRatio || filters.orientation);
-  const hasDateFilter = !!(
-    filters.startDate ||
-    filters.endDate ||
-    filters.selectedMonths ||
-    filters.selectedDates
-  );
-  const hasTagFilter = !!filters.keyword;
 
-  return (
-    <Box
-      sx={{
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        bgcolor: 'background.paper',
-        borderRight: 1,
-        borderColor: 'divider',
-      }}
-    >
-      {/* Header with close button */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          p: 0.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Typography variant="body2" fontWeight="bold">
-          Filters
-        </Typography>
-        <IconButton onClick={onClose} size="small">
-          <ChevronLeftIcon />
-        </IconButton>
-      </Box>
+  const sectionTitle = (key: FilterSectionKey): string => {
+    switch (key) {
+      case 'camera':
+        return `Camera (${cameras.length})`;
+      case 'lens':
+        return `Lens (${lenses.length})`;
+      case 'keywords':
+        return `Keywords (${keywords.length})`;
+      case 'people':
+        return `People (${people.length})`;
+      case 'dogs':
+        return `Dogs (${dogs.length})`;
+      default:
+        return FILTER_SECTIONS.find((s) => s.key === key)?.label ?? key;
+    }
+  };
 
-      <Box sx={{ p: 0.75, borderBottom: 1, borderColor: 'divider' }}>
-        <SearchBar
-          value={filters.contentSearch || filters.search || ''}
-          onChange={(search) =>
-            onFilterChange({ search, contentSearch: '' })
-          }
-          onContentSearch={(contentSearch) =>
-            onFilterChange({ contentSearch, search: '' })
-          }
-        />
-      </Box>
+  const sectionAction = (key: FilterSectionKey): React.ReactNode => {
+    const expand = (modal: ListModalKey, label: string) => (
+      <ExpandSectionButton
+        onPress={() => setOpenListModal(modal)}
+        palette={palette}
+        label={label}
+      />
+    );
+    switch (key) {
+      case 'camera':
+        return expand('camera', 'Expand Camera filter');
+      case 'lens':
+        return expand('lens', 'Expand Lens filter');
+      case 'keywords':
+        return expand('keywords', 'Expand Keywords filter');
+      case 'people':
+        return expand('people', 'Expand People filter');
+      case 'dogs':
+        return expand('dogs', 'Expand Dogs filter');
+      default:
+        return undefined;
+    }
+  };
 
-      {/* Filter content - flex column, expanded section fills remaining space */}
-      <Box
-        sx={{
-          flexGrow: 1,
-          p: 0.75,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 0.75,
-          overflow: 'hidden',
-        }}
-      >
-        {/* Sort - always visible */}
-        <Box sx={{ ...sectionSx, flexShrink: 0 }}>
-          <Typography
-            variant="caption"
-            fontWeight="600"
-            display="block"
-            mb={0.25}
-          >
-            Sort
-          </Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Select
-              value={filters.sortBy || 'dateCaptured'}
-              onChange={(e) => onFilterChange({ sortBy: e.target.value })}
-              sx={{ flex: 1 }}
-            >
-              <MenuItem value="dateCaptured">Date Captured</MenuItem>
-              <MenuItem value="createdAt">Date Added</MenuItem>
-              <MenuItem value="filename">Filename</MenuItem>
-              <MenuItem value="camera">Camera</MenuItem>
-              <MenuItem value="iso">ISO</MenuItem>
-              <MenuItem value="aperture">Aperture</MenuItem>
-            </Select>
-            <Stack direction="row" spacing={0.5}>
-              <Chip
-                label="Desc"
-                size="small"
-                color={filters.sortOrder === 'desc' ? 'primary' : 'default'}
-                onClick={() => onFilterChange({ sortOrder: 'desc' })}
-                clickable
+  const renderSectionContent = (key: FilterSectionKey): React.ReactNode => {
+    switch (key) {
+      case 'rating':
+        return (
+          <View style={styles.row}>
+            {[0, 1, 2, 3, 4, 5].map((r) => (
+              <ToggleChip
+                key={r}
+                label={r === 0 ? 'Any' : `${r}+`}
+                active={(filters.rating ?? 0) === r}
+                onPress={() =>
+                  onFilterChange({ rating: r === 0 ? undefined : r })
+                }
+                palette={palette}
               />
-              <Chip
-                label="Asc"
-                size="small"
-                color={filters.sortOrder === 'asc' ? 'primary' : 'default'}
-                onClick={() => onFilterChange({ sortOrder: 'asc' })}
-                clickable
-              />
-            </Stack>
-          </Stack>
-        </Box>
-
-        {/* General Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'general'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="General"
-            section="general"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasGeneralFilter}
-            onClear={() =>
-              onFilterChange({
-                label: '',
-                rating: undefined,
-                minIso: undefined,
-                maxIso: undefined,
-                minAperture: undefined,
-                maxAperture: undefined,
-              })
-            }
-          />
-          <Collapse
-            in={expandedSection === 'general'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pt: 0.5 }}>
-              <Stack spacing={1}>
-                {/* Color */}
-                <Box>
-                  <Typography
-                    variant="caption"
-                    fontWeight="600"
-                    display="block"
-                    mb={0.25}
-                  >
-                    Color
-                  </Typography>
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <Box
-                      onClick={() => onFilterChange({ label: '' })}
-                      sx={{
-                        width: 20,
-                        height: 20,
-                        border: 2,
-                        borderColor: !filters.label
-                          ? 'primary.main'
-                          : 'divider',
-                        borderRadius: 0.5,
-                        cursor: 'pointer',
-                        bgcolor: 'background.paper',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.55rem',
-                        fontWeight: 'bold',
-                        '&:hover': { borderColor: 'primary.main' },
-                      }}
-                    >
-                      All
-                    </Box>
-                    {['Red', 'Yellow', 'Green', 'Blue', 'Purple'].map(
-                      (label) => {
-                        const labelColors: Record<string, string> = {
-                          Red: '#f44336',
-                          Yellow: '#ffeb3b',
-                          Green: '#4caf50',
-                          Blue: '#2196f3',
-                          Purple: '#9c27b0',
-                        };
-                        return (
-                          <Box
-                            key={label}
-                            onClick={() => onFilterChange({ label })}
-                            sx={{
-                              width: 20,
-                              height: 20,
-                              bgcolor: labelColors[label],
-                              border: 2,
-                              borderColor:
-                                filters.label === label
-                                  ? 'black'
-                                  : 'transparent',
-                              borderRadius: 0.5,
-                              cursor: 'pointer',
-                              '&:hover': { borderColor: 'black' },
-                            }}
-                          />
-                        );
-                      },
-                    )}
-                  </Stack>
-                </Box>
-
-                {/* Rating */}
-                <Box>
-                  <Typography
-                    variant="caption"
-                    fontWeight="600"
-                    display="block"
-                    mb={0.25}
-                  >
-                    Rating
-                  </Typography>
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <Chip
-                      label="All"
-                      size="small"
-                      color={
-                        filters.rating === undefined ? 'primary' : 'default'
-                      }
-                      onClick={() => onFilterChange({ rating: undefined })}
-                      clickable
-                    />
-                    <Rating
-                      value={filters.rating || 0}
-                      onChange={(_, newValue) => {
-                        onFilterChange({
-                          rating:
-                            newValue === 0 ? undefined : newValue || undefined,
-                        });
-                      }}
-                      emptyIcon={
-                        <StarIcon style={{ opacity: 0.3 }} fontSize="inherit" />
-                      }
-                      size="small"
-                    />
-                  </Stack>
-                </Box>
-
-                {/* ISO Range */}
-                {isoValues.length > 0 && (
-                  <Box>
-                    <Typography
-                      variant="caption"
-                      fontWeight="600"
-                      display="block"
-                      mb={0.25}
-                    >
-                      ISO
-                    </Typography>
-                    <Box sx={{ px: 1 }}>
-                      <Slider
-                        value={
-                          isoRange || [
-                            filters.minIso ?? Math.min(...isoValues),
-                            filters.maxIso ?? Math.max(...isoValues),
-                          ]
-                        }
-                        onChange={(_, newValue) => {
-                          setIsoRange(newValue as [number, number]);
-                        }}
-                        onChangeCommitted={(_, newValue) => {
-                          const [min, max] = newValue as number[];
-                          const minIso = Math.min(...isoValues);
-                          const maxIso = Math.max(...isoValues);
-                          onFilterChange({
-                            minIso: min === minIso ? undefined : min,
-                            maxIso: max === maxIso ? undefined : max,
-                          });
-                          setIsoRange(null);
-                        }}
-                        min={Math.min(...isoValues)}
-                        max={Math.max(...isoValues)}
-                        valueLabelDisplay="auto"
-                        size="small"
-                      />
-                      <Stack
-                        direction="row"
-                        justifyContent="space-between"
-                        sx={{ mt: -0.5 }}
-                      >
-                        <Typography variant="caption" color="text.secondary">
-                          {Math.min(...isoValues)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {Math.max(...isoValues)}
-                        </Typography>
-                      </Stack>
-                    </Box>
-                  </Box>
-                )}
-
-                {/* Aperture Range */}
-                {apertureValues.length > 0 && (
-                  <Box>
-                    <Typography
-                      variant="caption"
-                      fontWeight="600"
-                      display="block"
-                      mb={0.25}
-                    >
-                      Aperture
-                    </Typography>
-                    <Box sx={{ px: 1 }}>
-                      <Slider
-                        value={
-                          apertureRange || [
-                            filters.minAperture ?? Math.min(...apertureValues),
-                            filters.maxAperture ?? Math.max(...apertureValues),
-                          ]
-                        }
-                        onChange={(_, newValue) => {
-                          setApertureRange(newValue as [number, number]);
-                        }}
-                        onChangeCommitted={(_, newValue) => {
-                          const [min, max] = newValue as number[];
-                          const minAperture = Math.min(...apertureValues);
-                          const maxAperture = Math.max(...apertureValues);
-                          onFilterChange({
-                            minAperture: min === minAperture ? undefined : min,
-                            maxAperture: max === maxAperture ? undefined : max,
-                          });
-                          setApertureRange(null);
-                        }}
-                        min={Math.min(...apertureValues)}
-                        max={Math.max(...apertureValues)}
-                        valueLabelDisplay="auto"
-                        valueLabelFormat={(value) => `f/${value}`}
-                        size="small"
-                      />
-                      <Stack
-                        direction="row"
-                        justifyContent="space-between"
-                        sx={{ mt: -0.5 }}
-                      >
-                        <Typography variant="caption" color="text.secondary">
-                          f/{Math.min(...apertureValues)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          f/{Math.max(...apertureValues)}
-                        </Typography>
-                      </Stack>
-                    </Box>
-                  </Box>
-                )}
-              </Stack>
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Camera Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'camera'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="Camera"
-            section="camera"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasCameraFilter}
-            onClear={() => onFilterChange({ camera: '' })}
-          />
-          <Collapse
-            in={expandedSection === 'camera'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              <List dense disablePadding sx={{ pt: 0.5 }}>
-                <ListItem disablePadding>
-                  <ListItemButton
-                    sx={{ py: 0.1, px: 0.75 }}
-                    selected={!filters.camera}
-                    onClick={() => onFilterChange({ camera: '' })}
-                  >
-                    <ListItemText
-                      primary="All"
-                      primaryTypographyProps={{ variant: 'body2' }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-                {cameras.map((camera) => {
-                  const selected = isInList(filters.camera, camera);
-                  return (
-                    <ListItem key={camera} disablePadding>
-                      <ListItemButton
-                        sx={{ py: 0.1, px: 0.75 }}
-                        selected={selected}
-                        onClick={() =>
-                          onFilterChange({
-                            camera: toggleInList(filters.camera, camera),
-                          })
-                        }
-                      >
-                        <ListItemText
-                          primary={camera}
-                          primaryTypographyProps={{
-                            variant: 'body2',
-                            noWrap: true,
-                          }}
-                        />
-                        {selected && (
-                          <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
-                        )}
-                      </ListItemButton>
-                    </ListItem>
-                  );
-                })}
-              </List>
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Lens Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'lens'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="Lens"
-            section="lens"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasLensFilter}
-            onClear={() => onFilterChange({ lens: '' })}
-          />
-          <Collapse
-            in={expandedSection === 'lens'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              <List dense disablePadding sx={{ pt: 0.5 }}>
-                <ListItem disablePadding>
-                  <ListItemButton
-                    sx={{ py: 0.1, px: 0.75 }}
-                    selected={!filters.lens}
-                    onClick={() => onFilterChange({ lens: '' })}
-                  >
-                    <ListItemText
-                      primary="All"
-                      primaryTypographyProps={{ variant: 'body2' }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-                {lenses.map((lens) => {
-                  const selected = isInList(filters.lens, lens);
-                  return (
-                    <ListItem key={lens} disablePadding>
-                      <ListItemButton
-                        sx={{ py: 0.1, px: 0.75 }}
-                        selected={selected}
-                        onClick={() =>
-                          onFilterChange({
-                            lens: toggleInList(filters.lens, lens),
-                          })
-                        }
-                      >
-                        <ListItemText
-                          primary={lens}
-                          primaryTypographyProps={{
-                            variant: 'body2',
-                            noWrap: true,
-                          }}
-                        />
-                        {selected && (
-                          <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
-                        )}
-                      </ListItemButton>
-                    </ListItem>
-                  );
-                })}
-              </List>
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* People Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'people'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="People"
-            section="people"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasPeopleFilter}
-            onClear={() => onFilterChange({ people: '' })}
-          />
-          <Collapse
-            in={expandedSection === 'people'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              {people.length === 0 ? (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: 'block', px: 1, py: 1 }}
-                >
-                  No people labeled yet. Label face clusters in the
-                  offline-ingestion tool to filter by person here.
-                </Typography>
-              ) : (
-                <List dense disablePadding sx={{ pt: 0.5 }}>
-                  <ListItem disablePadding>
-                    <ListItemButton
-                      sx={{ py: 0.1, px: 0.75 }}
-                      selected={!filters.people}
-                      onClick={() => onFilterChange({ people: '' })}
-                    >
-                      <ListItemText
-                        primary="All"
-                        primaryTypographyProps={{ variant: 'body2' }}
-                      />
-                    </ListItemButton>
-                  </ListItem>
-                  {people.map((p) => {
-                    const selected = isInList(filters.people, p.label);
-                    return (
-                      <ListItem key={p.label} disablePadding>
-                        <ListItemButton
-                          sx={{ py: 0.1, px: 0.75 }}
-                          selected={selected}
-                          onClick={() =>
-                            onFilterChange({
-                              people: toggleInList(filters.people, p.label),
-                            })
-                          }
-                        >
-                          <ListItemText
-                            primary={`${p.label} (${p.count})`}
-                            primaryTypographyProps={{
-                              variant: 'body2',
-                              noWrap: true,
-                            }}
-                          />
-                          {selected && (
-                            <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
-                          )}
-                        </ListItemButton>
-                      </ListItem>
-                    );
-                  })}
-                </List>
-              )}
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Dogs Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'dogs'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="Dogs"
-            section="dogs"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasDogsFilter}
-            onClear={() => onFilterChange({ dogs: '' })}
-          />
-          <Collapse
-            in={expandedSection === 'dogs'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              {dogs.length === 0 ? (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: 'block', px: 1, py: 1 }}
-                >
-                  No dogs labeled yet. Label dog clusters in the
-                  offline-ingestion tool to filter by dog here.
-                </Typography>
-              ) : (
-                <List dense disablePadding sx={{ pt: 0.5 }}>
-                  <ListItem disablePadding>
-                    <ListItemButton
-                      sx={{ py: 0.1, px: 0.75 }}
-                      selected={!filters.dogs}
-                      onClick={() => onFilterChange({ dogs: '' })}
-                    >
-                      <ListItemText
-                        primary="All"
-                        primaryTypographyProps={{ variant: 'body2' }}
-                      />
-                    </ListItemButton>
-                  </ListItem>
-                  {dogs.map((d) => {
-                    const selected = isInList(filters.dogs, d.label);
-                    return (
-                      <ListItem key={d.label} disablePadding>
-                        <ListItemButton
-                          sx={{ py: 0.1, px: 0.75 }}
-                          selected={selected}
-                          onClick={() =>
-                            onFilterChange({
-                              dogs: toggleInList(filters.dogs, d.label),
-                            })
-                          }
-                        >
-                          <ListItemText
-                            primary={`${d.label} (${d.count})`}
-                            primaryTypographyProps={{
-                              variant: 'body2',
-                              noWrap: true,
-                            }}
-                          />
-                          {selected && (
-                            <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
-                          )}
-                        </ListItemButton>
-                      </ListItem>
-                    );
-                  })}
-                </List>
-              )}
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Aspect Ratio Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'aspectRatio'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="Aspect Ratio"
-            section="aspectRatio"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasAspectRatioFilter}
-            onClear={() => onFilterChange({ aspectRatio: '', orientation: '' })}
-          />
-          <Collapse
-            in={expandedSection === 'aspectRatio'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pt: 0.5 }}>
-              <Stack spacing={0.75}>
-                <Box>
-                  <Typography
-                    variant="caption"
-                    fontWeight="600"
-                    display="block"
-                    mb={0.25}
-                  >
-                    Ratio
-                  </Typography>
-                  <Stack
-                    direction="row"
-                    spacing={0.25}
-                    flexWrap="wrap"
-                    useFlexGap
-                  >
-                    <Chip
-                      label="All"
-                      size="small"
-                      color={!filters.aspectRatio ? 'primary' : 'default'}
-                      onClick={() => onFilterChange({ aspectRatio: '' })}
-                      clickable
-                    />
-                    {aspectRatioOptions.map((option) => (
-                      <Chip
-                        key={option.value}
-                        label={option.label}
-                        size="small"
-                        color={
-                          isInList(filters.aspectRatio, option.value)
-                            ? 'primary'
-                            : 'default'
-                        }
-                        onClick={() =>
-                          onFilterChange({
-                            aspectRatio: toggleInList(
-                              filters.aspectRatio,
-                              option.value,
-                            ),
-                          })
-                        }
-                        clickable
-                      />
-                    ))}
-                  </Stack>
-                </Box>
-                <Box>
-                  <Typography
-                    variant="caption"
-                    fontWeight="600"
-                    display="block"
-                    mb={0.25}
-                  >
-                    Orientation
-                  </Typography>
-                  <Stack
-                    direction="row"
-                    spacing={0.25}
-                    flexWrap="wrap"
-                    useFlexGap
-                  >
-                    <Chip
-                      label="All"
-                      size="small"
-                      color={!filters.orientation ? 'primary' : 'default'}
-                      onClick={() => onFilterChange({ orientation: '' })}
-                      clickable
-                    />
-                    {orientationOptions.map((option) => (
-                      <Chip
-                        key={option.value}
-                        label={option.label}
-                        size="small"
-                        color={
-                          isInList(filters.orientation, option.value)
-                            ? 'primary'
-                            : 'default'
-                        }
-                        onClick={() =>
-                          onFilterChange({
-                            orientation: toggleInList(
-                              filters.orientation,
-                              option.value,
-                            ),
-                          })
-                        }
-                        clickable
-                      />
-                    ))}
-                  </Stack>
-                </Box>
-              </Stack>
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Dates Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'dates'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="Dates"
-            section="dates"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasDateFilter}
-            onClear={() =>
-              onFilterChange({
-                startDate: '',
-                endDate: '',
-                selectedMonths: '',
-                selectedDates: '',
-              })
-            }
-          />
-          <Collapse
-            in={expandedSection === 'dates'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              },
-            }}
-          >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pt: 0.5 }}>
-              <Chip
-                label="All Dates"
-                size="small"
-                color={!hasDateFilter ? 'primary' : 'default'}
-                onClick={() =>
+            ))}
+          </View>
+        );
+      case 'label':
+        return (
+          <View style={styles.row}>
+            <ToggleChip
+              label="Any"
+              active={!filters.label}
+              onPress={() => onFilterChange({ label: undefined })}
+              palette={palette}
+            />
+            {LABEL_OPTIONS.map((label) => (
+              <Pressable
+                key={label}
+                onPress={() =>
                   onFilterChange({
-                    startDate: '',
-                    endDate: '',
-                    selectedMonths: '',
-                    selectedDates: '',
+                    label: filters.label === label ? undefined : label,
                   })
                 }
-                sx={{ mb: 0.5 }}
-              />
-              <Box>
-                {(() => {
-                  // Group dates by year then month
-                  const yearGroups: Record<
-                    string,
-                    Record<string, string[]>
-                  > = {};
-                  dates.forEach((date) => {
-                    const year = date.substring(0, 4);
-                    const monthKey = date.substring(0, 7);
-                    if (!yearGroups[year]) yearGroups[year] = {};
-                    if (!yearGroups[year][monthKey])
-                      yearGroups[year][monthKey] = [];
-                    yearGroups[year][monthKey].push(date);
-                  });
-
-                  const selectedMonthSet = new Set(
-                    filters.selectedMonths
-                      ? filters.selectedMonths.split(',').filter(Boolean)
-                      : [],
-                  );
-                  const selectedDateSet = new Set(
-                    filters.selectedDates
-                      ? filters.selectedDates.split(',').filter(Boolean)
-                      : [],
-                  );
-
-                  return Object.entries(yearGroups)
-                    .sort(([a], [b]) => b.localeCompare(a))
-                    .map(([year, months]) => {
-                      const monthKeys = Object.keys(months).sort((a, b) =>
-                        b.localeCompare(a),
-                      );
-                      const yearTotal = monthKeys.reduce(
-                        (sum, mk) =>
-                          sum +
-                          months[mk].reduce(
-                            (s, d) => s + (dateCounts[d] || 0),
-                            0,
-                          ),
-                        0,
-                      );
-                      const allMonthsInYear = monthKeys.every((mk) =>
-                        selectedMonthSet.has(mk),
-                      );
-                      const someMonthsInYear = monthKeys.some((mk) =>
-                        selectedMonthSet.has(mk),
-                      );
-                      const isYearExpanded = expandedMonths.has(year);
-
-                      return (
-                        <Box key={year} sx={{ mb: 0.5 }}>
-                          {/* Year row */}
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              py: { xs: 1, sm: 0.5 },
-                              px: { xs: 1, sm: 0.5 },
-                              bgcolor: allMonthsInYear
-                                ? 'primary.main'
-                                : someMonthsInYear
-                                  ? 'action.selected'
-                                  : 'action.hover',
-                              color: allMonthsInYear ? 'white' : 'inherit',
-                              borderRadius: 0.5,
-                              cursor: 'pointer',
-                              '&:hover': { opacity: 0.8 },
-                            }}
-                          >
-                            <Stack
-                              direction="row"
-                              spacing={1}
-                              alignItems="center"
-                              sx={{ flex: 1 }}
-                              onClick={() => {
-                                const newExpanded = new Set(expandedMonths);
-                                if (isYearExpanded) {
-                                  newExpanded.delete(year);
-                                } else {
-                                  newExpanded.add(year);
-                                }
-                                setExpandedMonths(newExpanded);
-                              }}
-                            >
-                              <Typography variant="caption" fontWeight="600">
-                                {year} ({yearTotal})
-                              </Typography>
-                            </Stack>
-                            <Stack
-                              direction="row"
-                              spacing={0.5}
-                              alignItems="center"
-                            >
-                              <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  // Toggle all months in this year
-                                  const newMonths = new Set(selectedMonthSet);
-                                  if (allMonthsInYear) {
-                                    monthKeys.forEach((mk) =>
-                                      newMonths.delete(mk),
-                                    );
-                                  } else {
-                                    monthKeys.forEach((mk) =>
-                                      newMonths.add(mk),
-                                    );
-                                  }
-                                  onFilterChange({
-                                    selectedMonths:
-                                      Array.from(newMonths).join(','),
-                                    startDate: '',
-                                    endDate: '',
-                                  });
-                                }}
-                                sx={{
-                                  p: 0.5,
-                                  color: allMonthsInYear ? 'white' : 'inherit',
-                                  border: '1px solid',
-                                  borderColor: allMonthsInYear
-                                    ? 'rgba(255,255,255,0.3)'
-                                    : 'text.secondary',
-                                  borderRadius: 0.5,
-                                  '&:hover': {
-                                    bgcolor: allMonthsInYear
-                                      ? 'primary.dark'
-                                      : 'action.selected',
-                                  },
-                                }}
-                              >
-                                <CalendarMonthIcon sx={{ fontSize: 14 }} />
-                              </IconButton>
-                              <Box
-                                onClick={() => {
-                                  const newExpanded = new Set(expandedMonths);
-                                  if (isYearExpanded) {
-                                    newExpanded.delete(year);
-                                  } else {
-                                    newExpanded.add(year);
-                                  }
-                                  setExpandedMonths(newExpanded);
-                                }}
-                              >
-                                {isYearExpanded ? (
-                                  <ExpandLessIcon sx={{ fontSize: 16 }} />
-                                ) : (
-                                  <ExpandMoreIcon sx={{ fontSize: 16 }} />
-                                )}
-                              </Box>
-                            </Stack>
-                          </Box>
-
-                          {/* Months within year */}
-                          <Collapse in={isYearExpanded}>
-                            <Box sx={{ pl: 1.5 }}>
-                              {monthKeys.map((monthKey) => {
-                                const monthDates = months[monthKey];
-                                const firstDate = parseISO(monthDates[0]);
-                                const monthLabel = format(firstDate, 'MMMM');
-                                const isMonthExpanded =
-                                  expandedMonths.has(monthKey);
-                                const totalPhotos = monthDates.reduce(
-                                  (sum, date) => sum + (dateCounts[date] || 0),
-                                  0,
-                                );
-                                const isMonthSelected =
-                                  selectedMonthSet.has(monthKey);
-
-                                return (
-                                  <Box key={monthKey} sx={{ mb: 0.25 }}>
-                                    {/* Month row */}
-                                    <Box
-                                      sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        py: { xs: 1, sm: 0.5 },
-                                        px: { xs: 1, sm: 0.5 },
-                                        bgcolor: isMonthSelected
-                                          ? 'primary.main'
-                                          : 'action.hover',
-                                        color: isMonthSelected
-                                          ? 'white'
-                                          : 'inherit',
-                                        borderRadius: 0.5,
-                                        cursor: 'pointer',
-                                        '&:hover': { opacity: 0.8 },
-                                      }}
-                                    >
-                                      <Stack
-                                        direction="row"
-                                        spacing={1}
-                                        alignItems="center"
-                                        sx={{ flex: 1 }}
-                                        onClick={() => {
-                                          const newExpanded = new Set(
-                                            expandedMonths,
-                                          );
-                                          if (isMonthExpanded) {
-                                            newExpanded.delete(monthKey);
-                                          } else {
-                                            newExpanded.add(monthKey);
-                                          }
-                                          setExpandedMonths(newExpanded);
-                                        }}
-                                      >
-                                        <Typography
-                                          variant="caption"
-                                          fontWeight="600"
-                                        >
-                                          {monthLabel} ({totalPhotos})
-                                        </Typography>
-                                      </Stack>
-                                      <Stack
-                                        direction="row"
-                                        spacing={0.5}
-                                        alignItems="center"
-                                      >
-                                        <IconButton
-                                          size="small"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            // Toggle this month in selection
-                                            const newMonths = new Set(
-                                              selectedMonthSet,
-                                            );
-                                            if (isMonthSelected) {
-                                              newMonths.delete(monthKey);
-                                            } else {
-                                              newMonths.add(monthKey);
-                                            }
-                                            onFilterChange({
-                                              selectedMonths:
-                                                Array.from(newMonths).join(','),
-                                              startDate: '',
-                                              endDate: '',
-                                            });
-                                          }}
-                                          sx={{
-                                            p: 0.5,
-                                            color: isMonthSelected
-                                              ? 'white'
-                                              : 'inherit',
-                                            border: '1px solid',
-                                            borderColor: isMonthSelected
-                                              ? 'rgba(255,255,255,0.3)'
-                                              : 'text.secondary',
-                                            borderRadius: 0.5,
-                                            '&:hover': {
-                                              bgcolor: isMonthSelected
-                                                ? 'primary.dark'
-                                                : 'action.selected',
-                                            },
-                                          }}
-                                        >
-                                          <CalendarMonthIcon
-                                            sx={{ fontSize: 14 }}
-                                          />
-                                        </IconButton>
-                                        <Box
-                                          onClick={() => {
-                                            const newExpanded = new Set(
-                                              expandedMonths,
-                                            );
-                                            if (isMonthExpanded) {
-                                              newExpanded.delete(monthKey);
-                                            } else {
-                                              newExpanded.add(monthKey);
-                                            }
-                                            setExpandedMonths(newExpanded);
-                                          }}
-                                        >
-                                          {isMonthExpanded ? (
-                                            <ExpandLessIcon
-                                              sx={{ fontSize: 16 }}
-                                            />
-                                          ) : (
-                                            <ExpandMoreIcon
-                                              sx={{ fontSize: 16 }}
-                                            />
-                                          )}
-                                        </Box>
-                                      </Stack>
-                                    </Box>
-
-                                    {/* Calendar grid for individual dates */}
-                                    <Collapse in={isMonthExpanded}>
-                                      <Box
-                                        sx={{
-                                          p: 0.25,
-                                          display: 'grid',
-                                          gridTemplateColumns: 'repeat(7, 1fr)',
-                                          gap: 0.125,
-                                        }}
-                                      >
-                                        {[
-                                          'S',
-                                          'M',
-                                          'T',
-                                          'W',
-                                          'T',
-                                          'F',
-                                          'S',
-                                        ].map((day, i) => (
-                                          <Box
-                                            key={i}
-                                            sx={{
-                                              textAlign: 'center',
-                                              fontSize: '0.65rem',
-                                              fontWeight: 'bold',
-                                              color: 'text.secondary',
-                                            }}
-                                          >
-                                            {day}
-                                          </Box>
-                                        ))}
-                                        {(() => {
-                                          const firstOfMonth =
-                                            startOfMonth(firstDate);
-                                          const lastOfMonth =
-                                            endOfMonth(firstDate);
-                                          const daysInMonth = eachDayOfInterval(
-                                            {
-                                              start: firstOfMonth,
-                                              end: lastOfMonth,
-                                            },
-                                          );
-                                          const startDay = getDay(firstOfMonth);
-
-                                          const cells = [];
-                                          for (let i = 0; i < startDay; i++) {
-                                            cells.push(
-                                              <Box key={`empty-${i}`} />,
-                                            );
-                                          }
-
-                                          daysInMonth.forEach((day) => {
-                                            const dateStr = format(
-                                              day,
-                                              'yyyy-MM-dd',
-                                            );
-                                            const count =
-                                              dateCounts[dateStr] || 0;
-                                            const isSelected =
-                                              selectedDateSet.has(dateStr);
-
-                                            cells.push(
-                                              <Box
-                                                key={dateStr}
-                                                onClick={() => {
-                                                  if (count === 0) return;
-                                                  const newDates = new Set(
-                                                    selectedDateSet,
-                                                  );
-                                                  if (isSelected) {
-                                                    newDates.delete(dateStr);
-                                                  } else {
-                                                    newDates.add(dateStr);
-                                                  }
-                                                  onFilterChange({
-                                                    selectedDates:
-                                                      Array.from(newDates).join(
-                                                        ',',
-                                                      ),
-                                                    startDate: '',
-                                                    endDate: '',
-                                                  });
-                                                }}
-                                                sx={{
-                                                  aspectRatio: '1',
-                                                  display: 'flex',
-                                                  flexDirection: 'column',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'center',
-                                                  fontSize: '0.7rem',
-                                                  borderRadius: 0.5,
-                                                  cursor:
-                                                    count > 0
-                                                      ? 'pointer'
-                                                      : 'default',
-                                                  bgcolor: isSelected
-                                                    ? 'primary.main'
-                                                    : count > 0
-                                                      ? 'action.hover'
-                                                      : 'transparent',
-                                                  color: isSelected
-                                                    ? 'white'
-                                                    : count > 0
-                                                      ? 'text.primary'
-                                                      : 'text.disabled',
-                                                  '&:hover':
-                                                    count > 0
-                                                      ? {
-                                                          bgcolor: isSelected
-                                                            ? 'primary.dark'
-                                                            : 'action.selected',
-                                                        }
-                                                      : {},
-                                                }}
-                                              >
-                                                <Typography
-                                                  variant="caption"
-                                                  fontSize="0.65rem"
-                                                >
-                                                  {format(day, 'd')}
-                                                </Typography>
-                                                {count > 0 && (
-                                                  <Typography
-                                                    variant="caption"
-                                                    fontSize="0.5rem"
-                                                    sx={{ opacity: 0.7 }}
-                                                  >
-                                                    {count}
-                                                  </Typography>
-                                                )}
-                                              </Box>,
-                                            );
-                                          });
-
-                                          return cells;
-                                        })()}
-                                      </Box>
-                                    </Collapse>
-                                  </Box>
-                                );
-                              })}
-                            </Box>
-                          </Collapse>
-                        </Box>
-                      );
-                    });
-                })()}
-              </Box>
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Tags Section */}
-        <Box
-          sx={{
-            ...sectionSx,
-            ...(expandedSection === 'tags'
-              ? {
-                  flexShrink: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
+                style={({ pressed }) => [
+                  styles.chip,
+                  {
+                    backgroundColor: LABEL_COLORS[label],
+                    opacity: filters.label === label ? 1 : 0.55,
+                    transform: [{ scale: pressed ? 0.96 : 1 }],
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    { color: label === 'Yellow' ? '#000' : '#fff' },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        );
+      case 'aspectRatio':
+        return (
+          <View style={styles.row}>
+            <ToggleChip
+              label="Any"
+              active={!filters.aspectRatio}
+              onPress={() => onFilterChange({ aspectRatio: undefined })}
+              palette={palette}
+            />
+            {ASPECT_OPTIONS.map((r) => (
+              <ToggleChip
+                key={r}
+                label={r}
+                active={filters.aspectRatio === r}
+                onPress={() =>
+                  onFilterChange({
+                    aspectRatio: filters.aspectRatio === r ? undefined : r,
+                  })
                 }
-              : { flexShrink: 0 }),
-          }}
-        >
-          <SectionHeader
-            label="Tags"
-            section="tags"
-            expandedSection={expandedSection}
-            onToggle={toggleSection}
-            hasActiveFilter={hasTagFilter}
-            onClear={() => onFilterChange({ keyword: '' })}
+                palette={palette}
+              />
+            ))}
+          </View>
+        );
+      case 'orientation':
+        return (
+          <View style={styles.row}>
+            <ToggleChip
+              label="Any"
+              active={!filters.orientation}
+              onPress={() => onFilterChange({ orientation: undefined })}
+              palette={palette}
+            />
+            {ORIENTATION_OPTIONS.map((o) => (
+              <ToggleChip
+                key={o}
+                label={o}
+                active={filters.orientation === o}
+                onPress={() =>
+                  onFilterChange({
+                    orientation: filters.orientation === o ? undefined : o,
+                  })
+                }
+                palette={palette}
+              />
+            ))}
+          </View>
+        );
+      case 'camera':
+        return (
+          <MultiSelectStringChips
+            options={cameras}
+            value={filters.camera ?? ''}
+            onChange={(v) => onFilterChange({ camera: v ? v : undefined })}
+            palette={palette}
           />
-          <Collapse
-            in={expandedSection === 'tags'}
-            unmountOnExit
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              '& .MuiCollapse-wrapper, & .MuiCollapse-wrapperInner': {
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
+        );
+      case 'lens':
+        return (
+          <MultiSelectStringChips
+            options={lenses}
+            value={filters.lens ?? ''}
+            onChange={(v) => onFilterChange({ lens: v ? v : undefined })}
+            palette={palette}
+          />
+        );
+      case 'dateRange':
+        return (
+          <DateRangeCalendar
+            startDate={filters.startDate}
+            endDate={filters.endDate}
+            onChange={(start, end) =>
+              onFilterChange({
+                startDate: start,
+                endDate: end,
+                selectedMonths: undefined,
+                selectedDates: undefined,
+              })
+            }
+          />
+        );
+      case 'calendar':
+        return (
+          <CalendarFilter
+            dates={dates}
+            dateCounts={dateCounts}
+            selectedMonths={filters.selectedMonths ?? ''}
+            selectedDates={filters.selectedDates ?? ''}
+            onChange={(months, days) =>
+              onFilterChange({
+                selectedMonths: months || undefined,
+                selectedDates: days || undefined,
+                startDate: undefined,
+                endDate: undefined,
+              })
+            }
+            palette={palette}
+          />
+        );
+      case 'iso':
+        return (
+          <RangeSlider
+            values={isoValues}
+            low={filters.minIso}
+            high={filters.maxIso}
+            onChange={(low, high) =>
+              onFilterChange({ minIso: low, maxIso: high })
+            }
+            formatValue={(v) => String(v)}
+          />
+        );
+      case 'aperture':
+        return (
+          <RangeSlider
+            values={apertureValues}
+            low={filters.minAperture}
+            high={filters.maxAperture}
+            onChange={(low, high) =>
+              onFilterChange({ minAperture: low, maxAperture: high })
+            }
+            formatValue={(v) => `f/${v}`}
+          />
+        );
+      case 'keywords':
+        return (
+          <MultiSelectStringChips
+            options={keywords}
+            value={filters.keyword ?? ''}
+            onChange={(v) => onFilterChange({ keyword: v ? v : undefined })}
+            palette={palette}
+          />
+        );
+      case 'people':
+        return (
+          <MultiSelectChips
+            options={people}
+            value={filters.people ?? ''}
+            onChange={(v) => onFilterChange({ people: v })}
+            palette={palette}
+          />
+        );
+      case 'dogs':
+        return (
+          <MultiSelectChips
+            options={dogs}
+            value={filters.dogs ?? ''}
+            onChange={(v) => onFilterChange({ dogs: v })}
+            palette={palette}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <>
+        {filterSectionMode === 'multiple' ? (
+          <View
+            style={[
+              styles.expandControls,
+              {
+                backgroundColor: palette.surface,
+                borderBottomColor: palette.divider,
               },
-            }}
+            ]}
           >
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              <List dense disablePadding sx={{ pt: 0.5 }}>
-                <ListItem disablePadding>
-                  <ListItemButton
-                    sx={{ py: 0.1, px: 0.75 }}
-                    selected={!filters.keyword}
-                    onClick={() => onFilterChange({ keyword: '' })}
-                  >
-                    <ListItemText
-                      primary="All"
-                      primaryTypographyProps={{ variant: 'body2' }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-                {keywords.map((kw) => {
-                  const selected = isInList(filters.keyword, kw);
+            <Pressable
+              onPress={() => setAllFilterSectionsExpanded(true)}
+              accessibilityLabel="Expand all filter sections"
+              style={({ pressed }) => [
+                styles.expandControlButton,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.expandControlText,
+                  { color: palette.textSecondary },
+                ]}
+              >
+                Expand all
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setAllFilterSectionsExpanded(false)}
+              accessibilityLabel="Collapse all filter sections"
+              style={({ pressed }) => [
+                styles.expandControlButton,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.expandControlText,
+                  { color: palette.textSecondary },
+                ]}
+              >
+                Collapse all
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: SPACING.SMALL, gap: SPACING.SMALL }}
+        >
+          {orderedKeys.map((item) => (
+            <CollapsibleSection
+              key={item}
+              sectionKey={item}
+              title={sectionTitle(item)}
+              palette={palette}
+              expanded={expandedSections[item]}
+              activeCount={getSectionActiveCount(item, filters)}
+              onFilterChange={onFilterChange}
+              action={sectionAction(item)}
+            >
+              {renderSectionContent(item)}
+            </CollapsibleSection>
+          ))}
+        </ScrollView>
+        {(() => {
+          if (!openListModal) return null;
+          let title = '';
+          let options: FilterListOption[] = [];
+          let value = '';
+          let onChange: (v: string) => void = () => {};
+          if (openListModal === 'camera') {
+            title = 'Camera';
+            options = cameras.map((c) => ({
+              label: c,
+              count: cameraCounts[c],
+            }));
+            value = filters.camera ?? '';
+            onChange = (v) => onFilterChange({ camera: v ? v : undefined });
+          } else if (openListModal === 'lens') {
+            title = 'Lens';
+            options = lenses.map((l) => ({ label: l, count: lensCounts[l] }));
+            value = filters.lens ?? '';
+            onChange = (v) => onFilterChange({ lens: v ? v : undefined });
+          } else if (openListModal === 'keywords') {
+            title = 'Keywords';
+            options = keywords.map((k) => ({
+              label: k,
+              count: keywordCounts[k],
+            }));
+            value = filters.keyword ?? '';
+            onChange = (v) => onFilterChange({ keyword: v ? v : undefined });
+          } else if (openListModal === 'people') {
+            title = 'People';
+            options = people.map((p) => ({ label: p.label, count: p.count }));
+            value = filters.people ?? '';
+            onChange = (v) => onFilterChange({ people: v });
+          } else if (openListModal === 'dogs') {
+            title = 'Dogs';
+            options = dogs.map((d) => ({ label: d.label, count: d.count }));
+            value = filters.dogs ?? '';
+            onChange = (v) => onFilterChange({ dogs: v });
+          }
+          return (
+            <FilterListModal
+              visible
+              title={title}
+              options={options}
+              value={value}
+              onChange={onChange}
+              onClose={() => setOpenListModal(null)}
+            />
+          );
+        })()}
+    </>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Active-filter indicator shown in a section header: a filter icon that turns
+ * into an X on hover (web) and clears the section's filter on press.
+ */
+export function FilterBadge({
+  label,
+  palette,
+  onClear,
+}: {
+  label: string;
+  palette: ReturnType<typeof usePalette>;
+  onClear: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Tooltip title={`Clear ${label} filter`}>
+      <Pressable
+        onPress={onClear}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        accessibilityRole="button"
+        accessibilityLabel={`Clear ${label} filter`}
+        hitSlop={6}
+        style={[styles.activeBadge, { backgroundColor: palette.primary }]}
+      >
+        <MaterialIcons
+          name={hovered ? 'close' : 'filter-alt'}
+          size={12}
+          color={palette.primaryContrast}
+        />
+      </Pressable>
+    </Tooltip>
+  );
+}
+
+function CollapsibleSection({
+  sectionKey,
+  title,
+  palette,
+  children,
+  action,
+  expanded,
+  activeCount,
+  onFilterChange,
+}: {
+  sectionKey: FilterSectionKey;
+  title: string;
+  palette: ReturnType<typeof usePalette>;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  expanded: boolean;
+  activeCount: number;
+  onFilterChange: (filters: Partial<PhotoFilters>) => void;
+}) {
+  const isActive = activeCount > 0;
+  return (
+    <SharedCollapsibleSection
+      title={title}
+      expanded={expanded}
+      onToggle={() => toggleFilterSectionExpanded(sectionKey)}
+      active={isActive}
+      action={action}
+      badge={
+        isActive ? (
+          <FilterBadge
+            label={title}
+            palette={palette}
+            onClear={() => onFilterChange(getSectionClear(sectionKey))}
+          />
+        ) : null
+      }
+    >
+      {children}
+    </SharedCollapsibleSection>
+  );
+}
+
+export function ExpandSectionButton({
+  onPress,
+  palette,
+  label,
+}: {
+  onPress: () => void;
+  palette: ReturnType<typeof usePalette>;
+  label: string;
+}) {
+  return (
+    <Tooltip title={label}>
+      <Pressable
+        onPress={onPress}
+        accessibilityLabel={label}
+        hitSlop={6}
+        style={({ pressed }) => [
+          styles.expandButton,
+          { opacity: pressed ? 0.6 : 1 },
+        ]}
+      >
+        <MaterialIcons
+          name="open-in-full"
+          size={14}
+          color={palette.textSecondary}
+        />
+      </Pressable>
+    </Tooltip>
+  );
+}
+
+function ToggleChip({
+  label,
+  active,
+  onPress,
+  palette,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  palette: ReturnType<typeof usePalette>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        {
+          backgroundColor: active ? palette.primary : palette.surface,
+          borderColor: active ? palette.primary : palette.divider,
+          borderWidth: 1,
+          transform: [{ scale: pressed ? 0.96 : 1 }],
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.chipText,
+          { color: active ? palette.primaryContrast : palette.textPrimary },
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function MultiSelectChips({
+  options,
+  value,
+  onChange,
+  palette,
+}: {
+  options: LabelOption[];
+  value: string;
+  onChange: (next: string) => void;
+  palette: ReturnType<typeof usePalette>;
+}) {
+  const selected = new Set(value ? value.split(',').filter(Boolean) : []);
+  const toggle = (label: string) => {
+    const next = new Set(selected);
+    if (next.has(label)) next.delete(label);
+    else next.add(label);
+    onChange(Array.from(next).join(','));
+  };
+  return (
+    <ScrollView style={styles.chipScroll} nestedScrollEnabled>
+      <View style={styles.row}>
+        <ToggleChip
+          label="Any"
+          active={selected.size === 0}
+          onPress={() => onChange('')}
+          palette={palette}
+        />
+        {options.map((o) => (
+          <ToggleChip
+            key={o.label}
+            label={`${o.label} (${o.count})`}
+            active={selected.has(o.label)}
+            onPress={() => toggle(o.label)}
+            palette={palette}
+          />
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+export function MultiSelectStringChips({
+  options,
+  value,
+  onChange,
+  palette,
+}: {
+  options: string[];
+  value: string;
+  onChange: (next: string) => void;
+  palette: ReturnType<typeof usePalette>;
+}) {
+  const selected = new Set(value ? value.split(',').filter(Boolean) : []);
+  const toggle = (item: string) => {
+    const next = new Set(selected);
+    if (next.has(item)) next.delete(item);
+    else next.add(item);
+    onChange(Array.from(next).join(','));
+  };
+  return (
+    <ScrollView style={styles.chipScroll} nestedScrollEnabled>
+      <View style={styles.row}>
+        <ToggleChip
+          label="Any"
+          active={selected.size === 0}
+          onPress={() => onChange('')}
+          palette={palette}
+        />
+        {options.map((item) => (
+          <ToggleChip
+            key={item}
+            label={item}
+            active={selected.has(item)}
+            onPress={() => toggle(item)}
+            palette={palette}
+          />
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function CalendarFilter({
+  dates,
+  dateCounts,
+  selectedMonths,
+  selectedDates,
+  onChange,
+  palette,
+}: {
+  dates: string[];
+  dateCounts: Record<string, number>;
+  selectedMonths: string;
+  selectedDates: string;
+  onChange: (months: string, days: string) => void;
+  palette: ReturnType<typeof usePalette>;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  if (dates.length === 0) {
+    return (
+      <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
+        No dates available
+      </Text>
+    );
+  }
+
+  const monthSet = new Set(
+    selectedMonths ? selectedMonths.split(',').filter(Boolean) : [],
+  );
+  const daySet = new Set(
+    selectedDates ? selectedDates.split(',').filter(Boolean) : [],
+  );
+
+  const yearGroups: Record<string, Record<string, string[]>> = {};
+  for (const date of dates) {
+    const year = date.substring(0, 4);
+    const monthKey = date.substring(0, 7);
+    if (!yearGroups[year]) yearGroups[year] = {};
+    if (!yearGroups[year][monthKey]) yearGroups[year][monthKey] = [];
+    yearGroups[year][monthKey].push(date);
+  }
+
+  const toggleExpand = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleMonth = (monthKey: string) => {
+    const next = new Set(monthSet);
+    if (next.has(monthKey)) next.delete(monthKey);
+    else next.add(monthKey);
+    onChange(Array.from(next).join(','), Array.from(daySet).join(','));
+  };
+
+  const toggleAllMonthsInYear = (monthKeys: string[]) => {
+    const allSelected = monthKeys.every((m) => monthSet.has(m));
+    const next = new Set(monthSet);
+    if (allSelected) {
+      monthKeys.forEach((m) => next.delete(m));
+    } else {
+      monthKeys.forEach((m) => next.add(m));
+    }
+    onChange(Array.from(next).join(','), Array.from(daySet).join(','));
+  };
+
+  const toggleDate = (dateStr: string) => {
+    const next = new Set(daySet);
+    if (next.has(dateStr)) next.delete(dateStr);
+    else next.add(dateStr);
+    onChange(Array.from(monthSet).join(','), Array.from(next).join(','));
+  };
+
+  const years = Object.keys(yearGroups).sort((a, b) => b.localeCompare(a));
+
+  return (
+    <View style={{ gap: SPACING.TINY }}>
+      {selectedMonths || selectedDates ? (
+        <Pressable
+          onPress={() => onChange('', '')}
+          style={({ pressed }) => [
+            styles.clearAllButton,
+            {
+              borderColor: palette.divider,
+              opacity: pressed ? 0.6 : 1,
+            },
+          ]}
+        >
+          <Text
+            style={[styles.clearAllText, { color: palette.textSecondary }]}
+          >
+            Clear calendar selection
+          </Text>
+        </Pressable>
+      ) : null}
+      {years.map((year) => {
+        const months = yearGroups[year];
+        const monthKeys = Object.keys(months).sort((a, b) =>
+          b.localeCompare(a),
+        );
+        const yearTotal = monthKeys.reduce(
+          (sum, mk) =>
+            sum +
+            months[mk].reduce((s, d) => s + (dateCounts[d] || 0), 0),
+          0,
+        );
+        const allMonthsInYear = monthKeys.every((mk) => monthSet.has(mk));
+        const someMonthsInYear = monthKeys.some((mk) => monthSet.has(mk));
+        const isYearExpanded = expanded.has(year);
+        return (
+          <View key={year}>
+            <View
+              style={[
+                styles.calRow,
+                {
+                  backgroundColor: allMonthsInYear
+                    ? palette.primary
+                    : someMonthsInYear
+                      ? palette.surfaceElevated
+                      : palette.surface,
+                },
+              ]}
+            >
+              <Pressable
+                onPress={() => toggleExpand(year)}
+                style={({ pressed }) => [
+                  styles.calRowLabel,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <MaterialIcons
+                  name={isYearExpanded ? 'expand-more' : 'chevron-right'}
+                  size={16}
+                  color={
+                    allMonthsInYear
+                      ? palette.primaryContrast
+                      : palette.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.calRowText,
+                    {
+                      color: allMonthsInYear
+                        ? palette.primaryContrast
+                        : palette.textPrimary,
+                      fontWeight: '600',
+                    },
+                  ]}
+                >
+                  {year} ({yearTotal})
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => toggleAllMonthsInYear(monthKeys)}
+                accessibilityLabel={
+                  allMonthsInYear ? 'Deselect year' : 'Select year'
+                }
+                style={({ pressed }) => [
+                  styles.calToggle,
+                  {
+                    borderColor: allMonthsInYear
+                      ? palette.primaryContrast
+                      : palette.textSecondary,
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <MaterialIcons
+                  name="calendar-today"
+                  size={12}
+                  color={
+                    allMonthsInYear
+                      ? palette.primaryContrast
+                      : palette.textSecondary
+                  }
+                />
+              </Pressable>
+            </View>
+            {isYearExpanded ? (
+              <View style={{ paddingLeft: SPACING.SMALL }}>
+                {monthKeys.map((monthKey) => {
+                  const monthDates = months[monthKey];
+                  const isMonthSelected = monthSet.has(monthKey);
+                  const isMonthExpanded = expanded.has(monthKey);
+                  const monthTotal = monthDates.reduce(
+                    (sum, d) => sum + (dateCounts[d] || 0),
+                    0,
+                  );
+                  const monthNum = parseInt(monthKey.substring(5, 7), 10) - 1;
+                  const yearNum = parseInt(monthKey.substring(0, 4), 10);
                   return (
-                    <ListItem key={kw} disablePadding>
-                      <ListItemButton
-                        sx={{ py: 0.1, px: 0.75 }}
-                        selected={selected}
-                        onClick={() =>
-                          onFilterChange({
-                            keyword: toggleInList(filters.keyword, kw),
-                          })
-                        }
+                    <View key={monthKey}>
+                      <View
+                        style={[
+                          styles.calRow,
+                          {
+                            backgroundColor: isMonthSelected
+                              ? palette.primary
+                              : palette.surface,
+                          },
+                        ]}
                       >
-                        <ListItemText
-                          primary={kw}
-                          primaryTypographyProps={{
-                            variant: 'body2',
-                            noWrap: true,
-                          }}
+                        <Pressable
+                          onPress={() => toggleExpand(monthKey)}
+                          style={({ pressed }) => [
+                            styles.calRowLabel,
+                            { opacity: pressed ? 0.6 : 1 },
+                          ]}
+                        >
+                          <MaterialIcons
+                            name={
+                              isMonthExpanded ? 'expand-more' : 'chevron-right'
+                            }
+                            size={14}
+                            color={
+                              isMonthSelected
+                                ? palette.primaryContrast
+                                : palette.textSecondary
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.calRowText,
+                              {
+                                color: isMonthSelected
+                                  ? palette.primaryContrast
+                                  : palette.textPrimary,
+                              },
+                            ]}
+                          >
+                            {MONTH_NAMES[monthNum]} ({monthTotal})
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => toggleMonth(monthKey)}
+                          accessibilityLabel={
+                            isMonthSelected
+                              ? 'Deselect month'
+                              : 'Select month'
+                          }
+                          style={({ pressed }) => [
+                            styles.calToggle,
+                            {
+                              borderColor: isMonthSelected
+                                ? palette.primaryContrast
+                                : palette.textSecondary,
+                              opacity: pressed ? 0.6 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialIcons
+                            name="calendar-today"
+                            size={12}
+                            color={
+                              isMonthSelected
+                                ? palette.primaryContrast
+                                : palette.textSecondary
+                            }
+                          />
+                        </Pressable>
+                      </View>
+                      {isMonthExpanded ? (
+                        <CalendarMonthGrid
+                          year={yearNum}
+                          month={monthNum}
+                          dateCounts={dateCounts}
+                          selectedDates={daySet}
+                          onToggle={toggleDate}
+                          palette={palette}
                         />
-                        {selected && (
-                          <CheckIcon sx={{ fontSize: 14, ml: 0.5 }} />
-                        )}
-                      </ListItemButton>
-                    </ListItem>
+                      ) : null}
+                    </View>
                   );
                 })}
-              </List>
-            </Box>
-          </Collapse>
-        </Box>
-      </Box>
-
-      {/* Reset button - always visible */}
-      <Box sx={{ p: 0.75, borderTop: 1, borderColor: 'divider' }}>
-        <Button
-          variant="outlined"
-          size="small"
-          fullWidth
-          onClick={() =>
-            onFilterChange({
-              search: '',
-              camera: '',
-              lens: '',
-              aspectRatio: '',
-              orientation: '',
-              minIso: undefined,
-              maxIso: undefined,
-              minAperture: undefined,
-              maxAperture: undefined,
-              startDate: '',
-              endDate: '',
-              selectedMonths: '',
-              selectedDates: '',
-              keyword: '',
-              folder: '',
-              label: '',
-              rating: undefined,
-              sortBy: 'dateCaptured',
-              sortOrder: 'desc',
-            })
-          }
-        >
-          Clear Filters
-        </Button>
-      </Box>
-
-      {/* Logout button - always visible */}
-      <Box sx={{ p: 0.75, borderTop: 1, borderColor: 'divider' }}>
-        <Button
-          variant="text"
-          size="small"
-          fullWidth
-          startIcon={<LogoutIcon fontSize="small" />}
-          onClick={onLogout}
-          color="inherit"
-        >
-          Logout
-        </Button>
-      </Box>
-    </Box>
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
   );
-});
+}
 
-export default FilterPanel;
+function CalendarMonthGrid({
+  year,
+  month,
+  dateCounts,
+  selectedDates,
+  onToggle,
+  palette,
+}: {
+  year: number;
+  month: number;
+  dateCounts: Record<string, number>;
+  selectedDates: Set<string>;
+  onToggle: (dateStr: string) => void;
+  palette: ReturnType<typeof usePalette>;
+}) {
+  const firstOfMonth = new Date(year, month, 1);
+  const startWeekday = firstOfMonth.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const cells: React.ReactNode[] = [];
+  for (let i = 0; i < startWeekday; i++) {
+    cells.push(<View key={`pad-${i}`} style={styles.dayCell} />);
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const count = dateCounts[dateStr] || 0;
+    const isSelected = selectedDates.has(dateStr);
+    const hasPhotos = count > 0;
+    cells.push(
+      <Pressable
+        key={dateStr}
+        onPress={() => {
+          if (hasPhotos) onToggle(dateStr);
+        }}
+        style={({ pressed }) => [
+          styles.dayCell,
+          {
+            backgroundColor: isSelected
+              ? palette.primary
+              : hasPhotos
+                ? palette.surfaceElevated
+                : 'transparent',
+            opacity: pressed && hasPhotos ? 0.6 : 1,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.dayCellText,
+            {
+              color: isSelected
+                ? palette.primaryContrast
+                : hasPhotos
+                  ? palette.textPrimary
+                  : palette.textSecondary,
+            },
+          ]}
+        >
+          {day}
+        </Text>
+        {hasPhotos ? (
+          <Text
+            style={[
+              styles.dayCellCount,
+              {
+                color: isSelected
+                  ? palette.primaryContrast
+                  : palette.textSecondary,
+              },
+            ]}
+          >
+            {count}
+          </Text>
+        ) : null}
+      </Pressable>,
+    );
+  }
+
+  return (
+    <View style={{ paddingVertical: SPACING.TINY }}>
+      <View style={styles.weekdayRow}>
+        {WEEKDAY_LABELS.map((d, i) => (
+          <Text
+            key={i}
+            style={[styles.weekdayLabel, { color: palette.textSecondary }]}
+          >
+            {d}
+          </Text>
+        ))}
+      </View>
+      <View style={styles.dayGrid}>{cells}</View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  expandControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: SPACING.SMALL,
+    paddingHorizontal: SPACING.SMALL,
+    paddingVertical: SPACING.TINY,
+    borderBottomWidth: 1,
+  },
+  expandControlButton: {
+    paddingHorizontal: SPACING.TINY,
+    paddingVertical: SPACING.TINY,
+  },
+  expandControlText: {
+    fontSize: FONT_SIZES.TINY,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  activeBadge: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+  },
+  expandButton: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.TINY,
+  },
+  chipScroll: {
+    maxHeight: 160,
+  },
+  chip: {
+    paddingHorizontal: SPACING.SMALL,
+    paddingVertical: SPACING.TINY,
+  },
+  chipText: {
+    fontSize: FONT_SIZES.SMALL,
+  },
+  emptyText: {
+    fontSize: FONT_SIZES.SMALL,
+    paddingVertical: SPACING.SMALL,
+  },
+  clearAllButton: {
+    borderWidth: 1,
+    paddingVertical: SPACING.TINY,
+    paddingHorizontal: SPACING.SMALL,
+    alignSelf: 'flex-start',
+  },
+  clearAllText: {
+    fontSize: FONT_SIZES.TINY,
+  },
+  calRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.TINY,
+    paddingHorizontal: SPACING.TINY,
+    gap: SPACING.TINY,
+  },
+  calRowLabel: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.TINY,
+    minWidth: 0,
+  },
+  calRowText: {
+    fontSize: FONT_SIZES.SMALL,
+  },
+  calToggle: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+  },
+  weekdayLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: FONT_SIZES.TINY,
+    fontWeight: '600',
+  },
+  dayGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dayCell: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayCellText: {
+    fontSize: FONT_SIZES.TINY,
+  },
+  dayCellCount: {
+    fontSize: 8,
+    opacity: 0.7,
+  },
+});

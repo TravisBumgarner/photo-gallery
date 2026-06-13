@@ -1,80 +1,73 @@
-export const PALETTE = {
-  grayscale: {
-    0: 'hsl(0 0% 100%)',
-    50: 'hsl(0 0% 95%)',
-    100: 'hsl(0 0% 90%)',
-    200: 'hsl(0 0% 80%)',
-    300: 'hsl(0 0% 70%)',
-    400: 'hsl(0 0% 60%)',
-    500: 'hsl(0 0% 50%)',
-    600: 'hsl(0 0% 40%)',
-    700: 'hsl(0 0% 30%)',
-    800: 'hsl(0 0% 20%)',
-    850: 'hsl(0 0% 15%)',
-    900: 'hsl(0 0% 10%)',
-    1000: 'hsl(0 0% 0%)',
-  },
-};
-
-export const subtleBackground = (subtleness: 'very' | 'slightly' = 'very') => {
-  if (subtleness === 'slightly') {
-    return `color-mix(in hsl, ${PALETTE.grayscale[500]}, ${PALETTE.grayscale[900]} 90%)`;
-  }
-
-  return `color-mix(in hsl, ${PALETTE.grayscale[800]}, ${PALETTE.grayscale[900]} 80%)`;
-};
-
-export const BORDER_RADIUS = {
-  ZERO: {
-    PX: '0px',
-    INT: 0,
-  },
+export const SPACING = {
+  TINY: 4,
+  SMALL: 10,
+  MEDIUM: 20,
+  LARGE: 36,
+  HUGE: 48,
 } as const;
 
 export const FONT_SIZES = {
-  SMALL: {
-    PX: '12px',
-    INT: 12,
+  TINY: 10,
+  SMALL: 12,
+  MEDIUM: 16,
+  LARGE: 24,
+  HUGE: 32,
+} as const;
+
+export const BORDER_RADIUS = {
+  ZERO: 0,
+} as const;
+
+export const PALETTE = {
+  grayscale: {
+    0: 'hsl(0, 0%, 100%)',
+    50: 'hsl(0, 0%, 95%)',
+    100: 'hsl(0, 0%, 90%)',
+    200: 'hsl(0, 0%, 80%)',
+    300: 'hsl(0, 0%, 70%)',
+    400: 'hsl(0, 0%, 60%)',
+    500: 'hsl(0, 0%, 50%)',
+    600: 'hsl(0, 0%, 40%)',
+    700: 'hsl(0, 0%, 30%)',
+    800: 'hsl(0, 0%, 20%)',
+    850: 'hsl(0, 0%, 15%)',
+    900: 'hsl(0, 0%, 10%)',
+    1000: 'hsl(0, 0%, 0%)',
   },
-  MEDIUM: {
-    PX: '16px',
-    INT: 16,
-  },
-  LARGE: {
-    PX: '24px',
-    INT: 24,
-  },
-  HUGE: {
-    PX: '32px',
-    INT: 32,
+  red: {
+    500: 'hsl(0, 70%, 50%)',
+    600: 'hsl(0, 70%, 45%)',
   },
 } as const;
 
-export const SPACING = {
-  TINY: {
-    PX: '4px',
-    INT: 4,
-  },
-  SMALL: {
-    PX: '10px',
-    INT: 10,
-  },
-  MEDIUM: {
-    PX: '20px',
-    INT: 20,
-  },
-  LARGE: {
-    PX: '36px',
-    INT: 36,
-  },
-  HUGE: {
-    PX: '48px',
-    INT: 48,
-  },
+// Semantic role names mirror the legacy MUI theme (frontend/src/styles/Theme.tsx)
+// so components can port over without re-mapping color slots.
+export const LIGHT_PALETTE = {
+  background: PALETTE.grayscale[0],
+  backgroundSubtle: PALETTE.grayscale[100],
+  surface: PALETTE.grayscale[50],
+  surfaceElevated: PALETTE.grayscale[100],
+  textPrimary: PALETTE.grayscale[900],
+  textSecondary: PALETTE.grayscale[700],
+  divider: PALETTE.grayscale[200],
+  primary: PALETTE.grayscale[900],
+  primaryContrast: PALETTE.grayscale[0],
+  error: PALETTE.red[600],
 } as const;
 
-export const BUTTON_STYLES = {
-  color: PALETTE.grayscale[900],
-  background: PALETTE.grayscale[200],
-  hoverBackground: PALETTE.grayscale[100],
+export const DARK_PALETTE = {
+  background: PALETTE.grayscale[900],
+  backgroundSubtle: PALETTE.grayscale[850],
+  surface: PALETTE.grayscale[800],
+  surfaceElevated: PALETTE.grayscale[850],
+  textPrimary: PALETTE.grayscale[100],
+  textSecondary: PALETTE.grayscale[200],
+  divider: PALETTE.grayscale[800],
+  primary: PALETTE.grayscale[200],
+  primaryContrast: PALETTE.grayscale[900],
+  error: PALETTE.red[500],
 } as const;
+
+export type Palette = { readonly [K in keyof typeof LIGHT_PALETTE]: string };
+
+export const FORM_MAX_WIDTH = 400;
