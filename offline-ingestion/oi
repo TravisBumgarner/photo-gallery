@@ -331,12 +331,6 @@ fi
 # you go (env_set), so there's nothing to set up by hand on a fresh checkout.
 touch .cli-cache
 
-# The cli service's volume guards on SOURCE_DIR (${SOURCE_DIR:?...}), and compose
-# interpolates EVERY service when it parses the file — even for subcommands that
-# never start cli (--server, --tagging-ui). Give it a placeholder so those parse;
-# the ingestion flow below overrides it with the validated photo folder.
-export SOURCE_DIR="${SOURCE_DIR:-/nonexistent}"
-
 # --tagging-ui: skip all the prompts/pipeline and jump straight to the label UI.
 if [[ "$TAGGING_UI" == true ]]; then
   bold "Opening the tagging UI..."

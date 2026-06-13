@@ -41,7 +41,12 @@ services:
     ports:
       - "${GATEWAY_PORT:-8443}:8443"
     environment:
-      GATEWAY_TOKEN: "${GATEWAY_TOKEN:?run ./oi --server (it generates GATEWAY_TOKEN) — do not start the gateway by hand}"
+      # Set by `./oi --server` (it generates the token). Left empty otherwise — and
+      # an empty token makes Caddy demand a literal "Bearer " on every route, so it
+      # fails CLOSED. Don't use a mandatory (:?) guard here: compose interpolates
+      # this service even for unrelated commands (a plain local ingest, --tagging-ui),
+      # which would then error out on a token they never needed.
+      GATEWAY_TOKEN: "${GATEWAY_TOKEN:-}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     # Reach the host's native Ollama (GPU) from inside the container. Automatic on
@@ -104,8 +109,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ../backend:/data
-      # Your photo library (set by ./oi). Read-write so 'cut' transfer mode works.
-      - "${SOURCE_DIR:?set SOURCE_DIR (the host photo folder) before running cli}:/photos"
+      # Your photo library. ./oi sets SOURCE_DIR (and validates the folder exists)
+      # before running cli; the default only keeps compose parseable for the other
+      # services/subcommands that never start cli. Read-write so 'cut' mode works.
+      - "${SOURCE_DIR:-/nonexistent}:/photos"
       - ./offline-ingestion.config.yaml:/app/offline-ingestion/offline-ingestion.config.yaml:ro
       # SSH keys for sync-to-prod (harmless if unused).
       - "${HOME}/.ssh:/root/.ssh:ro"
