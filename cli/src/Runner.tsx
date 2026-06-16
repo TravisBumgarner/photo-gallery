@@ -30,12 +30,21 @@ export function Runner({ steps }: { steps: Step[] }) {
         setActive(i);
         setStatus(i, 'running');
         setLastLine('');
-        const code = await runStep(steps[i].spec, (line) => setLastLine(line));
+        const tail: string[] = [];
+        const code = await runStep(steps[i].spec, (line) => {
+          tail.push(line);
+          if (tail.length > 30) tail.shift();
+          setLastLine(line);
+        });
         if (code === 0) {
           setStatus(i, 'done');
         } else {
           setStatus(i, 'failed');
           for (let j = i + 1; j < steps.length; j++) setStatus(j, 'skipped');
+          // Surface the failure to the scrollback (persists after the TUI clears).
+          console.error(
+            `\n─── "${steps[i].id}" failed — last output ───\n${tail.join('\n')}\n`,
+          );
           setTimeout(() => exit(new Error(`step "${steps[i].id}" failed`)), 50);
           return;
         }

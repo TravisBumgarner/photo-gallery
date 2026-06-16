@@ -15,9 +15,10 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   const fields = applicableFields(values);
   const field = fields[idx];
 
-  // Reset the input to the field's default whenever we move to a new field.
+  // Start each field empty so the default shows as a gray placeholder; hitting
+  // enter on an empty field submits the default (see submit()).
   useEffect(() => {
-    setDraft(field?.default ?? '');
+    setDraft('');
     setError(null);
   }, [field?.key]);
 
@@ -57,10 +58,10 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
           onChange={setDraft}
           onSubmit={submit}
           mask={field.secret ? '*' : undefined}
+          placeholder={field.secret ? undefined : field.default || undefined}
         />
       </Box>
       {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
-      {field.default ? <Text dimColor>  (enter for default: {field.secret ? '•••' : field.default || '(blank)'})</Text> : null}
       {error ? <Text color="red">  ✖ {error}</Text> : null}
     </Box>
   );
