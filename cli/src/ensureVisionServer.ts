@@ -13,12 +13,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   if (!dockerUp()) {
-    console.log('Faces/dogs detection needs Docker. Start Docker, then I’ll continue…');
+    console.log('Faces/dogs detection needs Docker.');
     let waited = 0;
     while (!dockerUp()) {
       await sleep(2000);
       waited += 2;
-      if (waited % 10 === 0) console.log(`  still waiting for Docker (${waited}s)…`);
+      console.log(
+        `  Start Docker Desktop to continue — waiting (${waited}s). Ctrl-C to cancel.`,
+      );
     }
   }
   console.log('Docker ready — starting detection service.');
