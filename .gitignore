@@ -31,3 +31,6 @@ backend/frontend-dist/
 
 # Orchestrator remembered selections
 .orchestrator-prefs.json
+
+# Native pipeline output (DB, images, thumbnails, sidecars)
+data/
