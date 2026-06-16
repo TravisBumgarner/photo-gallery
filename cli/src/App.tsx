@@ -1,8 +1,9 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useEffect, useMemo, useState } from 'react';
 import { needsSetup } from './configFiles.js';
+import { LabelStep } from './LabelStep.js';
 import { MultiSelect } from './MultiSelect.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 import { Runner } from './Runner.js';
@@ -12,13 +13,23 @@ import {
   type SourceAdapter,
   type Step,
   processSteps,
+  publishStep,
   sourceSteps,
   syncSteps,
 } from './steps.js';
 
-type Screen = 'setup' | 'phases' | 'source' | 'mode' | 'tasks' | 'run';
+type Screen =
+  | 'setup'
+  | 'phases'
+  | 'source'
+  | 'mode'
+  | 'tasks'
+  | 'run-pre'
+  | 'label'
+  | 'run-post';
 
 export function App({ forceSetup = false }: { forceSetup?: boolean }) {
+  const { exit } = useApp();
   // Seed every prompt from last run's choices → enter-enter-enter on re-runs.
   const prefs = useMemo(loadPrefs, []);
   // Setup runs on --setup or when config is missing; otherwise straight to the
@@ -33,26 +44,30 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
 
   // Persist selections once we commit to running.
   useEffect(() => {
-    if (screen === 'run') savePrefs({ phases, adapter, mode, tasks });
+    if (screen === 'run-pre') savePrefs({ phases, adapter, mode, tasks });
   }, [screen, phases, adapter, mode, tasks]);
 
-  const steps = useMemo<Step[]>(() => {
-    if (screen !== 'run') return [];
-    const out: Step[] = [];
-    if (phases.includes('source')) out.push(...sourceSteps(adapter));
+  // Pre = source + pipeline up to clustering. Then (faces/dogs) the labeling UI.
+  // Post = publish (with new labels) + sync.
+  const { pre, post, needsLabel } = useMemo(() => {
+    const pre: Step[] = [];
+    const post: Step[] = [];
+    if (phases.includes('source')) pre.push(...sourceSteps(adapter));
+    let opts: ProcessOpts | null = null;
     if (phases.includes('process')) {
-      const opts: ProcessOpts = {
+      opts = {
         mode,
         ingest: tasks.includes('ingest'),
         tag: tasks.includes('tag'),
         faces: tasks.includes('faces'),
         dogs: tasks.includes('dogs'),
       };
-      out.push(...processSteps(opts));
+      pre.push(...processSteps(opts));
+      post.push(publishStep());
     }
-    if (phases.includes('sync')) out.push(...syncSteps());
-    return out;
-  }, [screen, phases, adapter, mode, tasks]);
+    if (phases.includes('sync')) post.push(...syncSteps());
+    return { pre, post, needsLabel: !!opts && (opts.faces || opts.dogs) };
+  }, [phases, adapter, mode, tasks]);
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -76,7 +91,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               setPhases(sel);
               if (sel.includes('source')) setScreen('source');
               else if (sel.includes('process')) setScreen('mode');
-              else setScreen('run');
+              else setScreen('run-pre');
             }}
           />
         </Box>
@@ -93,7 +108,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
             ]}
             onSelect={(item) => {
               setAdapter(item.value as SourceAdapter);
-              setScreen(phases.includes('process') ? 'mode' : 'run');
+              setScreen(phases.includes('process') ? 'mode' : 'run-pre');
             }}
           />
         </Box>
@@ -129,18 +144,25 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
             ]}
             onSubmit={(sel) => {
               setTasks(sel);
-              setScreen('run');
+              setScreen('run-pre');
             }}
           />
         </Box>
       )}
 
-      {screen === 'run' &&
-        (steps.length > 0 ? (
-          <Runner steps={steps} />
+      {screen === 'run-pre' &&
+        (pre.length + post.length > 0 ? (
+          <Runner
+            steps={pre}
+            onDone={() => setScreen(needsLabel ? 'label' : 'run-post')}
+          />
         ) : (
           <Text color="yellow">Nothing selected — exiting.</Text>
         ))}
+
+      {screen === 'label' && <LabelStep onDone={() => setScreen('run-post')} />}
+
+      {screen === 'run-post' && <Runner steps={post} onDone={() => exit()} />}
     </Box>
   );
 }

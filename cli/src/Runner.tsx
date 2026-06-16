@@ -9,7 +9,13 @@ type Status = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
 /** Runs a list of steps sequentially, showing a live checklist + the last
  * output line of the active step. Stops on the first failure. */
-export function Runner({ steps }: { steps: Step[] }) {
+export function Runner({
+  steps,
+  onDone,
+}: {
+  steps: Step[];
+  onDone: () => void;
+}) {
   const { exit } = useApp();
   const [statuses, setStatuses] = useState<Status[]>(
     steps.map(() => 'pending'),
@@ -49,9 +55,9 @@ export function Runner({ steps }: { steps: Step[] }) {
           return;
         }
       }
-      setTimeout(() => exit(), 50);
+      setTimeout(() => onDone(), 50);
     })();
-  }, [steps, exit]);
+  }, [steps, exit, onDone]);
 
   const glyph = (s: Status) =>
     s === 'done'

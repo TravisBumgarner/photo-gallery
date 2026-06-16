@@ -101,8 +101,12 @@ export function processSteps(opts: ProcessOpts): Step[] {
   if (opts.faces || opts.dogs) {
     steps.push(task('reapply-labels', 'Reattach saved labels'));
   }
-  steps.push(task('publish', 'Publish read-only release'));
   return steps;
+}
+
+/** Publish runs after labeling so newly-named clusters are included. */
+export function publishStep(): Step {
+  return task('publish', 'Publish read-only release');
 }
 
 /** Sync phase: push media to the bucket (publish already pushed the DB +
