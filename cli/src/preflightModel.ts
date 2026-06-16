@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +25,21 @@ function readCliCache(): Record<string, string> {
     // no config yet
   }
   return out;
+}
+
+function setCliCacheKey(key: string, value: string): void {
+  let orig = '';
+  try {
+    orig = readFileSync(CLI_CACHE, 'utf8');
+  } catch {
+    // will create below
+  }
+  const re = new RegExp(`^${key}=.*$`, 'm');
+  const line = `${key}=${value}`;
+  const next = re.test(orig)
+    ? orig.replace(re, line)
+    : `${orig.replace(/\n?$/, '\n')}${line}\n`;
+  writeFileSync(CLI_CACHE, next);
 }
 
 async function tags(host: string): Promise<string[] | null> {
@@ -78,12 +93,25 @@ async function main() {
     console.log('Ollama is up.');
   }
 
-  // 2. Ensure the model is pulled.
+  // 2. Resolve to the EXACT installed tag — Ollama only auto-resolves a bare
+  // name to :latest, so `qwen3-vl` won't match an installed `qwen3-vl:8b`.
   const base = (s: string) => s.split(':')[0];
-  const has = (list: string[]) =>
-    list.some((n) => n === model || base(n) === base(model));
+  const resolveName = (list: string[]): string | null => {
+    if (list.includes(model)) return model;
+    if (!model.includes(':') && list.includes(`${model}:latest`)) return model;
+    const variants = list.filter((n) => base(n) === base(model));
+    return variants.length === 1 ? variants[0] : null;
+  };
 
-  if (!has(installed)) {
+  let resolved = resolveName(installed);
+  if (resolved === null) {
+    const variants = installed.filter((n) => base(n) === base(model));
+    if (variants.length > 1) {
+      die(
+        `Multiple "${base(model)}" tags installed: ${variants.join(', ')}.`,
+        'Set MODEL_SERVER_MODEL to the exact one (./ingest-and-sync --setup).',
+      );
+    }
     if (!isLocal(host)) {
       die(`Model "${model}" not on ${host} — pull it there: ollama pull ${model}`);
     }
@@ -92,16 +120,19 @@ async function main() {
     if (r.status !== 0) {
       die(
         `Failed to pull "${model}". Check the exact name — run \`ollama list\``,
-        'or browse https://ollama.com/library (e.g. the Qwen VL model is qwen2.5vl).',
+        'or browse https://ollama.com/library.',
       );
     }
-    // Authoritative: confirm it's actually there now.
-    const after = await tags(host);
-    if (!after || !has(after)) {
-      die(`"${model}" still not available after pull — is the name correct?`);
-    }
+    resolved = resolveName((await tags(host)) ?? []);
+    if (!resolved) die(`"${model}" still not available after pull.`);
   }
-  console.log(`Model "${model}" ready on ${host}.`);
+
+  // Persist the exact tag so the tag task uses a name Ollama will resolve.
+  if (resolved !== model) {
+    setCliCacheKey('MODEL_SERVER_MODEL', resolved);
+    console.log(`Using "${resolved}" (Ollama won't resolve the bare name "${model}").`);
+  }
+  console.log(`Model "${resolved}" ready on ${host}.`);
 }
 
 main();

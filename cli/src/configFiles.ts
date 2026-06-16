@@ -167,24 +167,43 @@ export const FIELDS: Field[] = [
         '',
       );
       const local = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
+      const base = (s: string) => s.split(':')[0];
+
+      // Already installed on the host?
+      let names: string[] | null = null;
       try {
         const res = await fetch(`${host}/api/tags`, {
           signal: AbortSignal.timeout(5000),
         });
-        if (!res.ok) return local ? null : `${host} returned ${res.status}.`;
-        const data = (await res.json()) as { models?: { name: string }[] };
-        const base = (s: string) => s.split(':')[0];
-        const names = (data.models ?? []).map((m) => m.name);
-        if (!names.some((n) => n === model || base(n) === base(model))) {
-          // Local: it'll be pulled automatically. Remote: we can't pull for them.
-          if (local) return null;
-          const avail = names.map(base).join(', ');
-          return `"${model}" not on ${host}. ${avail ? `Available: ${avail}` : 'Pull it there.'}`;
+        if (res.ok) {
+          const data = (await res.json()) as { models?: { name: string }[] };
+          names = (data.models ?? []).map((m) => m.name);
         }
-        return null;
       } catch {
-        return local ? null : `Can't reach ${host}.`;
+        names = null; // server down / unreachable
       }
+      if (names?.some((n) => n === model || base(n) === base(model))) return null;
+
+      if (!local) {
+        if (names === null) return `Can't reach ${host}.`;
+        const avail = names.map(base).join(', ');
+        return `"${model}" not on ${host}.${avail ? ` Available: ${avail}` : ''}`;
+      }
+
+      // Local + not installed: confirm it's a real model before the preflight
+      // tries to pull it — catches typos/gibberish.
+      if (model.includes('/')) return null; // namespaced; can't easily verify
+      try {
+        const reg = await fetch(`https://ollama.com/library/${base(model)}`, {
+          signal: AbortSignal.timeout(4000),
+        });
+        if (reg.status === 404) {
+          return `"${model}" isn't a known Ollama model — see https://ollama.com/library`;
+        }
+      } catch {
+        // offline / can't verify → allow (preflight will catch a bad pull)
+      }
+      return null;
     },
     advise: async (model, values) => {
       if (!model) return null;
