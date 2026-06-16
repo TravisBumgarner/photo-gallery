@@ -24,3 +24,10 @@ db_backups/
 # Expo / Tamagui generated caches — never commit.
 **/.expo/
 **/.tamagui/
+
+# Local MVP working data + built web frontend
+.mvp/
+backend/frontend-dist/
+
+# Orchestrator remembered selections
+.orchestrator-prefs.json

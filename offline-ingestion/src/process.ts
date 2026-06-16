@@ -13,6 +13,7 @@ import { deriveTagsFromPath } from '@/scan.js';
 
 export interface PhotoRecord {
   uuid: string;
+  contentHash: string;
   filename: string;
   originalPath: string;
   thumbnailPath: string;
@@ -51,6 +52,12 @@ export async function processImage(
   fileTransferMode: 'copy' | 'cut',
 ): Promise<PhotoRecord> {
   const filename = path.basename(imagePath);
+
+  // Content hash of the source bytes — keys the durable sidecar so the
+  // expensive compute survives renames and DB loss.
+  const contentHash = createHash('sha256')
+    .update(await fs.readFile(imagePath))
+    .digest('hex');
 
   const imageMetadata = await sharp(imagePath).metadata();
   const { width = 0, height = 0, size = 0, format } = imageMetadata;
@@ -101,6 +108,7 @@ export async function processImage(
 
   return {
     uuid,
+    contentHash,
     filename,
     originalPath: hashFilename,
     thumbnailPath: `thumbnails/${thumbnailFilename}`,

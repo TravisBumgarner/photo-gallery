@@ -685,9 +685,14 @@ fi
 [[ "$do_tag"    == true ]] && run_task prefetch-embedder "Fetching text-embedding model"
 [[ "$MODE" == create ]] && run_task clear-local-db "Wiping local data"
 [[ "$do_ingest" == true ]] && run_task ingest "Ingesting photos"
+# Restore expensive compute (tags/embeddings/detections) from sidecars so the
+# tag/detect steps below skip anything already computed in a prior run.
+[[ "$do_ingest" == true ]] && run_task restore "Restoring compute from sidecars"
 [[ "$do_tag"    == true ]] && run_task tag "Text-tagging + embedding"
 [[ "$do_faces"  == true ]] && { run_task detect-faces "Detecting faces"; run_task cluster-faces "Clustering faces"; }
 [[ "$do_dogs"   == true ]] && { run_task detect-dogs "Detecting dogs"; run_task cluster-dogs "Clustering dogs"; }
+# Reattach saved labels to the freshly-built clusters before the labeling UI.
+[[ "$do_faces" == true || "$do_dogs" == true ]] && run_task reapply-labels "Reattaching saved labels"
 
 # ----- label app -------------------------------------------------------------
 # If we detected/clustered people or dogs, open the tagging UI automatically so
@@ -695,6 +700,12 @@ fi
 if [[ "$do_faces" == true || "$do_dogs" == true ]]; then
   echo
   open_label_app
+  echo
+  dim "When you finish labeling, publish the read-only release with:"
+  dim "  docker compose run --rm cli npm run publish"
+else
+  # No labeling to wait on — publish the read-only release now.
+  run_task publish "Publishing read-only release"
 fi
 
 ok "Done."

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { expandHome } from './util.js';
 
 // Most of these come from docker-compose.yml (container paths, run flags); only
 // the model host/model/keys originate in .cli-cache, which ./oi creates and fills
@@ -9,6 +10,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   SOURCE_DIR: z.string(),
   DESTINATION_DIRECTORY: z.string(),
+  // Where `publish` writes sidecars/labels/read-only DB. Defaults to the local
+  // DESTINATION_DIRECTORY (single-box case); set to s3://… for a real bucket.
+  STORAGE_URL: z.string().optional(),
   // Ingest-only (used only by index.ts). Default them so non-ingest entrypoints
   // — the label app shares this loadConfig() — don't have to set them. The cli
   // always passes them explicitly via compose, so these defaults never apply there.
@@ -39,6 +43,15 @@ export function imagesDir(config: Config): string {
 
 export function thumbnailsDir(config: Config): string {
   return path.resolve(config.DESTINATION_DIRECTORY, 'thumbnails');
+}
+
+// Storage backend URL for publish. Defaults to the local output dir as a
+// file:// URL, so the single-box case needs no extra config.
+export function storageUrl(config: Config): string {
+  return (
+    config.STORAGE_URL ??
+    `file://${path.resolve(expandHome(config.DESTINATION_DIRECTORY))}`
+  );
 }
 
 export function modelCacheDir(config: Config): string {

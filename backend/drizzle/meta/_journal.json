@@ -43,6 +43,13 @@
       "when": 1781326369364,
       "tag": "0005_drop_users",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1781550040170,
+      "tag": "0006_motionless_omega_flight",
+      "breakpoints": true
     }
   ]
 }

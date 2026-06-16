@@ -12,6 +12,10 @@ export const photos = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     uuid: text('uuid').notNull().unique(),
+    // SHA256 of the source file bytes. Keys the durable per-photo sidecar
+    // (expensive compute) so it survives renames and DB loss. Nullable for
+    // rows written before this column existed.
+    contentHash: text('content_hash'),
     filename: text('filename').notNull(),
     originalPath: text('original_path').notNull(),
     thumbnailPath: text('thumbnail_path').notNull(),
@@ -70,6 +74,7 @@ export const photos = sqliteTable(
     aspectRatioIdx: index('idx_photos_aspect_ratio').on(table.aspectRatio),
     createdAtIdx: index('idx_photos_created_at').on(table.createdAt),
     filenameIdx: index('idx_photos_filename').on(table.filename),
+    contentHashIdx: index('idx_photos_content_hash').on(table.contentHash),
     facesProcessedAtIdx: index('idx_photos_faces_processed_at').on(
       table.facesProcessedAt,
     ),

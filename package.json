@@ -6,10 +6,12 @@
     "shared",
     "backend",
     "offline-ingestion",
-    "frontend"
+    "frontend",
+    "cli"
   ],
   "scripts": {
     "setup": "bash bootstrap.sh",
+    "orchestrator": "npm run start -w cli",
     "dev:backend": "npm run dev -w backend",
     "dev:frontend": "npm run start -w frontend",
     "dev:frontend-web": "npm run web -w frontend",

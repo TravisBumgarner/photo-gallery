@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# One entrypoint for the whole offline side: first-run setup (writes
+# .cli-cache + backend/.env), then the Source → Process → Sync orchestrator.
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+# Dependencies (first clone).
+if [ ! -e node_modules/ink ]; then
+  echo "📦 Installing dependencies (first run)..."
+  npm install
+fi
+
+# Docker must be running — the pipeline runs in containers.
+if ! docker info >/dev/null 2>&1; then
+  echo "❌ Docker isn't running. Start Docker Desktop (or your engine) and retry."
+  exit 1
+fi
+
+exec npx tsx cli/src/index.tsx

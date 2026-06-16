@@ -106,18 +106,23 @@ const allowCrossOriginEmbed = (
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 };
+
+// Media lives in the storage backend. For a file:// backend, serve straight
+// from that directory; otherwise fall back to the legacy local ../public
+// layout. (s3:// media will serve via signed URLs — not wired yet.)
+const mediaRoot = config.STORAGE_URL?.startsWith('file://')
+  ? config.STORAGE_URL.slice('file://'.length)
+  : path.join(__dirname, '../public');
+
 app.use(
   '/images',
   allowCrossOriginEmbed,
-  express.static(path.join(__dirname, '../public/images'), staticCacheOptions),
+  express.static(path.join(mediaRoot, 'images'), staticCacheOptions),
 );
 app.use(
   '/thumbnails',
   allowCrossOriginEmbed,
-  express.static(
-    path.join(__dirname, '../public/thumbnails'),
-    staticCacheOptions,
-  ),
+  express.static(path.join(mediaRoot, 'thumbnails'), staticCacheOptions),
 );
 
 // Routes (protected)

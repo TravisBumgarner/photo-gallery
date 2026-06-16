@@ -1,0 +1,24 @@
+# Build-scoped ignore for backend/Dockerfile (BuildKit picks this over the root
+# .dockerignore). The backend image NEEDS frontend/ source for the web export,
+# so — unlike the root ignore — we do not exclude it.
+**/node_modules
+**/dist
+**/.expo
+**/.tsbuildinfo
+**/tsconfig.tsbuildinfo
+.git
+.github
+**/.env
+**/.env.*
+!**/.env.example
+
+# Not needed to build/serve the backend image.
+offline-ingestion/src
+offline-ingestion/vision-server
+backend/public
+designs
+readme
+claude-brain
+db_backups
+lightroom-export-presets
+**/*.db

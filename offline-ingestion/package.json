@@ -11,7 +11,11 @@
     "cluster-faces": "tsx src/cluster-faces.ts",
     "detect-dogs": "tsx src/detect-dogs.ts",
     "cluster-dogs": "tsx src/cluster-dogs.ts",
-    "clear-local-db": "tsx src/clear-local-db.ts"
+    "clear-local-db": "tsx src/clear-local-db.ts",
+    "restore": "tsx src/restore.ts",
+    "reapply-labels": "tsx src/reapply-labels.ts",
+    "publish": "tsx src/publish.ts",
+    "sync-media": "tsx src/sync-media.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.0",
