@@ -80,13 +80,26 @@ async function main() {
 
   // 2. Ensure the model is pulled.
   const base = (s: string) => s.split(':')[0];
-  if (!installed.some((n) => n === model || base(n) === base(model))) {
+  const has = (list: string[]) =>
+    list.some((n) => n === model || base(n) === base(model));
+
+  if (!has(installed)) {
     if (!isLocal(host)) {
       die(`Model "${model}" not on ${host} — pull it there: ollama pull ${model}`);
     }
     console.log(`Pulling ${model} (first time — can be several GB)…`);
     const r = spawnSync('ollama', ['pull', model], { stdio: 'inherit' });
-    if (r.status !== 0) die(`Failed to pull ${model}.`);
+    if (r.status !== 0) {
+      die(
+        `Failed to pull "${model}". Check the exact name — run \`ollama list\``,
+        'or browse https://ollama.com/library (e.g. the Qwen VL model is qwen2.5vl).',
+      );
+    }
+    // Authoritative: confirm it's actually there now.
+    const after = await tags(host);
+    if (!after || !has(after)) {
+      die(`"${model}" still not available after pull — is the name correct?`);
+    }
   }
   console.log(`Model "${model}" ready on ${host}.`);
 }
