@@ -5,16 +5,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Dependencies (first clone).
+# Native pipeline deps (sharp/sqlite/onnx/exiftool) + the Ink orchestrator.
+# NOT frontend (expo/skia) — that's only needed to build the web UI, which
+# ships prebuilt. Docker is NOT required here; only faces/dogs need it, and
+# the orchestrator brings that container up on demand.
 if [ ! -e node_modules/ink ]; then
   echo "📦 Installing dependencies (first run)..."
-  npm install
-fi
-
-# Docker must be running — the pipeline runs in containers.
-if ! docker info >/dev/null 2>&1; then
-  echo "❌ Docker isn't running. Start Docker Desktop (or your engine) and retry."
-  exit 1
+  npm install -w shared -w backend -w offline-ingestion -w cli
 fi
 
 exec npx tsx cli/src/index.tsx

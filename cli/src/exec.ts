@@ -9,6 +9,9 @@ export function runStep(spec: Spec, onLine: (line: string) => void): Promise<num
       cwd: spec.cwd,
       env: process.env,
     });
+    // Auto-confirm the ingest "Proceed? (y/n)" prompt; no-op for other tasks.
+    child.stdin?.write('y\n');
+    child.stdin?.end();
     const handle = (buf: Buffer) => {
       for (const line of buf.toString().split('\n')) {
         if (line.trim()) onLine(line.replace(/\s+$/, ''));

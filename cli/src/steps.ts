@@ -16,16 +16,19 @@ export interface Step {
   spec: Spec;
 }
 
-/** A pipeline task running inside the dockerized `cli` service. */
+/** A pipeline task: a native subprocess in the offline-ingestion workspace
+ * (reads config from .cli-cache there). No container. */
 function task(id: string, label: string): Step {
+  return { id, label, spec: { cmd: 'npm', args: ['run', id], cwd: OI_DIR } };
+}
+
+/** The one Docker touch: bring up the Python detection sidecar, only when
+ * faces/dogs are requested. */
+function visionServerStep(): Step {
   return {
-    id,
-    label,
-    spec: {
-      cmd: 'docker',
-      args: ['compose', 'run', '--rm', 'cli', 'npm', 'run', id],
-      cwd: OI_DIR,
-    },
+    id: 'vision-server',
+    label: 'Start detection service (Docker)',
+    spec: { cmd: 'docker', args: ['compose', 'up', '-d', 'vision-server'], cwd: OI_DIR },
   };
 }
 
@@ -46,7 +49,6 @@ export function sourceSteps(adapter: SourceAdapter): Step[] {
       {
         id: 'prepare-lightroom',
         label: 'Move Lightroom exports into the ingest folder',
-        // Host script; reads LIGHTROOM_DIR/SOURCE_DIR from .cli-cache like ./oi.
         spec: { cmd: './prepare-lightroom', args: [], cwd: OI_DIR },
       },
     ];
@@ -57,6 +59,7 @@ export function sourceSteps(adapter: SourceAdapter): Step[] {
 /** Process phase: the offline pipeline, mirroring ./oi's task order. */
 export function processSteps(opts: ProcessOpts): Step[] {
   const steps: Step[] = [];
+  steps.push(task('migrate', 'Prepare database')); // idempotent
   if (opts.tag) steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
   if (opts.mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
   if (opts.ingest) {
@@ -64,6 +67,7 @@ export function processSteps(opts: ProcessOpts): Step[] {
     steps.push(task('restore', 'Restore compute from sidecars'));
   }
   if (opts.tag) steps.push(task('tag', 'Text-tag + embed'));
+  if (opts.faces || opts.dogs) steps.push(visionServerStep());
   if (opts.faces) {
     steps.push(task('detect-faces', 'Detect faces'));
     steps.push(task('cluster-faces', 'Cluster faces'));
@@ -83,14 +87,4 @@ export function processSteps(opts: ProcessOpts): Step[] {
  * sidecars + labels to STORAGE_URL). */
 export function syncSteps(): Step[] {
   return [task('sync-media', 'Push media to the bucket')];
-}
-
-/** Ensure the dockerized `cli` image exists (cached/fast when unchanged).
- * Prepended whenever a containerized task will run. */
-export function buildStep(): Step {
-  return {
-    id: 'build',
-    label: 'Build Docker images',
-    spec: { cmd: 'docker', args: ['compose', 'build', 'cli'], cwd: OI_DIR },
-  };
 }

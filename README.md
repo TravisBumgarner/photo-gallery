@@ -21,13 +21,25 @@ Self-hosted photo gallery for browsing Lightroom photos quickly.
 
 Built with React + Vite, Express + Drizzle, and SQLite. Managed via npm workspaces.
 
-## Local Setup
+## Setup
+
+**Prerequisites**
+
+- **Node.js 20+** — runs the orchestrator and the whole pipeline natively
+- **Ollama** (optional) — only for text/semantic tagging. Install natively from <https://ollama.com> (Docker Ollama has no GPU on macOS)
+- **Docker** (optional) — only for face/dog detection; the orchestrator starts that one container on demand
+
+**Run**
 
 ```bash
-./bootstrap.sh
+git clone git@github.com:TravisBumgarner/photo-gallery.git
+cd photo-gallery
+./ingest-and-sync
 ```
 
-This installs dependencies, copies `.env.example` files, and runs database migrations. Once done, configure `backend/.env` (see below) and run `npm run dev` (frontend on :5200, backend on :8084).
+That's it. The first run prompts for everything (photo folder, gallery password, tagging/storage settings) and saves it. Re-runs remember your choices — hit enter through the prompts. The browsable output (read-only DB + images + thumbnails) lands in `data/`.
+
+> Windows: run `pwsh ./ingest-and-sync.ps1` instead of the shell script.
 
 ## Configuration
 
@@ -44,7 +56,7 @@ This installs dependencies, copies `.env.example` files, and runs database migra
 All ingestion — turning raw photos into browsable, searchable data (ingest, content
 tagging, face/dog detection + clustering, and cluster labeling) — lives in the
 **`offline-ingestion/`** workspace. It's the single home for this; nothing in the
-frontend or backend performs ingestion. Run it with `cd offline-ingestion && ./oi`.
+frontend or backend performs ingestion. Run it with `./ingest-and-sync`.
 
 See **[`offline-ingestion/README.md`](offline-ingestion/README.md)** for setup,
 configuration, model servers, and hardware/timing.

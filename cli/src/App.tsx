@@ -10,7 +10,6 @@ import {
   type ProcessOpts,
   type SourceAdapter,
   type Step,
-  buildStep,
   processSteps,
   sourceSteps,
   syncSteps,
@@ -35,10 +34,6 @@ export function App() {
   const steps = useMemo<Step[]>(() => {
     if (screen !== 'run') return [];
     const out: Step[] = [];
-    // Containerized tasks need the image built first (cached when unchanged).
-    if (phases.includes('process') || phases.includes('sync')) {
-      out.push(buildStep());
-    }
     if (phases.includes('source')) out.push(...sourceSteps(adapter));
     if (phases.includes('process')) {
       const opts: ProcessOpts = {

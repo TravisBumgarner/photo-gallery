@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI_CACHE = path.join(ROOT, 'offline-ingestion', '.cli-cache');
 const BACKEND_ENV = path.join(ROOT, 'backend', '.env');
-const BACKEND_DB = path.join(ROOT, 'backend', 'prod.sqlite');
+// Native data layout (no container paths). Ingest writes here; publish reads it.
+const DATA_DIR = path.join(ROOT, 'data');
+const DEST_DIR = path.join(DATA_DIR, 'out');
+const INGEST_DB = path.join(DATA_DIR, 'ingest.sqlite');
+const SERVED_DB = path.join(DATA_DIR, 'served.sqlite');
 
 /** First-run setup is needed when either config file is missing. */
 export function needsSetup(): boolean {
@@ -53,6 +57,8 @@ export function writeConfigFiles(v: Record<string, string>): {
   const line = (k: string) => (v[k] ? `${k}=${v[k]}` : '');
   const cliCache = `${[
     `SOURCE_DIR=${v.SOURCE_DIR}`,
+    `DESTINATION_DIRECTORY=${DEST_DIR}`,
+    `DATABASE_URL=${INGEST_DB}`,
     line('STORAGE_URL'),
     line('STORAGE_S3_ENDPOINT'),
     line('STORAGE_S3_REGION'),
@@ -67,12 +73,12 @@ export function writeConfigFiles(v: Record<string, string>): {
 
   const backendEnv = `${[
     'PORT=8084',
-    'NODE_ENV=development',
-    `DATABASE_URL=${BACKEND_DB}`,
+    'NODE_ENV=production',
+    `DATABASE_URL=${SERVED_DB}`,
     `SESSION_SECRET=${randomBytes(32).toString('hex')}`,
     `APP_PASSWORD=${v.APP_PASSWORD}`,
     'CORS_ORIGIN=*',
-    line('STORAGE_URL'),
+    `STORAGE_URL=${v.STORAGE_URL || `file://${DEST_DIR}`}`,
   ]
     .filter(Boolean)
     .join('\n')}\n`;
