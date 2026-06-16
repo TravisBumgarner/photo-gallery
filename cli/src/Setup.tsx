@@ -19,6 +19,7 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const fields = applicableFields(values);
   const field = fields[idx];
@@ -35,9 +36,12 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
 
   if (!field) return null;
 
-  const submit = (raw: string) => {
+  const submit = async (raw: string) => {
+    if (checking) return;
     const value = raw.trim() === '' ? effectiveDefault(field) : raw.trim();
-    const err = field.validate?.(value) ?? null;
+    setChecking(true);
+    const err = (await field.validate?.(value, values)) ?? null;
+    setChecking(false);
     if (err) {
       setError(err);
       return; // stay on this field
@@ -79,6 +83,7 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
         />
       </Box>
       {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
+      {checking ? <Text color="cyan">  checking…</Text> : null}
       {error ? <Text color="red">  ✖ {error}</Text> : null}
     </Box>
   );

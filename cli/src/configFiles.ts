@@ -76,8 +76,12 @@ export interface Field {
   default?: string;
   secret?: boolean;
   when?: (v: Record<string, string>) => boolean;
-  /** Return an error message to block advancing, or null when valid. */
-  validate?: (value: string) => string | null;
+  /** Return an error message to block advancing, or null when valid. May be
+   * async (e.g. to check a model server). Receives values answered so far. */
+  validate?: (
+    value: string,
+    values: Record<string, string>,
+  ) => string | null | Promise<string | null>;
   /** One-line explanation shown under the prompt. */
   hint?: string;
 }
@@ -112,7 +116,35 @@ export const FIELDS: Field[] = [
     default: 'http://localhost:11434',
     hint: 'Run `ollama serve` locally, or point at another machine (e.g. http://192.168.1.63:11434).',
   },
-  { key: 'MODEL_SERVER_MODEL', label: 'Vision-LLM model name (e.g. llama3.2-vision)', default: '' },
+  {
+    key: 'MODEL_SERVER_MODEL',
+    label: 'Vision-LLM model name (e.g. llama3.2-vision)',
+    default: '',
+    hint: 'Leave blank to skip tagging. If set, it must be pulled on the host.',
+    validate: async (model, values) => {
+      if (!model) return null; // blank = skip tagging
+      const host = (values.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
+        /\/+$/,
+        '',
+      );
+      try {
+        const res = await fetch(`${host}/api/tags`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) return `Model server at ${host} returned ${res.status}.`;
+        const data = (await res.json()) as { models?: { name: string }[] };
+        const base = (s: string) => s.split(':')[0];
+        const names = (data.models ?? []).map((m) => m.name);
+        if (!names.some((n) => n === model || base(n) === base(model))) {
+          const avail = names.map(base).join(', ');
+          return `"${model}" not on ${host}. ${avail ? `Available: ${avail}` : `Pull it: ollama pull ${model}`}`;
+        }
+        return null;
+      } catch {
+        return `Can't reach ${host} — is \`ollama serve\` running?`;
+      }
+    },
+  },
   { key: 'MODEL_SERVER_API_KEY', label: 'Vision-LLM API key (optional)', secret: true, default: '' },
   { key: 'APP_PASSWORD', label: 'Gallery password (serving login)', secret: true },
 ];

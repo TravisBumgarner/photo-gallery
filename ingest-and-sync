@@ -14,4 +14,4 @@ if [ ! -e node_modules/ink ]; then
   npm install -w shared -w backend -w offline-ingestion -w cli
 fi
 
-exec npx tsx cli/src/index.tsx
+exec npx tsx cli/src/index.tsx "$@"

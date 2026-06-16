@@ -9,4 +9,4 @@ if (-not (Test-Path "node_modules/ink")) {
   npm install -w shared -w backend -w offline-ingestion -w cli
 }
 
-npx tsx cli/src/index.tsx
+npx tsx cli/src/index.tsx @args
