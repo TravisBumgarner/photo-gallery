@@ -120,6 +120,33 @@ async function callGenerate(
   throw lastErr;
 }
 
+/** Ollama only auto-resolves a bare name to :latest. If the configured model
+ * isn't directly usable but exactly one tagged variant is installed (e.g.
+ * qwen3-vl:8b for qwen3-vl), use that. Best-effort + Ollama-specific; other
+ * OpenAI-compatible servers keep the configured name. Resolution happens here,
+ * at the point of use — config is never rewritten. */
+async function resolveModel(modelHost: string, model: string): Promise<string> {
+  try {
+    const res = await fetch(`${modelHost.replace(/\/+$/, '')}/api/tags`, {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return model;
+    const data = (await res.json()) as { models?: { name: string }[] };
+    const names = (data.models ?? []).map((m) => m.name);
+    const base = (s: string) => s.split(':')[0];
+    if (names.includes(model)) return model;
+    if (!model.includes(':') && names.includes(`${model}:latest`)) return model;
+    const variants = names.filter((n) => base(n) === base(model));
+    if (variants.length === 1 && variants[0] !== model) {
+      console.log(`  Resolved model "${model}" → "${variants[0]}".`);
+      return variants[0];
+    }
+    return model;
+  } catch {
+    return model;
+  }
+}
+
 function vecToBuffer(vec: Float32Array): Buffer {
   return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
 }
@@ -128,7 +155,7 @@ async function main() {
   const config = loadConfig();
 
   const modelHost = config.MODEL_SERVER_HOST;
-  const model = config.MODEL_SERVER_MODEL;
+  let model = config.MODEL_SERVER_MODEL;
   const apiKey = config.MODEL_SERVER_API_KEY;
   if (!modelHost || !model) {
     console.error(
@@ -136,6 +163,7 @@ async function main() {
     );
     process.exit(1);
   }
+  model = await resolveModel(modelHost, model);
 
   const localDbPath = config.DATABASE_URL;
   if (!localDbPath) {

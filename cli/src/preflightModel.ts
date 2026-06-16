@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,21 +25,6 @@ function readCliCache(): Record<string, string> {
     // no config yet
   }
   return out;
-}
-
-function setCliCacheKey(key: string, value: string): void {
-  let orig = '';
-  try {
-    orig = readFileSync(CLI_CACHE, 'utf8');
-  } catch {
-    // will create below
-  }
-  const re = new RegExp(`^${key}=.*$`, 'm');
-  const line = `${key}=${value}`;
-  const next = re.test(orig)
-    ? orig.replace(re, line)
-    : `${orig.replace(/\n?$/, '\n')}${line}\n`;
-  writeFileSync(CLI_CACHE, next);
 }
 
 async function tags(host: string): Promise<string[] | null> {
@@ -127,11 +112,7 @@ async function main() {
     if (!resolved) die(`"${model}" still not available after pull.`);
   }
 
-  // Persist the exact tag so the tag task uses a name Ollama will resolve.
-  if (resolved !== model) {
-    setCliCacheKey('MODEL_SERVER_MODEL', resolved);
-    console.log(`Using "${resolved}" (Ollama won't resolve the bare name "${model}").`);
-  }
+  // The tag task resolves the exact tag at call time — config stays as typed.
   console.log(`Model "${resolved}" ready on ${host}.`);
 }
 
