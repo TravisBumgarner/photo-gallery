@@ -77,7 +77,11 @@ export function sourceSteps(adapter: SourceAdapter): Step[] {
 /** Process phase: the offline pipeline, mirroring ./oi's task order. */
 export function processSteps(opts: ProcessOpts): Step[] {
   const steps: Step[] = [];
-  if (opts.tag) steps.push(preflightModelStep()); // fail fast before any work
+  // Up-front readiness — everything that can fail must fail here, before the
+  // hours-long ingest/tag/detect work, so a walk-away run never dies at hour 3.
+  if (opts.tag) steps.push(preflightModelStep());
+  if (opts.faces || opts.dogs) steps.push(visionServerStep());
+
   steps.push(task('migrate', 'Prepare database')); // idempotent
   if (opts.tag) steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
   if (opts.mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
@@ -86,7 +90,6 @@ export function processSteps(opts: ProcessOpts): Step[] {
     steps.push(task('restore', 'Restore compute from sidecars'));
   }
   if (opts.tag) steps.push(task('tag', 'Text-tag + embed'));
-  if (opts.faces || opts.dogs) steps.push(visionServerStep());
   if (opts.faces) {
     steps.push(task('detect-faces', 'Detect faces'));
     steps.push(task('cluster-faces', 'Cluster faces'));

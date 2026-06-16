@@ -51,12 +51,37 @@ async function main() {
       );
     }
   }
-  console.log('Docker ready — starting detection service.');
+  console.log('Docker ready — building/starting detection service…');
   const r = spawnSync('docker', ['compose', 'up', '-d', 'vision-server'], {
     cwd: OI_DIR,
     stdio: 'inherit',
   });
-  process.exit(r.status ?? 0);
+  if (r.status !== 0) {
+    console.error('Failed to start the vision-server. See: docker compose logs vision-server');
+    process.exit(r.status ?? 1);
+  }
+
+  // Confirm it's actually serving (models load on startup) so a broken start is
+  // caught now, up front — not hours later at detect-faces.
+  console.log('Waiting for detection service to be ready…');
+  for (let i = 0; i < 90; i++) {
+    try {
+      const res = await fetch('http://localhost:8090/health', {
+        signal: AbortSignal.timeout(2000),
+      });
+      if (res.ok) {
+        console.log('Detection service ready.');
+        process.exit(0);
+      }
+    } catch {
+      // not up yet
+    }
+    await sleep(2000);
+  }
+  console.error(
+    'Detection service did not become healthy. Check: docker compose logs vision-server',
+  );
+  process.exit(1);
 }
 
 main();
