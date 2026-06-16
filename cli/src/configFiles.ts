@@ -78,9 +78,14 @@ export function migrateConfig(): boolean {
   for (const p of [CLI_CACHE, BACKEND_ENV]) {
     try {
       const orig = readFileSync(p, 'utf8');
-      const fixed = orig.replaceAll('host.docker.internal', 'localhost');
-      if (fixed !== orig) {
-        writeFileSync(p, fixed);
+      let txt = orig.replaceAll('host.docker.internal', 'localhost');
+      // Back-fill VISION_SERVER_HOST for configs written before it existed: the
+      // Docker vision-server is published on localhost:8090 for native tasks.
+      if (p === CLI_CACHE && !/^VISION_SERVER_HOST=/m.test(txt)) {
+        txt = `${txt.replace(/\n?$/, '\n')}${VISION_SERVER_HOST_LINE}\n`;
+      }
+      if (txt !== orig) {
+        writeFileSync(p, txt);
         changed = true;
       }
     } catch {
@@ -89,6 +94,8 @@ export function migrateConfig(): boolean {
   }
   return changed;
 }
+
+const VISION_SERVER_HOST_LINE = 'VISION_SERVER_HOST=http://localhost:8090';
 
 export interface Field {
   key: string;
@@ -261,6 +268,7 @@ export function writeConfigFiles(v: Record<string, string>): {
     `SOURCE_DIR=${v.SOURCE_DIR}`,
     `DESTINATION_DIRECTORY=${DEST_DIR}`,
     `DATABASE_URL=${INGEST_DB}`,
+    VISION_SERVER_HOST_LINE,
     line('STORAGE_URL'),
     line('STORAGE_S3_ENDPOINT'),
     line('STORAGE_S3_REGION'),
