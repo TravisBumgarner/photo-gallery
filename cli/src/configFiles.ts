@@ -1,5 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +50,24 @@ const SERVED_DB = path.join(DATA_DIR, 'served.sqlite');
 /** First-run setup is needed when either config file is missing. */
 export function needsSetup(): boolean {
   return !existsSync(CLI_CACHE) || !existsSync(BACKEND_ENV);
+}
+
+function parseEnvFile(p: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    for (const line of readFileSync(p, 'utf8').split('\n')) {
+      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+      if (m) out[m[1]] = m[2];
+    }
+  } catch {
+    // missing file → no existing values
+  }
+  return out;
+}
+
+/** Current values from the config files, so setup can pre-fill them. */
+export function loadExistingValues(): Record<string, string> {
+  return { ...parseEnvFile(BACKEND_ENV), ...parseEnvFile(CLI_CACHE) };
 }
 
 export interface Field {

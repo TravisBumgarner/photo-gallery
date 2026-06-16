@@ -2,7 +2,6 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useEffect, useMemo, useState } from 'react';
-import { needsSetup } from './configFiles.js';
 import { MultiSelect } from './MultiSelect.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 import { Runner } from './Runner.js';
@@ -21,7 +20,7 @@ type Screen = 'setup' | 'phases' | 'source' | 'mode' | 'tasks' | 'run';
 export function App() {
   // Seed every prompt from last run's choices → enter-enter-enter on re-runs.
   const prefs = useMemo(loadPrefs, []);
-  const [screen, setScreen] = useState<Screen>(needsSetup() ? 'setup' : 'phases');
+  const [screen, setScreen] = useState<Screen>('setup');
   const [phases, setPhases] = useState<string[]>(prefs.phases);
   const [adapter, setAdapter] = useState<SourceAdapter>(prefs.adapter);
   const [mode, setMode] = useState<'create' | 'update'>(prefs.mode);

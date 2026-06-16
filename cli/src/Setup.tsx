@@ -1,12 +1,20 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
-import { useEffect, useState } from 'react';
-import { applicableFields, writeConfigFiles } from './configFiles.js';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  applicableFields,
+  type Field,
+  loadExistingValues,
+  writeConfigFiles,
+} from './configFiles.js';
 
-/** First-run wizard: walks the config fields, then writes .cli-cache +
- * backend/.env. Conditional fields (S3 creds) appear once STORAGE_URL is s3://. */
+/** Setup wizard: walks the config fields and writes .cli-cache + backend/.env.
+ * Runs every time, pre-filled from the current config (gray placeholders) —
+ * enter keeps a value, type to change it. S3 fields appear once STORAGE_URL is
+ * s3://. */
 export function Setup({ onComplete }: { onComplete: () => void }) {
+  const existing = useMemo(loadExistingValues, []);
   const [values, setValues] = useState<Record<string, string>>({});
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState('');
@@ -14,6 +22,9 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
 
   const fields = applicableFields(values);
   const field = fields[idx];
+
+  // What enter submits: the current config value, else the static default.
+  const effectiveDefault = (f: Field) => existing[f.key] ?? f.default ?? '';
 
   // Start each field empty so the default shows as a gray placeholder; hitting
   // enter on an empty field submits the default (see submit()).
@@ -25,7 +36,7 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   if (!field) return null;
 
   const submit = (raw: string) => {
-    const value = raw.trim() === '' ? (field.default ?? '') : raw.trim();
+    const value = raw.trim() === '' ? effectiveDefault(field) : raw.trim();
     const err = field.validate?.(value) ?? null;
     if (err) {
       setError(err);
@@ -58,7 +69,13 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
           onChange={setDraft}
           onSubmit={submit}
           mask={field.secret ? '*' : undefined}
-          placeholder={field.secret ? undefined : field.default || undefined}
+          placeholder={
+            field.secret
+              ? effectiveDefault(field)
+                ? '(unchanged — enter to keep)'
+                : undefined
+              : effectiveDefault(field) || undefined
+          }
         />
       </Box>
       {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
