@@ -28,7 +28,11 @@ function visionServerStep(): Step {
   return {
     id: 'vision-server',
     label: 'Start detection service (Docker)',
-    spec: { cmd: 'docker', args: ['compose', 'up', '-d', 'vision-server'], cwd: OI_DIR },
+    spec: {
+      cmd: 'npx',
+      args: ['tsx', path.join(ROOT, 'cli/src/ensureVisionServer.ts')],
+      cwd: ROOT,
+    },
   };
 }
 

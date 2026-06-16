@@ -1,3 +1,4 @@
+import React from 'react';
 import { Box, Text, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import { useEffect, useRef, useState } from 'react';
