@@ -31,13 +31,17 @@ async function main() {
   console.log('  Then recreate empty image dirs and re-run migrations.');
   console.log('=========================================================\n');
 
-  const confirmed = await confirmTyped(
-    `Type the DB filename (${dbName}) to confirm: `,
-    dbName,
-  );
-  if (!confirmed) {
-    console.error('Confirmation did not match. Aborting.');
-    process.exit(1);
+  // The orchestrator's "Create" choice is the confirmation; skip the typed
+  // prompt when invoked non-interactively (OI_FORCE=1).
+  if (process.env.OI_FORCE !== '1') {
+    const confirmed = await confirmTyped(
+      `Type the DB filename (${dbName}) to confirm: `,
+      dbName,
+    );
+    if (!confirmed) {
+      console.error('Confirmation did not match. Aborting.');
+      process.exit(1);
+    }
   }
 
   console.log('\nClearing local state...');

@@ -10,14 +10,17 @@ function expandHome(p: string): string {
   return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
+function listDir(dir: string) {
+  try {
+    return readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
 /** True if `dir` contains at least one image, searching a few levels deep. */
 function hasPhotos(dir: string, depth = 4): boolean {
-  let entries: ReturnType<typeof readdirSync>;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return false;
-  }
+  const entries = listDir(dir);
   for (const e of entries) if (e.isFile() && IMAGE_RE.test(e.name)) return true;
   if (depth > 0) {
     for (const e of entries) {
