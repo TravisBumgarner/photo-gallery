@@ -15,7 +15,7 @@ export function Runner({ steps }: { steps: Step[] }) {
     steps.map(() => 'pending'),
   );
   const [active, setActive] = useState(0);
-  const [lastLine, setLastLine] = useState('');
+  const [recent, setRecent] = useState<string[]>([]);
   const started = useRef(false);
 
   useEffect(() => {
@@ -29,12 +29,12 @@ export function Runner({ steps }: { steps: Step[] }) {
       for (let i = 0; i < steps.length; i++) {
         setActive(i);
         setStatus(i, 'running');
-        setLastLine('');
+        setRecent([]);
         const tail: string[] = [];
         const code = await runStep(steps[i].spec, (line) => {
           tail.push(line);
           if (tail.length > 30) tail.shift();
-          setLastLine(line);
+          setRecent(tail.slice(-3));
         });
         if (code === 0) {
           setStatus(i, 'done');
@@ -86,9 +86,15 @@ export function Runner({ steps }: { steps: Step[] }) {
           {step.label}
         </Text>
       ))}
-      {statuses[active] === 'running' && lastLine ? (
-        <Text dimColor>   {lastLine.slice(0, 100)}</Text>
-      ) : null}
+      {statuses[active] === 'running'
+        ? recent.map((line, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size live tail
+            <Text key={i} dimColor>
+              {'   '}
+              {line}
+            </Text>
+          ))
+        : null}
     </Box>
   );
 }
