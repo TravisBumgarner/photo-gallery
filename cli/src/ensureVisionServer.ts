@@ -2,24 +2,52 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Only runs on the faces/dogs path. Waits for Docker (started by the user), then
-// brings up the detection sidecar. Cross-platform — spawns docker, no shell loop.
+// Only runs on the faces/dogs path: starts Docker (the one Docker dependency),
+// then brings up the Python detection sidecar.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OI_DIR = path.join(ROOT, 'offline-ingestion');
+const INSTALL_URL = 'https://www.docker.com/products/docker-desktop/';
 
+const dockerInstalled = () =>
+  spawnSync('docker', ['--version'], { stdio: 'ignore' }).status === 0;
 const dockerUp = () =>
   spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Best-effort launch of Docker per platform (still need to poll until up). */
+function tryStartDocker(): void {
+  if (process.platform === 'darwin') {
+    spawnSync('open', ['-a', 'Docker'], { stdio: 'ignore' });
+  } else if (process.platform === 'win32') {
+    spawnSync('cmd', ['/c', 'start', '', 'Docker Desktop'], { stdio: 'ignore' });
+  } else {
+    // Linux: Docker Desktop, then the engine service (may need privileges).
+    if (
+      spawnSync('systemctl', ['--user', 'start', 'docker-desktop'], {
+        stdio: 'ignore',
+      }).status !== 0
+    ) {
+      spawnSync('systemctl', ['start', 'docker'], { stdio: 'ignore' });
+    }
+  }
+}
+
 async function main() {
   if (!dockerUp()) {
-    console.log('Faces/dogs detection needs Docker.');
+    if (!dockerInstalled()) {
+      console.error('Faces/dogs detection needs Docker, and it isn’t installed.');
+      console.error(`  Install Docker Desktop: ${INSTALL_URL}`);
+      console.error('  Then re-run — or re-run with faces/dogs unchecked.');
+      process.exit(1);
+    }
+    console.log('Faces/dogs detection needs Docker — starting Docker Desktop…');
+    tryStartDocker();
     let waited = 0;
     while (!dockerUp()) {
       await sleep(2000);
       waited += 2;
       console.log(
-        `  Start Docker Desktop to continue — waiting (${waited}s). Ctrl-C to cancel.`,
+        `  Waiting for Docker to start (${waited}s)… if it doesn’t come up, open Docker Desktop manually (${INSTALL_URL} to install). Ctrl-C to cancel.`,
       );
     }
   }
