@@ -2,10 +2,16 @@
 import React from 'react';
 import { render } from 'ink';
 import { App } from './App.js';
+import { migrateConfig } from './configFiles.js';
 
 // The wizard's "Create" choice is the confirmation for the destructive wipe;
 // let clear-local-db skip its interactive typed prompt.
 process.env.OI_FORCE = '1';
+
+// Fix configs written under the old Docker model (host.docker.internal → localhost).
+if (migrateConfig()) {
+  console.log('Updated config: host.docker.internal → localhost (now native).');
+}
 
 const args = process.argv.slice(2);
 

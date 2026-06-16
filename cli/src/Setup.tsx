@@ -20,6 +20,8 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [warnedValue, setWarnedValue] = useState<string | null>(null);
 
   const fields = applicableFields(values);
   const field = fields[idx];
@@ -32,6 +34,8 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   useEffect(() => {
     setDraft('');
     setError(null);
+    setWarning(null);
+    setWarnedValue(null);
   }, [field?.key]);
 
   if (!field) return null;
@@ -41,10 +45,22 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
     const value = raw.trim() === '' ? effectiveDefault(field) : raw.trim();
     setChecking(true);
     const err = (await field.validate?.(value, values)) ?? null;
-    setChecking(false);
     if (err) {
+      setChecking(false);
       setError(err);
       return; // stay on this field
+    }
+    // Non-blocking advisory: show once, proceed on a second enter.
+    if (warnedValue !== value) {
+      const warn = (await field.advise?.(value, values)) ?? null;
+      setChecking(false);
+      if (warn) {
+        setWarning(warn);
+        setWarnedValue(value);
+        return;
+      }
+    } else {
+      setChecking(false);
     }
     const next = { ...values, [field.key]: value };
     setValues(next);
@@ -84,6 +100,7 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
       </Box>
       {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
       {checking ? <Text color="cyan">  checking…</Text> : null}
+      {warning ? <Text color="yellow">  ⚠ {warning}</Text> : null}
       {error ? <Text color="red">  ✖ {error}</Text> : null}
     </Box>
   );

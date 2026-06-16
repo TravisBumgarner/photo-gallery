@@ -70,6 +70,26 @@ export function loadExistingValues(): Record<string, string> {
   return { ...parseEnvFile(BACKEND_ENV), ...parseEnvFile(CLI_CACHE) };
 }
 
+/** One-time fix for configs written under the old Docker model: the pipeline
+ * runs natively now, so host.docker.internal never resolves — rewrite it to
+ * localhost. Returns true if anything changed. */
+export function migrateConfig(): boolean {
+  let changed = false;
+  for (const p of [CLI_CACHE, BACKEND_ENV]) {
+    try {
+      const orig = readFileSync(p, 'utf8');
+      const fixed = orig.replaceAll('host.docker.internal', 'localhost');
+      if (fixed !== orig) {
+        writeFileSync(p, fixed);
+        changed = true;
+      }
+    } catch {
+      // missing file → nothing to migrate
+    }
+  }
+  return changed;
+}
+
 export interface Field {
   key: string;
   label: string;
@@ -84,6 +104,12 @@ export interface Field {
   ) => string | null | Promise<string | null>;
   /** One-line explanation shown under the prompt. */
   hint?: string;
+  /** Non-blocking warning (e.g. model may not fit in RAM). Shown on first
+   * enter; a second enter on the same value proceeds anyway. */
+  advise?: (
+    value: string,
+    values: Record<string, string>,
+  ) => string | null | Promise<string | null>;
 }
 
 const isS3 = (v: Record<string, string>) => !!v.STORAGE_URL?.startsWith('s3://');
@@ -142,6 +168,35 @@ export const FIELDS: Field[] = [
         return null;
       } catch {
         return `Can't reach ${host} — is \`ollama serve\` running?`;
+      }
+    },
+    advise: async (model, values) => {
+      if (!model) return null;
+      const host = (values.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
+        /\/+$/,
+        '',
+      );
+      try {
+        const res = await fetch(`${host}/api/tags`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = (await res.json()) as {
+          models?: { name: string; size?: number }[];
+        };
+        const base = (s: string) => s.split(':')[0];
+        const entry = (data.models ?? []).find(
+          (m) => m.name === model || base(m.name) === base(model),
+        );
+        if (!entry?.size) return null;
+        const modelGB = entry.size / 1e9;
+        const ramGB = os.totalmem() / 1e9;
+        // Weights (~disk size) + KV cache/overhead need to fit; risky past ~65%.
+        if (modelGB > ramGB * 0.65) {
+          return `${modelGB.toFixed(1)} GB model vs ${ramGB.toFixed(0)} GB RAM — likely to run out of memory and get killed. Consider a smaller model. Enter again to try anyway.`;
+        }
+        return null;
+      } catch {
+        return null; // advisory only; never block on a failed check
       }
     },
   },
