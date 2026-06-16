@@ -140,7 +140,20 @@ export const FIELDS: Field[] = [
     key: 'MODEL_SERVER_HOST',
     label: 'Vision-LLM host (for tagging)',
     default: 'http://localhost:11434',
-    hint: 'Run `ollama serve` locally, or point at another machine (e.g. http://192.168.1.63:11434).',
+    hint: 'Local: Ollama is started + the model pulled for you. Remote (http://IP:11434): health-checked here until it responds.',
+    validate: async (host) => {
+      if (!host) return 'Required.';
+      if (/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host)) return null; // local: started for you
+      const h = host.replace(/\/+$/, '');
+      try {
+        const res = await fetch(`${h}/api/tags`, {
+          signal: AbortSignal.timeout(4000),
+        });
+        return res.ok ? null : `${h} returned ${res.status}.`;
+      } catch {
+        return `Can't reach ${h} yet — start Ollama there, then press enter to retry.`;
+      }
+    },
   },
   {
     key: 'MODEL_SERVER_MODEL',
@@ -153,21 +166,24 @@ export const FIELDS: Field[] = [
         /\/+$/,
         '',
       );
+      const local = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
       try {
         const res = await fetch(`${host}/api/tags`, {
           signal: AbortSignal.timeout(5000),
         });
-        if (!res.ok) return `Model server at ${host} returned ${res.status}.`;
+        if (!res.ok) return local ? null : `${host} returned ${res.status}.`;
         const data = (await res.json()) as { models?: { name: string }[] };
         const base = (s: string) => s.split(':')[0];
         const names = (data.models ?? []).map((m) => m.name);
         if (!names.some((n) => n === model || base(n) === base(model))) {
+          // Local: it'll be pulled automatically. Remote: we can't pull for them.
+          if (local) return null;
           const avail = names.map(base).join(', ');
-          return `"${model}" not on ${host}. ${avail ? `Available: ${avail}` : `Pull it: ollama pull ${model}`}`;
+          return `"${model}" not on ${host}. ${avail ? `Available: ${avail}` : 'Pull it there.'}`;
         }
         return null;
       } catch {
-        return `Can't reach ${host} — is \`ollama serve\` running?`;
+        return local ? null : `Can't reach ${host}.`;
       }
     },
     advise: async (model, values) => {
@@ -200,7 +216,14 @@ export const FIELDS: Field[] = [
       }
     },
   },
-  { key: 'MODEL_SERVER_API_KEY', label: 'Vision-LLM API key (optional)', secret: true, default: '' },
+  {
+    key: 'MODEL_SERVER_API_KEY',
+    label: 'Vision-LLM API key',
+    secret: true,
+    default: '',
+    // Only a remote/authenticated host needs a key; local Ollama doesn't.
+    when: (v) => !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(v.MODEL_SERVER_HOST ?? 'localhost'),
+  },
   { key: 'APP_PASSWORD', label: 'Gallery password (serving login)', secret: true },
 ];
 

@@ -22,6 +22,20 @@ function task(id: string, label: string): Step {
   return { id, label, spec: { cmd: 'npm', args: ['run', id], cwd: OI_DIR } };
 }
 
+/** Runs first when tagging: ensure Ollama is up and the model is pulled (starts
+ * + pulls for a local host), failing fast before any ingest work. */
+function preflightModelStep(): Step {
+  return {
+    id: 'preflight-model',
+    label: 'Ensure tagging model (Ollama)',
+    spec: {
+      cmd: 'npx',
+      args: ['tsx', path.join(ROOT, 'cli/src/preflightModel.ts')],
+      cwd: ROOT,
+    },
+  };
+}
+
 /** The one Docker touch: bring up the Python detection sidecar, only when
  * faces/dogs are requested. */
 function visionServerStep(): Step {
@@ -63,6 +77,7 @@ export function sourceSteps(adapter: SourceAdapter): Step[] {
 /** Process phase: the offline pipeline, mirroring ./oi's task order. */
 export function processSteps(opts: ProcessOpts): Step[] {
   const steps: Step[] = [];
+  if (opts.tag) steps.push(preflightModelStep()); // fail fast before any work
   steps.push(task('migrate', 'Prepare database')); // idempotent
   if (opts.tag) steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
   if (opts.mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
