@@ -10,6 +10,7 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const fields = applicableFields(values);
   const field = fields[idx];
@@ -17,12 +18,18 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   // Reset the input to the field's default whenever we move to a new field.
   useEffect(() => {
     setDraft(field?.default ?? '');
+    setError(null);
   }, [field?.key]);
 
   if (!field) return null;
 
   const submit = (raw: string) => {
     const value = raw.trim() === '' ? (field.default ?? '') : raw.trim();
+    const err = field.validate?.(value) ?? null;
+    if (err) {
+      setError(err);
+      return; // stay on this field
+    }
     const next = { ...values, [field.key]: value };
     setValues(next);
     const nextFields = applicableFields(next);
@@ -52,7 +59,9 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
           mask={field.secret ? '*' : undefined}
         />
       </Box>
+      {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
       {field.default ? <Text dimColor>  (enter for default: {field.secret ? '•••' : field.default || '(blank)'})</Text> : null}
+      {error ? <Text color="red">  ✖ {error}</Text> : null}
     </Box>
   );
 }

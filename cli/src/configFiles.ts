@@ -1,7 +1,33 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
+
+function expandHome(p: string): string {
+  return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+}
+
+/** True if `dir` contains at least one image, searching a few levels deep. */
+function hasPhotos(dir: string, depth = 4): boolean {
+  let entries: ReturnType<typeof readdirSync>;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const e of entries) if (e.isFile() && IMAGE_RE.test(e.name)) return true;
+  if (depth > 0) {
+    for (const e of entries) {
+      if (e.isDirectory() && hasPhotos(path.join(dir, e.name), depth - 1)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI_CACHE = path.join(ROOT, 'offline-ingestion', '.cli-cache');
@@ -23,12 +49,27 @@ export interface Field {
   default?: string;
   secret?: boolean;
   when?: (v: Record<string, string>) => boolean;
+  /** Return an error message to block advancing, or null when valid. */
+  validate?: (value: string) => string | null;
+  /** One-line explanation shown under the prompt. */
+  hint?: string;
 }
 
 const isS3 = (v: Record<string, string>) => !!v.STORAGE_URL?.startsWith('s3://');
 
 export const FIELDS: Field[] = [
-  { key: 'SOURCE_DIR', label: 'Photo source folder (absolute path)' },
+  {
+    key: 'SOURCE_DIR',
+    label: 'Photo source folder (absolute path)',
+    validate: (raw) => {
+      const p = expandHome(raw.trim());
+      if (!p) return 'Required.';
+      if (!existsSync(p)) return `No such folder: ${p}`;
+      if (!statSync(p).isDirectory()) return `Not a folder: ${p}`;
+      if (!hasPhotos(p)) return 'No images found in that folder.';
+      return null;
+    },
+  },
   {
     key: 'STORAGE_URL',
     label: 'Storage URL — blank = local disk, or s3://bucket/prefix',
@@ -38,7 +79,12 @@ export const FIELDS: Field[] = [
   { key: 'STORAGE_S3_REGION', label: 'S3 region', default: 'us-east-1', when: isS3 },
   { key: 'STORAGE_S3_ACCESS_KEY_ID', label: 'S3 access key id', when: isS3 },
   { key: 'STORAGE_S3_SECRET_ACCESS_KEY', label: 'S3 secret access key', secret: true, when: isS3 },
-  { key: 'MODEL_SERVER_HOST', label: 'Vision-LLM host (for tagging)', default: 'http://host.docker.internal:11434' },
+  {
+    key: 'MODEL_SERVER_HOST',
+    label: 'Vision-LLM host (for tagging)',
+    default: 'http://localhost:11434',
+    hint: 'Run `ollama serve` locally, or point at another machine (e.g. http://192.168.1.63:11434).',
+  },
   { key: 'MODEL_SERVER_MODEL', label: 'Vision-LLM model name (e.g. llama3.2-vision)', default: '' },
   { key: 'MODEL_SERVER_API_KEY', label: 'Vision-LLM API key (optional)', secret: true, default: '' },
   { key: 'APP_PASSWORD', label: 'Gallery password (serving login)', secret: true },
