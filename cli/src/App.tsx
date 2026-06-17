@@ -8,6 +8,7 @@ import {
   countLightroomExports,
   expandHome,
   LIGHTROOM_PRESET,
+  loadExistingValues,
   needsSetup,
 } from './configFiles.js';
 import { LabelStep } from './LabelStep.js';
@@ -28,6 +29,8 @@ import {
 
 type Screen =
   | 'setup'
+  | 'start'
+  | 'view'
   | 'phases'
   | 'source'
   | 'lightroom'
@@ -38,6 +41,9 @@ type Screen =
   | 'label'
   | 'run-post';
 
+/** Mask a secret for display — present or not, never the value. */
+const masked = (v?: string) => (v ? '•••• (set)' : '(not set)');
+
 export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const { exit } = useApp();
   // Seed every prompt from last run's choices → enter-enter-enter on re-runs.
@@ -45,8 +51,10 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   // Setup runs on --setup or when config is missing; otherwise straight to the
   // wizard.
   const [screen, setScreen] = useState<Screen>(
-    forceSetup || needsSetup() ? 'setup' : 'phases',
+    forceSetup || needsSetup() ? 'setup' : 'start',
   );
+  // Current config (photo folder, model, storage) for the View screen.
+  const cfg = useMemo(loadExistingValues, []);
   const [phases, setPhases] = useState<string[]>(prefs.phases);
   const [adapter, setAdapter] = useState<SourceAdapter>(prefs.adapter);
   const [mode, setMode] = useState<'create' | 'update'>(prefs.mode);
@@ -101,6 +109,74 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       </Text>
 
       {screen === 'setup' && <Setup onComplete={() => setScreen('phases')} />}
+
+      {screen === 'start' && (
+        <Box flexDirection="column">
+          <Text dimColor>Photos: {cfg.SOURCE_DIR || '(not set)'}</Text>
+          <Text dimColor>
+            Online gallery: {cfg.STORAGE_URL || 'this computer (local disk)'}
+          </Text>
+          <SelectInput
+            items={[
+              { label: 'Continue with these settings', value: 'continue' },
+              { label: 'View settings', value: 'view' },
+              {
+                label:
+                  'Edit settings (photo folder, S3 destination, model, password)',
+                value: 'edit',
+              },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'view') setScreen('view');
+              else if (item.value === 'edit') setScreen('setup');
+              else setScreen('phases');
+            }}
+          />
+        </Box>
+      )}
+
+      {screen === 'view' && (
+        <Box flexDirection="column">
+          <Text bold>Settings</Text>
+          <Text>Photo folder: {cfg.SOURCE_DIR || '(not set)'}</Text>
+          <Text>
+            Online gallery: {cfg.STORAGE_URL || 'this computer (local disk)'}
+          </Text>
+          {cfg.STORAGE_URL?.startsWith('s3://') ? (
+            <Box flexDirection="column">
+              <Text dimColor>
+                {'  '}S3 endpoint: {cfg.STORAGE_S3_ENDPOINT || '(AWS default)'}
+              </Text>
+              <Text dimColor>
+                {'  '}S3 region: {cfg.STORAGE_S3_REGION || '(default)'}
+              </Text>
+              <Text dimColor>
+                {'  '}S3 access key id: {cfg.STORAGE_S3_ACCESS_KEY_ID || '(not set)'}
+              </Text>
+              <Text dimColor>
+                {'  '}S3 secret key: {masked(cfg.STORAGE_S3_SECRET_ACCESS_KEY)}
+              </Text>
+            </Box>
+          ) : null}
+          <Text>
+            Tagging model: {cfg.MODEL_SERVER_MODEL || 'none'}
+            {cfg.MODEL_SERVER_HOST ? ` @ ${cfg.MODEL_SERVER_HOST}` : ''}
+          </Text>
+          <Text>Gallery password: {masked(cfg.APP_PASSWORD)}</Text>
+          <SelectInput
+            items={[
+              { label: 'Continue with these settings', value: 'continue' },
+              { label: 'Edit settings', value: 'edit' },
+              { label: 'Back', value: 'back' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'edit') setScreen('setup');
+              else if (item.value === 'back') setScreen('start');
+              else setScreen('phases');
+            }}
+          />
+        </Box>
+      )}
 
       {screen === 'phases' && (
         <Box flexDirection="column">
@@ -232,8 +308,8 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           </Text>
           <SelectInput
             items={[
-              { label: 'Keep everything — just add new photos', value: 'update' },
               { label: 'Yes, erase everything and start over', value: 'create' },
+              { label: 'No — keep everything, just add new photos', value: 'update' },
             ]}
             onSelect={(item) => {
               setMode(item.value as 'create' | 'update');
