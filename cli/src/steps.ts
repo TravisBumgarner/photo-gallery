@@ -110,6 +110,12 @@ export function processSteps(opts: ProcessOpts): Step[] {
   return steps;
 }
 
+/** Up-front check that the online gallery destination is reachable + writable,
+ * so a bad bucket/credentials fails fast instead of hours later at publish/sync. */
+export function storageCheckStep(): Step {
+  return task('check-storage', 'Check online gallery');
+}
+
 /** Publish runs after labeling so newly-named clusters are included. */
 export function publishStep(): Step {
   return task('publish', 'Publish read-only release');

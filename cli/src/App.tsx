@@ -22,6 +22,7 @@ import {
   processSteps,
   publishStep,
   sourceSteps,
+  storageCheckStep,
   syncSteps,
 } from './steps.js';
 
@@ -70,6 +71,12 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const { pre, post, needsLabel } = useMemo(() => {
     const pre: Step[] = [];
     const post: Step[] = [];
+    // Validate the online gallery destination up front — before the hours-long
+    // pipeline — whenever the run will write to it (publish and/or sync), so a
+    // bad bucket/credentials fails fast instead of at the very end.
+    if (phases.includes('process') || phases.includes('sync')) {
+      pre.push(storageCheckStep());
+    }
     if (phases.includes('source')) pre.push(...sourceSteps(adapter, lightroomDir));
     let opts: ProcessOpts | null = null;
     if (phases.includes('process')) {
