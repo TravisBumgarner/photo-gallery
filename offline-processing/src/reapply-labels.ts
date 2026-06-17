@@ -2,6 +2,7 @@ import path from 'node:path';
 import { applyLabels } from 'shared/rebuild';
 import { createStorage } from 'shared/storage';
 import { loadConfig, storageUrl } from './config.js';
+import { summary } from './progress.js';
 import { expandHome } from './util.js';
 
 // Reattach durable labels (labels.json) to the current clusters after
@@ -20,6 +21,7 @@ async function main() {
   console.log(
     `Reapplied labels: ${r.peopleApplied} people, ${r.dogsApplied} dogs.`,
   );
+  summary(`${r.peopleApplied} people · ${r.dogsApplied} dogs relabeled`);
 }
 
 main().catch((err) => {

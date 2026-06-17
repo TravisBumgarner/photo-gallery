@@ -6,7 +6,7 @@ Set-Location $PSScriptRoot
 # required here; only faces/dogs need it, brought up by the orchestrator.
 if (-not (Test-Path "node_modules/ink")) {
   Write-Host "Installing dependencies (first run)..."
-  npm install -w shared -w backend -w offline-ingestion -w cli
+  npm install -w shared -w backend -w offline-processing -w cli
 }
 
 npx tsx cli/src/index.tsx @args

@@ -8,7 +8,7 @@ echo "Cleaning previous installs..."
 rm -rf node_modules package-lock.json
 rm -rf backend/node_modules backend/package-lock.json
 rm -rf frontend/node_modules frontend/package-lock.json
-rm -rf offline-ingestion/node_modules offline-ingestion/package-lock.json
+rm -rf offline-processing/node_modules offline-processing/package-lock.json
 rm -rf shared/node_modules shared/package-lock.json
 
 # Install all dependencies (npm workspaces handles backend, frontend, etc.)
@@ -28,6 +28,6 @@ npm run db:migrate
 # Next steps:
 #   1. Edit backend/.env with your settings (see README for details)
 #   2. Run 'npm run dev' to start (frontend on :5200, backend on :8084)
-#   3. For ingestion, run ./oi from offline-ingestion/ (see offline-ingestion/README.md)
+#   3. For ingestion, run ./oi from offline-processing/ (see offline-processing/README.md)
 echo ""
 echo "Done! Edit .env files if needed, then run 'npm run dev' to start."

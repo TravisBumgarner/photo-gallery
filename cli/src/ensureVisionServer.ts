@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { markVisionServer } from './cleanup.js';
 
 // Only runs on the faces/dogs path: starts Docker (the one Docker dependency),
 // then brings up the Python detection sidecar.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const OI_DIR = path.join(ROOT, 'offline-ingestion');
+const OP_DIR = path.join(ROOT, 'offline-processing');
 const INSTALL_URL = 'https://www.docker.com/products/docker-desktop/';
 
 const dockerInstalled = () =>
@@ -53,13 +54,15 @@ async function main() {
   }
   console.log('Docker ready — building/starting detection service…');
   const r = spawnSync('docker', ['compose', 'up', '-d', 'vision-server'], {
-    cwd: OI_DIR,
+    cwd: OP_DIR,
     stdio: 'inherit',
   });
   if (r.status !== 0) {
     console.error('Failed to start the vision-server. See: docker compose logs vision-server');
     process.exit(r.status ?? 1);
   }
+  // We started it — let shutdown stop it (even if the health poll below fails).
+  markVisionServer();
 
   // Confirm it's actually serving (models load on startup) so a broken start is
   // caught now, up front — not hours later at detect-faces.

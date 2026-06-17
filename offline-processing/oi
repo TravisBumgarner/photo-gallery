@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline Ingestion launcher. Runs on the HOST (needs only Docker + bash) and
+# Offline Processing launcher. Runs on the HOST (needs only Docker + bash) and
 # orchestrates the containers: checks Docker, builds images, asks what you want
 # to do, brings up the model servers, and runs the pipeline tasks inside the
 # `cli` container. All heavy dependencies live in the images — nothing to install.
@@ -38,7 +38,7 @@ export DRY_RUN   # read by the ingest task (preview-only when true)
 
 usage() {
   cat <<'EOF'
-Offline Ingestion launcher.
+Offline Processing launcher.
 
 Usage:  ./oi [options] [photo-folder]
 
@@ -309,11 +309,11 @@ check_models() { # check_models <host>
 # falls back to a host curl. Prints the verdict itself; returns 0 only when good.
 check_gateway() { # check_gateway <host> ; uses $GATEWAY_TOKEN, $GATEWAY_PORT
   local h="$1" gw="http://${1}:${GATEWAY_PORT:-8443}" rc code have_img=false
-  docker image inspect offline-ingestion-app >/dev/null 2>&1 && have_img=true
+  docker image inspect offline-processing-app >/dev/null 2>&1 && have_img=true
   [[ "$have_img" == false ]] && dim "(cli image not built yet — probing from the host this run; the in-container check runs next time)"
   printf "Checking the model server at %s ... " "$gw"
   if [[ "$have_img" == true ]]; then
-    docker run --rm offline-ingestion-app node -e '
+    docker run --rm offline-processing-app node -e '
 const [base, tok] = process.argv.slice(1);
 fetch(base + "/api/tags", { headers: { Authorization: "Bearer " + tok }, signal: AbortSignal.timeout(8000) })
   .then(r => process.exit(r.ok ? 0 : ((r.status === 401 || r.status === 403) ? 2 : 3)))
@@ -439,7 +439,7 @@ fi
 # token to enter on the main machine. No ingestion happens here.
 if [[ "$SERVER" == true ]]; then
   GATEWAY_PORT="$(env_get GATEWAY_PORT)"; GATEWAY_PORT="${GATEWAY_PORT:-8443}"
-  bold "=== Offline Ingestion — model server ==="
+  bold "=== Offline Processing — model server ==="
   dim "Serving the tagging LLM (Ollama) + vision-server (faces/dogs) to other"
   dim "machines on your LAN, behind one token-protected port. Nothing is ingested here."
 
@@ -515,7 +515,7 @@ if [[ "$SERVER" == true ]]; then
   exit 0
 fi
 
-bold "=== Offline Ingestion ==="
+bold "=== Offline Processing ==="
 
 # ----- 1. source folder ------------------------------------------------------
 # The one folder the gallery ingests — every image nested under it. How photos
@@ -669,7 +669,7 @@ if [[ "$need_models" == true ]]; then
     if [[ $tries -lt 30 ]]; then printf "."; sleep 2; tries=$((tries + 1)); continue; fi
     echo
     err "Model server(s) not reachable at $HEALTH_HOST."
-    [[ "$models_local" == false ]] && dim "On that machine: 'docker compose up -d' in offline-ingestion, then use its IP."
+    [[ "$models_local" == false ]] && dim "On that machine: 'docker compose up -d' in offline-processing, then use its IP."
     set_model_urls "$(ask "Model server host (Ctrl-C to abort) [$HEALTH_HOST]: " "$HEALTH_HOST")"
     env_set COMPUTE_HOST "$COMPUTE_HOST"
     [[ "$models_local" == true ]] && start_local_models

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const OI_DIR = path.join(ROOT, 'offline-ingestion');
+export const OP_DIR = path.join(ROOT, 'offline-processing');
 
 export interface Spec {
   cmd: string;
@@ -16,10 +16,10 @@ export interface Step {
   spec: Spec;
 }
 
-/** A pipeline task: a native subprocess in the offline-ingestion workspace
+/** A pipeline task: a native subprocess in the offline-processing workspace
  * (reads config from .cli-cache there). No container. */
 function task(id: string, label: string): Step {
-  return { id, label, spec: { cmd: 'npm', args: ['run', id], cwd: OI_DIR } };
+  return { id, label, spec: { cmd: 'npm', args: ['run', id], cwd: OP_DIR } };
 }
 
 /** Runs first when tagging: ensure Ollama is up and the model is pulled (starts
@@ -60,14 +60,20 @@ export interface ProcessOpts {
   dogs: boolean;
 }
 
-/** Source phase: get photos into the ingest folder. Manual = already there. */
-export function sourceSteps(adapter: SourceAdapter): Step[] {
+/** Source phase: get photos into the ingest folder. Manual = already there.
+ * The Lightroom export folder is collected (and dry-tested) by the wizard and
+ * passed in here, so prepareLightroom runs non-interactively. */
+export function sourceSteps(adapter: SourceAdapter, lightroomDir = ''): Step[] {
   if (adapter === 'lightroom') {
     return [
       {
         id: 'prepare-lightroom',
         label: 'Move Lightroom exports into the ingest folder',
-        spec: { cmd: './prepare-lightroom', args: [], cwd: OI_DIR },
+        spec: {
+          cmd: 'npx',
+          args: ['tsx', path.join(ROOT, 'cli/src/prepareLightroom.ts'), lightroomDir],
+          cwd: ROOT,
+        },
       },
     ];
   }

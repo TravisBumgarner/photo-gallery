@@ -55,10 +55,10 @@ That's it. The first run prompts for everything (photo folder, gallery password,
 
 All ingestion — turning raw photos into browsable, searchable data (ingest, content
 tagging, face/dog detection + clustering, and cluster labeling) — lives in the
-**`offline-ingestion/`** workspace. It's the single home for this; nothing in the
+**`offline-processing/`** workspace. It's the single home for this; nothing in the
 frontend or backend performs ingestion. Run it with `./ingest-and-sync`.
 
-See **[`offline-ingestion/README.md`](offline-ingestion/README.md)** for setup,
+See **[`offline-processing/README.md`](offline-processing/README.md)** for setup,
 configuration, model servers, and hardware/timing.
 
 ## Deployment
@@ -79,7 +79,7 @@ directly. In production the backend serves the frontend dist, so no separate web
 server is needed for the SPA.
 
 `deploy.sh` only pushes code. The database and images are produced locally by
-`offline-ingestion`; getting them onto the host is a manual rsync when you need it.
+`offline-processing`; getting them onto the host is a manual rsync when you need it.
 
 Remote layout after deploy:
 

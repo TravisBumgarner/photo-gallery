@@ -2,12 +2,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { markOllama } from './cleanup.js';
 
 // Runs first when tagging is selected. For a LOCAL model server it does the
 // work: starts Ollama if it's installed but not running, and pulls the model if
 // it's missing. For a remote host it only checks (can't manage another machine).
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const CLI_CACHE = path.join(ROOT, 'offline-ingestion', '.cli-cache');
+const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isLocal = (host: string) => /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
@@ -69,7 +70,14 @@ async function main() {
       );
     }
     console.log('Starting Ollama…');
-    spawn('ollama', ['serve'], { detached: true, stdio: 'ignore' }).unref();
+    // We started it (it wasn't already up) — record the pid so shutdown stops
+    // our Ollama, and only ours.
+    const ollama = spawn('ollama', ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    if (ollama.pid) markOllama(ollama.pid);
+    ollama.unref();
     for (let i = 0; i < 30 && installed === null; i++) {
       await sleep(1000);
       installed = await tags(host);

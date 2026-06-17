@@ -77,9 +77,9 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
 
   return (
     <Box flexDirection="column">
-      <Text color="yellow">First-run setup ({idx + 1}/{fields.length})</Text>
+      <Text color="yellow">Setup ({idx + 1}/{fields.length})</Text>
       <Text dimColor>
-        Saved to offline-ingestion/.cli-cache + backend/.env — edit those later, or
+        Saved to offline-processing/.cli-cache + backend/.env — edit those later, or
         delete them to run setup again.
       </Text>
       <Box>

@@ -10,10 +10,10 @@ export const router = Router();
 
 // GET /api/people/labels — distinct labels in use with face counts, for the
 // People filter sidebar. If two clusters share a label (after labeling or
-// merging in offline-ingestion), counts are summed.
+// merging in offline-processing), counts are summed.
 //
 // The serving app is read-only: face detection, clustering, and the labeling /
-// merging of clusters all happen offline in `offline-ingestion` (its label-app),
+// merging of clusters all happen offline in `offline-processing` (its label-app),
 // so this router only exposes the read used to filter the gallery.
 router.get('/people/labels', async (_req, res) => {
   try {

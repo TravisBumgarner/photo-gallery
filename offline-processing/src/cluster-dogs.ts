@@ -3,9 +3,10 @@ import { eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { dogClusters, dogs } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
+import { summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
-// Tunables (see dogs.cluster in offline-ingestion.config.yaml). Dog (DINOv2)
+// Tunables (see dogs.cluster in offline-processing.config.yaml). Dog (DINOv2)
 // embeddings are noisier than ArcFace face embeddings. Same-dog distances are
 // typically 0.15-0.4; different dogs cluster around 0.5+. Tighter thresholds
 // than faces favor splits over false merges — merging the wrong two dogs is
@@ -264,6 +265,9 @@ async function main() {
     `\n  Clusters: ${finalCounts[0].total} total (${labeled[0].count} labeled, ${ignored[0].count} ignored)`,
   );
   console.log(`  Singleton dogs (no cluster): ${unassignedDogs[0].count}`);
+  summary(
+    `${finalCounts[0].total} clusters · ${labeled[0].count} named · ${unassignedDogs[0].count} singleton dogs`,
+  );
 
   process.exit(0);
 }

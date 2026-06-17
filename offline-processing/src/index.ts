@@ -8,6 +8,7 @@ import { loadConfig } from '@/config.js';
 import { endExiftool } from '@/exif.js';
 import type { PhotoRecord } from '@/process.js';
 import { processImage } from '@/process.js';
+import { status, summary } from '@/progress.js';
 import { confirm } from '@/prompt.js';
 import { scanDirectory } from '@/scan.js';
 import { settings } from '@/settings.js';
@@ -27,6 +28,7 @@ async function main() {
     console.error('DATABASE_URL env var is required');
     process.exit(1);
   }
+  const databaseUrl = config.DATABASE_URL;
 
   const localImageRoot = path.resolve(destinationDir);
   const outputDir = path.join(localImageRoot, 'images');
@@ -113,6 +115,9 @@ async function main() {
       console.log(
         `  Progress: ${processed} processed, ${failed} failed | ${rate.toFixed(1)} img/sec | ETA: ${Math.ceil(eta)}s`,
       );
+      status(
+        `${processed + failed} / ${imagePaths.length} photos · ${rate.toFixed(1)} img/s · ETA ${Math.ceil(eta)}s`,
+      );
     }
 
     const totalTime = (Date.now() - startTime) / 1000;
@@ -122,11 +127,14 @@ async function main() {
     console.log(
       `   Total time: ${Math.ceil(totalTime)}s (${(processed / totalTime).toFixed(1)} images/sec)`,
     );
+    summary(
+      `${processed.toLocaleString()} ingested${failed ? ` · ${failed} failed` : ''}`,
+    );
   }
 
   await endExiftool();
 
-  const db = createDb(path.resolve(config.DATABASE_URL!));
+  const db = createDb(path.resolve(databaseUrl));
   await upsertRecordsToLocalDb(db, records);
   await cleanupStaleLocalRows(db, outputDir);
 }

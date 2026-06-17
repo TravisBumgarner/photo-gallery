@@ -33,7 +33,8 @@ if (!config.DATABASE_URL) {
   console.error('DATABASE_URL must be set in .cli-cache (path to sqlite).');
   process.exit(1);
 }
-const db = createDb(path.resolve(config.DATABASE_URL));
+const dbPath = path.resolve(config.DATABASE_URL);
+const db = createDb(dbPath);
 
 interface Kind {
   clusters: SQLiteTable;
@@ -314,6 +315,60 @@ app.get('/api/:kind/labels', async (req, res) => {
   }
 });
 
+// GET /api/:kind/counts — per-tab totals for the header + section badges. Each
+// count mirrors the corresponding list query so the badge matches what you see.
+app.get('/api/:kind/counts', async (req, res) => {
+  const k = getKind(req, res);
+  if (!k) return;
+  try {
+    const countClusters = async (cond: ReturnType<typeof eq>) =>
+      Number(
+        (
+          await db
+            .select({ n: sql<number>`count(*)` })
+            .from(k.clusters)
+            .where(cond)
+        )[0]?.n ?? 0,
+      );
+
+    // Unlabeled = groups not named, not ignored, meeting the display threshold
+    // (item count >= minUnlabeled) — same filter the Unlabeled list uses.
+    const unlabeledGroups = await db
+      .select({ id: k.clusterPk })
+      .from(k.clusters)
+      .leftJoin(k.items, eq(k.itemClusterId, k.clusterPk))
+      .where(and(isNull(k.labelColumn), eq(k.ignoredColumn, false)))
+      .groupBy(k.clusterPk)
+      .having(sql`count(${k.itemId}) >= ${k.minUnlabeled}`);
+
+    const ungrouped = Number(
+      (
+        await db
+          .select({ n: sql<number>`count(*)` })
+          .from(k.items)
+          .where(isNull(k.itemClusterId))
+      )[0]?.n ?? 0,
+    );
+
+    const [labeled, ignored, merge] = await Promise.all([
+      countClusters(isNotNull(k.labelColumn)),
+      countClusters(eq(k.ignoredColumn, true)),
+      countClusters(eq(k.ignoredColumn, false)),
+    ]);
+
+    res.json({
+      unlabeled: unlabeledGroups.length,
+      ungrouped,
+      merge,
+      labeled,
+      ignored,
+    });
+  } catch (err) {
+    console.error(`GET /api/${req.params.kind}/counts failed:`, err);
+    res.status(500).json({ error: 'Failed to fetch counts' });
+  }
+});
+
 // GET /api/:kind/ungrouped?limit=&offset= — individual detections that never
 // landed in a cluster (clusterId IS NULL): the singletons/noise that didn't meet
 // minPts. Returns crops so the "Ungrouped" tab can show the actual photos.
@@ -356,7 +411,7 @@ app.use(express.static(path.join(here, 'public')));
 const port = settings.labelApp.port;
 app.listen(port, () => {
   console.log(`\n  Label app:    http://localhost:${port}`);
-  console.log(`  Database:     ${path.resolve(config.DATABASE_URL!)}`);
+  console.log(`  Database:     ${dbPath}`);
   console.log(
     '  Tag people and dogs, then re-run clustering as new photos arrive.\n',
   );

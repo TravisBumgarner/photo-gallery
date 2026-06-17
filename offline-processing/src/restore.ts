@@ -2,6 +2,7 @@ import path from 'node:path';
 import { restoreFromSidecars } from 'shared/rebuild';
 import { createStorage } from 'shared/storage';
 import { loadConfig, storageUrl } from './config.js';
+import { summary } from './progress.js';
 import { expandHome } from './util.js';
 
 // Repopulate freshly-ingested photos from sidecars in storage, skipping the
@@ -21,6 +22,11 @@ async function main() {
     `Restored from sidecars: ${r.photosTagged} tagged, ` +
       `${r.facesRestored} faces, ${r.dogsRestored} dogs ` +
       `(${r.sidecarsMissing} photos had no sidecar — will be computed fresh).`,
+  );
+  summary(
+    r.photosTagged || r.facesRestored || r.dogsRestored
+      ? `${r.photosTagged.toLocaleString()} tagged · ${r.facesRestored} faces · ${r.dogsRestored} dogs restored${r.sidecarsMissing ? ` · ${r.sidecarsMissing} to compute fresh` : ''}`
+      : 'no sidecars — everything computed fresh',
   );
 }
 

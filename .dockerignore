@@ -1,4 +1,4 @@
-# Build context for offline-ingestion images is the repo root. Keep it lean and
+# Build context for offline-processing images is the repo root. Keep it lean and
 # never ship host-built (macOS) node_modules or secrets into the Linux image.
 **/node_modules
 **/dist
@@ -10,7 +10,7 @@
 **/.env.*
 !**/.env.example
 
-# Workspaces / dirs the offline-ingestion images don't need. frontend is a root
+# Workspaces / dirs the offline-processing images don't need. frontend is a root
 # npm workspace, so its manifest must stay for `npm install` to resolve — but we
 # don't need its source or deps in the image.
 frontend

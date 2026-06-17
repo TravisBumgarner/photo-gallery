@@ -6,11 +6,11 @@ import { z } from 'zod';
 
 // Tuning / behavior knobs, separate from environment & secrets (those live in
 // .cli-cache and are loaded by config.ts). Everything here is read from
-// offline-ingestion.config.yaml at the package root. The file is optional and
+// offline-processing.config.yaml at the package root. The file is optional and
 // partial: any key you omit falls back to the default below, so a missing file
 // reproduces the original hard-coded behavior exactly.
 //
-// Override the file location with OI_CONFIG_PATH (the Docker image sets this).
+// Override the file location with OP_CONFIG_PATH (the Docker image sets this).
 
 export const DEFAULT_TAG_PROMPT = `Generate search tags for this image. Output 15-20 comma-separated tags covering:
 - Concrete subjects (people, objects, animals)
@@ -102,10 +102,10 @@ const settingsSchema = z
 export type Settings = z.infer<typeof settingsSchema>;
 
 function resolveConfigPath(): string {
-  if (process.env.OI_CONFIG_PATH)
-    return path.resolve(process.env.OI_CONFIG_PATH);
+  if (process.env.OP_CONFIG_PATH)
+    return path.resolve(process.env.OP_CONFIG_PATH);
   const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(here, '..', 'offline-ingestion.config.yaml');
+  return path.join(here, '..', 'offline-processing.config.yaml');
 }
 
 function loadSettings(): Settings {

@@ -11,8 +11,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
+// The "To Mobile Photo Gallery" preset renames every export to this suffix.
+const VIEWING_RE = /_exported_for_viewing_locally\.[^.]+$/i;
 
-function expandHome(p: string): string {
+export function expandHome(p: string): string {
   return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
@@ -39,7 +41,13 @@ function hasPhotos(dir: string, depth = 4): boolean {
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const CLI_CACHE = path.join(ROOT, 'offline-ingestion', '.cli-cache');
+/** The Lightroom export preset the user imports, then exports with. */
+export const LIGHTROOM_PRESET = path.join(
+  ROOT,
+  'lightroom-export-presets',
+  'To Mobile Photo Gallery.lrtemplate',
+);
+const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 const BACKEND_ENV = path.join(ROOT, 'backend', '.env');
 // Native data layout (no container paths). Ingest writes here; publish reads it.
 const DATA_DIR = path.join(ROOT, 'data');
@@ -47,9 +55,50 @@ const DEST_DIR = path.join(DATA_DIR, 'out');
 const INGEST_DB = path.join(DATA_DIR, 'ingest.sqlite');
 const SERVED_DB = path.join(DATA_DIR, 'served.sqlite');
 
-/** First-run setup is needed when either config file is missing. */
+// Keys the pipeline can't run without. An older-format .cli-cache may exist yet
+// lack these (they're written by the current writeConfigFiles) — checking only
+// for file existence let such a cache crash deep in the run (loadConfig's zod
+// parse) instead of failing the up-front setup gate.
+const REQUIRED_CLI_KEYS = ['SOURCE_DIR', 'DESTINATION_DIRECTORY', 'DATABASE_URL'];
+
+/** Setup is needed when a config file is missing OR is an older/partial format
+ * lacking a required key — either way, run the (pre-filled) setup wizard. */
 export function needsSetup(): boolean {
-  return !existsSync(CLI_CACHE) || !existsSync(BACKEND_ENV);
+  if (!existsSync(CLI_CACHE) || !existsSync(BACKEND_ENV)) return true;
+  const cli = parseEnvFile(CLI_CACHE);
+  return REQUIRED_CLI_KEYS.some((k) => !cli[k]);
+}
+
+/** Count image files under `dir`, a few levels deep. */
+function countImages(dir: string, depth = 4): number {
+  let n = 0;
+  for (const e of listDir(dir)) {
+    if (e.isFile() && IMAGE_RE.test(e.name)) n++;
+    else if (e.isDirectory() && depth > 0) {
+      n += countImages(path.join(dir, e.name), depth - 1);
+    }
+  }
+  return n;
+}
+
+/** Count exported viewing copies (*_exported_for_viewing_locally.*) anywhere
+ * under `dir` — the dry test that the Lightroom export worked. Unbounded depth
+ * to match prepareLightroom's recursive walk (which moves at any depth). */
+export function countLightroomExports(dir: string): number {
+  let n = 0;
+  for (const e of listDir(dir)) {
+    if (e.isFile() && VIEWING_RE.test(e.name)) n++;
+    else if (e.isDirectory()) n += countLightroomExports(path.join(dir, e.name));
+  }
+  return n;
+}
+
+/** What a Create wipe would destroy, so the confirm can show its blast radius. */
+export function blastRadius(): { photos: number; hasDb: boolean } {
+  return {
+    photos: countImages(path.join(DEST_DIR, 'images')),
+    hasDb: existsSync(INGEST_DB),
+  };
 }
 
 function parseEnvFile(p: string): Record<string, string> {

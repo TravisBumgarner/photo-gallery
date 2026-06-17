@@ -5,7 +5,7 @@
   "workspaces": [
     "shared",
     "backend",
-    "offline-ingestion",
+    "offline-processing",
     "frontend",
     "cli"
   ],

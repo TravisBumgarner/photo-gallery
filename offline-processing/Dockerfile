@@ -1,6 +1,6 @@
 # Node image powering both the `cli` (ingest/tag/detect/cluster tasks) and the
 # `label-app` web UI. Build context is the REPO ROOT (see docker-compose.yml),
-# because offline-ingestion depends on the `shared` workspace and shells out to
+# because offline-processing depends on the `shared` workspace and shells out to
 # `backend`'s drizzle migrations when creating a fresh database.
 FROM node:20-bookworm-slim
 
@@ -16,24 +16,24 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json shared/
 COPY backend/package.json backend/
-COPY offline-ingestion/package.json offline-ingestion/
+COPY offline-processing/package.json offline-processing/
 COPY frontend/package.json frontend/
 RUN npm install --include-workspace-root \
-      -w shared -w backend -w offline-ingestion
+      -w shared -w backend -w offline-processing
 
 # Source. Only what the CLI + label-app + migrations actually touch.
-# Root tsconfig is required: offline-ingestion/tsconfig extends it for the `@/*`
+# Root tsconfig is required: offline-processing/tsconfig extends it for the `@/*`
 # path alias that tsx resolves at runtime.
 COPY tsconfig.json ./
 COPY shared/ shared/
 COPY backend/drizzle/ backend/drizzle/
 COPY backend/drizzle.config.ts backend/tsconfig.json backend/
-COPY offline-ingestion/ offline-ingestion/
+COPY offline-processing/ offline-processing/
 
 # Default config path (compose bind-mounts the host file over this so edits apply).
-ENV OI_CONFIG_PATH=/app/offline-ingestion/offline-ingestion.config.yaml
+ENV OP_CONFIG_PATH=/app/offline-processing/offline-processing.config.yaml
 
-WORKDIR /app/offline-ingestion
+WORKDIR /app/offline-processing
 
 # label-app service overrides nothing; cli service is driven via
 # `docker compose run --rm cli npm run <task>`.

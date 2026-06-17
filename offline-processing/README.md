@@ -1,25 +1,32 @@
-# offline-ingestion
+# offline-processing
 
 Takes a folder of photos and produces the gallery's searchable data — **text tags +
-vector search, faces, and dogs** — in one Dockerized place. The only thing you install
-is **Docker** (Compose v2). Text tagging also needs a **vision LLM** over an
+vector search, faces, and dogs**. Text tagging also needs a **vision LLM** over an
 OpenAI-compatible API (e.g. Ollama); skip it and you don't.
+
+**Two ways to run it:**
+
+- **`./ingest-and-sync` from the repo root (recommended)** — the native cross-platform
+  wizard. It runs the `src/` tasks directly with `tsx`; the only Docker touch is the
+  vision-server (faces/dogs).
+- **`./oi` in this folder** — the self-contained launcher that runs every task inside
+  Docker containers instead. Needs only Docker (Compose v2) + bash.
 
 | Piece | What it does |
 | --- | --- |
-| `oi` | Host launcher — the interactive menu that drives everything |
-| `prepare-lightroom` | Optional: move Lightroom export copies into the ingestion folder |
+| `src/` | The pipeline tasks (`npm run ingest`/`tag`/`detect-faces`/… via `tsx`) |
+| `oi` | Standalone launcher that runs those tasks inside Docker |
 | `vision-server/` | Python sidecar: face + dog detection and embeddings (Docker) |
-| `src/` | The pipeline: ingest, tag, detect/cluster faces & dogs (Docker `cli`) |
-| `src/label-app/` | Web UI to label face/dog clusters (Docker `label-app`) |
-| `offline-ingestion.config.yaml` | Tuning knobs (committed) |
-| `docker-compose.yml` | Wires services + volumes |
+| `src/label-app/` | Web UI to label face/dog clusters |
+| `offline-processing.config.yaml` | Tuning knobs (committed) |
+| `docker-compose.yml` | Wires the Docker services + volumes (the `./oi` path) |
 
 ## Quick start
 
 ```bash
-cd offline-ingestion
-./oi                  # or: ./oi /path/to/photos
+./ingest-and-sync     # native wizard, from the repo root
+# or, the Docker path:
+cd offline-processing && ./oi      # or: ./oi /path/to/photos
 ```
 
 `./oi` checks Docker, builds images on first run, asks for your photo folder /
@@ -39,9 +46,9 @@ you choose. Folder names become browsable keywords. Just nest folders and drop i
 **Lightroom:** install the preset (`File → Export → Add` →
 `lightroom-export-presets/To Mobile Photo Gallery.lrtemplate`). It writes viewing copies
 named `<name>_exported_for_viewing_locally.jpg` — **do not change that suffix**. Export,
-then run `./prepare-lightroom [path/to/lightroom]` to move only those copies into the
-ingestion folder (preserving structure; originals/RAW stay put). Set `LIGHTROOM_DIR` and
-`SOURCE_DIR` in `.cli-cache` to pre-fill the prompts.
+then pick the **Lightroom** source adapter in `./ingest-and-sync`: it asks for the export
+folder, confirms it found exports, and moves only those copies into the ingestion folder
+(preserving structure; originals/RAW stay put).
 
 ## Configuration
 
@@ -56,7 +63,7 @@ written by `./oi` as you answer prompts — you don't edit it by hand:
 | `VISION_SERVER_HOST` / `_API_KEY` | Vision server (defaults to the local container) |
 | `INGEST_MODE`, `DRY_RUN`, `FILE_TRANSFER_MODE` | Run behavior (`copy` keeps originals; `cut` moves them) |
 
-**`offline-ingestion.config.yaml`** (committed) holds tuning knobs; omit any to use its
+**`offline-processing.config.yaml`** (committed) holds tuning knobs; omit any to use its
 default:
 
 | Path | Default | Controls |

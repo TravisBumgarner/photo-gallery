@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { loadConfig } from './config.js';
+import { summary } from './progress.js';
 import { confirmTyped } from './prompt.js';
 import { expandHome } from './util.js';
 
@@ -32,8 +33,8 @@ async function main() {
   console.log('=========================================================\n');
 
   // The orchestrator's "Create" choice is the confirmation; skip the typed
-  // prompt when invoked non-interactively (OI_FORCE=1).
-  if (process.env.OI_FORCE !== '1') {
+  // prompt when invoked non-interactively (OP_FORCE=1).
+  if (process.env.OP_FORCE !== '1') {
     const confirmed = await confirmTyped(
       `Type the DB filename (${dbName}) to confirm: `,
       dbName,
@@ -66,6 +67,7 @@ async function main() {
   console.log(
     '\nDone. Restart the backend if it was running so its in-memory caches reset.',
   );
+  summary('wiped — DB + images reset');
 }
 
 main().catch((err) => {

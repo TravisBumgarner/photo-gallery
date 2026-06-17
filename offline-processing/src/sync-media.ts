@@ -2,6 +2,7 @@ import path from 'node:path';
 import { createStorage } from 'shared/storage';
 import { syncMediaToStorage } from 'shared/sync';
 import { loadConfig, storageUrl } from './config.js';
+import { status, summary } from './progress.js';
 import { expandHome } from './util.js';
 
 // Push images + thumbnails from DESTINATION_DIRECTORY to the storage backend,
@@ -17,10 +18,14 @@ async function main() {
     if (done === total || done - lastLogged >= 100) {
       lastLogged = done;
       console.log(`  ${done}/${total} media files`);
+      status(`${done.toLocaleString()} / ${total.toLocaleString()} media files`);
     }
   });
   console.log(
     `Media sync: ${r.uploaded} uploaded, ${r.skipped} already present.`,
+  );
+  summary(
+    `${r.uploaded.toLocaleString()} uploaded · ${r.skipped.toLocaleString()} already present`,
   );
 }
 

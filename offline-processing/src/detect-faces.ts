@@ -4,6 +4,7 @@ import { isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { faces, photos } from 'shared/db/schema';
 import { imagesDir, loadConfig } from '@/config.js';
+import { status, summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
 interface DetectedFace {
@@ -80,14 +81,17 @@ function vecToBuffer(vec: Float32Array): Buffer {
 async function main() {
   const config = loadConfig();
 
-  const visionHost = config.VISION_SERVER_HOST;
+  const rawVisionHost = config.VISION_SERVER_HOST;
   const apiKey = config.VISION_SERVER_API_KEY || undefined;
-  if (!visionHost) {
+  if (!rawVisionHost) {
     console.error(
       'VISION_SERVER_HOST must be set in .cli-cache (see README "Vision Server").',
     );
     process.exit(1);
   }
+  // Post-guard const so the type is `string` inside the worker closure (CFA
+  // narrowing of the original is lost across the closure boundary).
+  const visionHost = rawVisionHost;
 
   const localDbPath = config.DATABASE_URL;
   if (!localDbPath) {
@@ -134,6 +138,7 @@ async function main() {
 
   if (unprocessed.length === 0) {
     console.log('\nNothing to process.');
+    summary('nothing new — all photos already analyzed');
     process.exit(0);
   }
 
@@ -158,7 +163,7 @@ async function main() {
         const buf = await fs.readFile(filePath);
         const b64 = buf.toString('base64');
         const tRead = Date.now();
-        const result = await detectWithRetry(visionHost!, apiKey, b64);
+        const result = await detectWithRetry(visionHost, apiKey, b64);
         const tDetect = Date.now();
 
         // Normalize bbox to 0..1 against the image dims the server actually saw.
@@ -198,6 +203,9 @@ async function main() {
         console.log(
           `  [${processed + failed}/${unprocessed.length}] ${row.filename}  read ${fmt(tRead - t0)}  detect ${fmt(tDetect - tRead)}  db ${fmt(tDone - tDetect)}  total ${fmt(tDone - t0)}  | ${rate.toFixed(2)} img/s | ${result.faces.length} face${result.faces.length === 1 ? '' : 's'}`,
         );
+        status(
+          `${processed + failed} / ${unprocessed.length} photos · ${totalFacesFound} faces · ${rate.toFixed(1)} img/s`,
+        );
       } catch (err) {
         failed++;
         consecutiveFailures++;
@@ -224,6 +232,9 @@ async function main() {
   const rate = processed / elapsed || 0;
   console.log(
     `\n  Done: ${processed} ok, ${failed} failed, ${totalFacesFound} faces total in ${fmt(elapsed * 1000)} | ${rate.toFixed(2)} img/s`,
+  );
+  summary(
+    `${processed.toLocaleString()} analyzed · ${totalFacesFound.toLocaleString()} face${totalFacesFound === 1 ? '' : 's'} found${failed ? ` · ${failed} failed` : ''}`,
   );
 
   if (aborted) {

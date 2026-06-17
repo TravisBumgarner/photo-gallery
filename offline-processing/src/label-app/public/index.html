@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Photo Gallery — Labeling</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #14161a;
+      color: #e6e8eb;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #1b1e24;
+      border-bottom: 1px solid #2a2e36;
+      padding: 12px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .hrow {
+      display: flex;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 16px;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    #status {
+      margin-left: auto;
+      color: #8b919b;
+      font-size: 13px;
+    }
+
+    /* One labelled row of status buttons per kind. */
+    .navrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .navlabel {
+      width: 64px;
+      font-weight: 600;
+    }
+
+    .group {
+      display: inline-flex;
+      border: 1px solid #2a2e36;
+      border-radius: 8px;
+      overflow: hidden;
+      flex-wrap: wrap;
+    }
+
+    .group button {
+      background: transparent;
+      color: #aeb4bd;
+      border: 0;
+      border-left: 1px solid #2a2e36;
+      padding: 6px 8px;
+      cursor: pointer;
+      font: inherit;
+      /* Fixed width so the two rows align column-for-column. */
+      width: 120px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .group button:first-child {
+      border-left: 0;
+    }
+
+    .group button.active {
+      background: #3b82f6;
+      color: #fff;
+    }
+
+    .group button:not(.active):hover {
+      background: #242832;
+    }
+
+    .group button .cnt {
+      opacity: .7;
+      font-variant-numeric: tabular-nums;
+      margin-left: 4px;
+    }
+
+    .tabhelp {
+      margin: 14px 20px 0;
+      padding: 10px 14px;
+      background: #1b1e24;
+      border: 1px solid #2a2e36;
+      border-left: 3px solid #3b82f6;
+      border-radius: 8px;
+      color: #aeb4bd;
+      font-size: 13px;
+    }
+
+    .merge-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 14px 20px 0;
+      padding: 8px 12px;
+      background: #1b1e24;
+      border: 1px solid #2a2e36;
+      border-radius: 8px;
+    }
+
+    .merge-bar[hidden] {
+      display: none;
+    }
+
+    .grid {
+      padding: 16px 20px;
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    }
+
+    footer {
+      padding: 0 20px 24px;
+      text-align: center;
+    }
+
+    .card {
+      background: #1b1e24;
+      border: 1px solid #2a2e36;
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .card.sel {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
+
+    .crops {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .crop {
+      aspect-ratio: 1;
+      border-radius: 6px;
+      background: #0d0f12 center/cover no-repeat;
+    }
+
+    .crop.solo {
+      aspect-ratio: 1;
+      margin-bottom: 10px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .meta {
+      color: #8b919b;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    input[type=text] {
+      flex: 1;
+      background: #0d0f12;
+      border: 1px solid #2a2e36;
+      color: #e6e8eb;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font: inherit;
+    }
+
+    button.act {
+      background: #242832;
+      color: #e6e8eb;
+      border: 1px solid #2a2e36;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button.act:hover {
+      background: #2d323c;
+    }
+
+    button.primary {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      color: #fff;
+    }
+
+    button.act:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+
+    .muted {
+      color: #8b919b;
+    }
+
+    .sel-btn {
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="hrow">
+      <h1>Label your photos</h1>
+      <span id="status"></span>
+    </div>
+    <div id="nav"></div>
+  </header>
+
+  <p id="tabHelp" class="tabhelp"></p>
+  <div id="mergeBar" class="merge-bar" hidden></div>
+  <main id="grid" class="grid"></main>
+  <footer id="foot"></footer>
+
+  <script>
+    const KINDS = ['people', 'dogs'];
+    const TITLE = { people: 'Humans', dogs: 'Dogs' };
+    const STATUSES = ['unlabeled', 'ungrouped', 'merge', 'labeled', 'ignored'];
+    const TAB_LABEL = {
+      unlabeled: 'Unlabeled', ungrouped: 'Ungrouped', merge: 'Merge',
+      labeled: 'Labeled', ignored: 'Ignored',
+    };
+    const PAD = {
+      people: { top: 0.6, bottom: 0.25, side: 0.35 },
+      dogs: { top: 0.08, bottom: 0.08, side: 0.08 },
+    };
+
+    // The single active view. Each button below is one (kind, status) pair.
+    let kind = 'people';
+    let status = 'unlabeled';
+    let offset = 0;
+    let hasMore = false;
+    let loading = false;
+    const selected = new Map(); // id -> cluster (merge selection for current view)
+    let counts = { people: {}, dogs: {} };
+    const btnRefs = {}; // `${kind}:${status}` -> button element
+
+    const grid = document.getElementById('grid');
+    const foot = document.getElementById('foot');
+    const statusEl = document.getElementById('status');
+    const tabHelpEl = document.getElementById('tabHelp');
+    const mergeBar = document.getElementById('mergeBar');
+
+    const itemsWord = () => (kind === 'people' ? 'faces' : 'dogs');
+    const who = () => (kind === 'people' ? 'person' : 'dog');
+
+    function tabHelpText() {
+      const noun = itemsWord();
+      return {
+        unlabeled: 'Groups that formed but aren’t named yet — type a name to label them.',
+        ungrouped: `Individual ${noun} that didn’t join a group (too few similar photos). Add more of them and re-run, and they’ll show up as a group.`,
+        merge: `Is the same ${who()} split into separate groups? Select them, then Merge into one — photos move into the lowest #, which keeps its name.`,
+        labeled: 'Groups you’ve already named.',
+        ignored: `Groups you’ve marked to skip (not a real ${who()}, junk, etc.).`,
+      }[status] || '';
+    }
+
+    function cropStyle(s) {
+      const p = PAD[kind];
+      let x = s.bboxX - s.bboxW * p.side;
+      let y = s.bboxY - s.bboxH * p.top;
+      let w = s.bboxW * (1 + p.side * 2);
+      let h = s.bboxH * (1 + p.top + p.bottom);
+      x = Math.max(0, x); y = Math.max(0, y);
+      w = Math.min(1 - x, w); h = Math.min(1 - y, h);
+      if (w <= 0 || h <= 0) { x = 0; y = 0; w = 1; h = 1; }
+      const posX = w >= 1 ? 0 : (x / (1 - w)) * 100;
+      const posY = h >= 1 ? 0 : (y / (1 - h)) * 100;
+      const sizeX = (1 / w) * 100;
+      const sizeY = (1 / h) * 100;
+      return `background-image:url('/${s.thumbnailPath}');background-size:${sizeX}% ${sizeY}%;background-position:${posX}% ${posY}%;`;
+    }
+
+    async function patch(id, body) {
+      await fetch(`/api/${kind}/clusters/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+    }
+
+    function card(c) {
+      const el = document.createElement('div');
+      el.className = 'card';
+      const crops = c.samples.map((s) => `<div class="crop" style="${cropStyle(s)}"></div>`).join('');
+      el.innerHTML = `
+    <div class="crops">${crops}</div>
+    <div class="meta">#${c.id} · ${c.count} ${itemsWord()}${c.ignored ? ' · ignored' : ''}</div>
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" placeholder="${kind === 'people' ? 'name (e.g. mom)' : 'name (e.g. bowser)'}" value="${c.label ?? ''}" />
+      <button type="button" class="act primary" data-act="save">Save</button>
+    </div>
+    <div class="row">
+      <button type="button" class="act" data-act="ignore">${c.ignored ? 'Un-ignore' : 'Ignore'}</button>
+    </div>`;
+      const input = el.querySelector('input[type=text]');
+      el.querySelector('[data-act=save]').onclick = async () => {
+        await patch(c.id, { label: input.value.trim() || null });
+        afterMutation();
+      };
+      el.querySelector('[data-act=ignore]').onclick = async () => {
+        await patch(c.id, { ignored: !c.ignored });
+        afterMutation();
+      };
+      return el;
+    }
+
+    function mergeCard(c) {
+      const el = document.createElement('div');
+      el.dataset.cid = c.id;
+      const isSel = selected.has(c.id);
+      el.className = `card${isSel ? ' sel' : ''}`;
+      const crops = c.samples.map((s) => `<div class="crop" style="${cropStyle(s)}"></div>`).join('');
+      el.innerHTML = `
+    <div class="crops">${crops}</div>
+    <div class="meta">#${c.id} · ${c.count} ${itemsWord()}${c.label ? ` · ${c.label}` : ''}</div>
+    <button type="button" class="act sel-btn ${isSel ? '' : 'primary'}">${isSel ? 'Deselect' : 'Select'}</button>`;
+      el.querySelector('.sel-btn').onclick = () => {
+        if (selected.has(c.id)) selected.delete(c.id);
+        else selected.set(c.id, c);
+        const nowSel = selected.has(c.id);
+        el.classList.toggle('sel', nowSel);
+        const btn = el.querySelector('.sel-btn');
+        btn.textContent = nowSel ? 'Deselect' : 'Select';
+        btn.classList.toggle('primary', !nowSel);
+        renderMergeBar();
+      };
+      return el;
+    }
+
+    function tile(it) {
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.innerHTML = `
+    <div class="crop solo" style="${cropStyle(it)}"></div>
+    <div class="meta">${Math.round(it.detScore * 100)}% confidence</div>`;
+      return el;
+    }
+
+    // Build the two button rows (one per kind) and remember each button.
+    function buildNav() {
+      const nav = document.getElementById('nav');
+      for (const k of KINDS) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'navrow';
+        const label = document.createElement('span');
+        label.className = 'navlabel';
+        label.textContent = TITLE[k];
+        const group = document.createElement('div');
+        group.className = 'group';
+        for (const stat of STATUSES) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.onclick = () => setView(k, stat);
+          group.appendChild(b);
+          btnRefs[`${k}:${stat}`] = b;
+        }
+        rowEl.append(label, group);
+        nav.appendChild(rowEl);
+      }
+    }
+
+    function renderNav() {
+      for (const k of KINDS) {
+        for (const stat of STATUSES) {
+          const b = btnRefs[`${k}:${stat}`];
+          const n = counts[k][stat] ?? 0;
+          b.innerHTML = `${TAB_LABEL[stat]}<span class="cnt">${n}</span>`;
+          b.classList.toggle('active', k === kind && stat === status);
+        }
+      }
+    }
+
+    function renderMergeBar() {
+      if (status !== 'merge') { mergeBar.hidden = true; return; }
+      mergeBar.hidden = false;
+      const ids = [...selected.keys()].sort((a, b) => a - b);
+      const can = ids.length >= 2;
+      mergeBar.innerHTML = `<span class="muted">${ids.length} selected${can ? ` — merges into #${ids[0]} (keeps its name)` : ''}</span>`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'act primary';
+      btn.disabled = !can;
+      btn.textContent = can ? `Merge ${ids.length} → #${ids[0]}` : 'Select 2+ to merge';
+      btn.onclick = mergeGo;
+      mergeBar.appendChild(btn);
+    }
+
+    function renderFoot() {
+      foot.innerHTML = '';
+      if (hasMore) {
+        const b = document.createElement('button');
+        b.className = 'act'; b.textContent = 'Load more';
+        b.onclick = () => load(false);
+        foot.appendChild(b);
+      } else if (offset === 0) {
+        const dn = itemsWord();
+        foot.innerHTML =
+          status === 'ungrouped' ? `<span class="muted">No ungrouped ${dn} — everything detected landed in a group.</span>`
+            : status === 'merge' ? '<span class="muted">No groups yet.</span>'
+              : '<span class="muted">Nothing here.</span>';
+      }
+    }
+
+    async function load(reset) {
+      if (loading) return;
+      loading = true;
+      if (reset) { offset = 0; grid.innerHTML = ''; }
+      statusEl.textContent = 'Loading…';
+      try {
+        if (status === 'ungrouped') {
+          const data = await (await fetch(`/api/${kind}/ungrouped?limit=50&offset=${offset}`)).json();
+          for (const it of data.items) grid.appendChild(tile(it));
+          hasMore = data.hasMore; offset += data.items.length;
+        } else if (status === 'merge') {
+          const data = await (await fetch(`/api/${kind}/clusters?status=all&limit=50&offset=${offset}`)).json();
+          for (const c of data.clusters) grid.appendChild(mergeCard(c));
+          hasMore = data.hasMore; offset += data.clusters.length;
+        } else {
+          const data = await (await fetch(`/api/${kind}/clusters?status=${status}&limit=50&offset=${offset}`)).json();
+          for (const c of data.clusters) grid.appendChild(card(c));
+          hasMore = data.hasMore; offset += data.clusters.length;
+        }
+      } finally {
+        loading = false;
+        statusEl.textContent = '';
+      }
+      renderFoot();
+      renderMergeBar();
+    }
+
+    async function refreshCounts() {
+      const [p, d] = await Promise.all(
+        KINDS.map((k) => fetch(`/api/${k}/counts`).then((r) => r.json()).catch(() => ({})))
+      );
+      counts = { people: p, dogs: d };
+      renderNav();
+    }
+
+    async function afterMutation() {
+      await load(true);
+      await refreshCounts();
+    }
+
+    function mergeGo() {
+      const ids = [...selected.keys()].sort((a, b) => a - b);
+      if (ids.length < 2) return;
+      const targetId = ids[0];
+      const sourceIds = ids.slice(1);
+      const proceed = confirm(
+        `Merge ${ids.length} ${TITLE[kind]} groups into #${targetId}?\n\n` +
+        `Their photos move into #${targetId} (which keeps its name); the other ` +
+        `${sourceIds.length} group(s) are deleted. This can’t be undone.`
+      );
+      if (!proceed) return;
+      fetch(`/api/${kind}/clusters/merge`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceIds, targetId }),
+      }).then(() => { selected.clear(); afterMutation(); });
+    }
+
+    // Switch the single active view to (k, stat).
+    function setView(k, stat) {
+      kind = k;
+      status = stat;
+      selected.clear();
+      renderNav();
+      tabHelpEl.textContent = tabHelpText();
+      load(true);
+    }
+
+    buildNav();
+    setView('people', 'unlabeled');
+    refreshCounts();
+  </script>
+</body>
+
+</html>

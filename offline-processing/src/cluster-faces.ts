@@ -3,9 +3,10 @@ import { eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { faceClusters, faces } from 'shared/db/schema';
 import { loadConfig } from '@/config.js';
+import { summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
-// Tunables (see faces.cluster in offline-ingestion.config.yaml). ArcFace
+// Tunables (see faces.cluster in offline-processing.config.yaml). ArcFace
 // embeddings are L2-normalized so cosine distance = 1 - dot. Same-person
 // distances cluster around 0.1-0.4; different-people start around 0.7+.
 // Conservative thresholds favor splits over false merges — the UI lets you
@@ -287,6 +288,9 @@ async function main() {
     `\n  Clusters: ${finalCounts[0].total} total (${labeled[0].count} labeled, ${ignored[0].count} ignored)`,
   );
   console.log(`  Singleton faces (no cluster): ${unassignedFaces[0].count}`);
+  summary(
+    `${finalCounts[0].total} clusters · ${labeled[0].count} named · ${unassignedFaces[0].count} singleton faces`,
+  );
 
   process.exit(0);
 }

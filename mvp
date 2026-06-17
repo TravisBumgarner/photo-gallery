@@ -30,7 +30,7 @@ fi
 if [ "$PHOTOS" = "$MVP/photos" ] && [ ! -d "$PHOTOS" ]; then
   echo "🖼  Generating sample photos..."
   mkdir -p "$PHOTOS/2024/Italy" "$PHOTOS/2023/Beach"
-  ( cd offline-ingestion && TARGET="$PHOTOS" node -e '
+  ( cd offline-processing && TARGET="$PHOTOS" node -e '
     const sharp = require("sharp");
     const c=[[200,80,80],[80,200,120],[80,120,200],[220,200,80],[160,80,200],[80,200,200]];
     const p=["2024/Italy/rome","2024/Italy/venice","2024/Italy/florence","2023/Beach/sunset","2023/Beach/waves","2023/Beach/sand"];
@@ -45,12 +45,12 @@ echo "🗄  Migrating database..."
 # 3. Ingest (auto-confirm).
 echo "📥 Ingesting photos..."
 printf 'y\n' | env DATABASE_URL="$DB" SOURCE_DIR="$PHOTOS" DESTINATION_DIRECTORY="$OUT" \
-  FILE_TRANSFER_MODE=copy DRY_RUN=false npm run ingest -w offline-ingestion
+  FILE_TRANSFER_MODE=copy DRY_RUN=false npm run ingest -w offline-processing
 
 # 4. Publish the read-only release (sidecars + labels.json + slim DB) locally.
 echo "📦 Publishing read-only release..."
 env DATABASE_URL="$DB" SOURCE_DIR="$PHOTOS" DESTINATION_DIRECTORY="$OUT" \
-  npm run publish -w offline-ingestion
+  npm run publish -w offline-processing
 
 # 5. Build the web frontend once (cached afterward).
 if [ ! -f backend/frontend-dist/index.html ]; then

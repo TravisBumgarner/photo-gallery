@@ -2,6 +2,7 @@ import path from 'node:path';
 import { publishToStorage } from 'shared/publish';
 import { createStorage } from 'shared/storage';
 import { loadConfig, storageUrl } from './config.js';
+import { summary } from './progress.js';
 import { expandHome } from './util.js';
 
 // Publish a read-only release from the fat ingestion DB: per-photo sidecars,
@@ -31,6 +32,9 @@ async function main() {
       (result.skippedNoHash ? ` (${result.skippedNoHash} skipped — no content hash)` : '') +
       `, ${result.peopleLabels} people + ${result.dogLabels} dog labels, ` +
       `slim DB published as ${result.version}.`,
+  );
+  summary(
+    `${result.sidecars.toLocaleString()} sidecars · ${result.peopleLabels} people + ${result.dogLabels} dog labels published`,
   );
 }
 

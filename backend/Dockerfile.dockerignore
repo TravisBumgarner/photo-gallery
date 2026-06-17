@@ -13,8 +13,8 @@
 !**/.env.example
 
 # Not needed to build/serve the backend image.
-offline-ingestion/src
-offline-ingestion/vision-server
+offline-processing/src
+offline-processing/vision-server
 backend/public
 designs
 readme

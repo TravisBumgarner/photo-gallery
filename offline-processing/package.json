@@ -1,5 +1,5 @@
 {
-  "name": "offline-ingestion",
+  "name": "offline-processing",
   "version": "1.0.0",
   "type": "module",
   "scripts": {

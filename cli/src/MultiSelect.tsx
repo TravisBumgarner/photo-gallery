@@ -21,12 +21,14 @@ export function MultiSelect({
   const [checked, setChecked] = useState<Set<string>>(
     new Set(initial ?? items.map((i) => i.value)),
   );
+  const [warn, setWarn] = useState(false);
 
   useInput((input, key) => {
     if (key.upArrow) setCursor((c) => (c - 1 + items.length) % items.length);
     else if (key.downArrow) setCursor((c) => (c + 1) % items.length);
     else if (input === ' ') {
       const value = items[cursor].value;
+      setWarn(false);
       setChecked((prev) => {
         const next = new Set(prev);
         if (next.has(value)) next.delete(value);
@@ -34,7 +36,14 @@ export function MultiSelect({
         return next;
       });
     } else if (key.return) {
-      onSubmit(items.filter((i) => checked.has(i.value)).map((i) => i.value));
+      const selected = items.filter((i) => checked.has(i.value)).map((i) => i.value);
+      // Submitting nothing means "do nothing then exit" — almost always a
+      // mistake, so require at least one and nudge instead of silently leaving.
+      if (selected.length === 0) {
+        setWarn(true);
+        return;
+      }
+      onSubmit(selected);
     }
   });
 
@@ -46,7 +55,11 @@ export function MultiSelect({
           {checked.has(item.value) ? '◉' : '◯'} {item.label}
         </Text>
       ))}
-      <Text dimColor>  (↑/↓ move · space toggle · enter confirm)</Text>
+      {warn ? (
+        <Text color="yellow">  Please pick at least one — press space to check a box.</Text>
+      ) : (
+        <Text dimColor>  (↑/↓ to move · space to check · enter when done)</Text>
+      )}
     </Box>
   );
 }

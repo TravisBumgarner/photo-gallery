@@ -7,8 +7,13 @@ import type { Step } from './steps.js';
 
 type Status = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
-/** Runs a list of steps sequentially, showing a live checklist + the last
- * output line of the active step. Stops on the first failure. */
+// Mirror offline-processing/src/progress.ts — tasks emit these sentinel lines.
+const STATUS_PREFIX = '@@PG_STATUS@@';
+const SUMMARY_PREFIX = '@@PG_SUMMARY@@';
+
+/** Runs a list of steps sequentially, showing a live checklist. Each step shows
+ * a live status while running and a one-line summary once done (both emitted by
+ * the task via progress.ts). Stops on the first failure. */
 export function Runner({
   steps,
   onDone,
@@ -20,8 +25,11 @@ export function Runner({
   const [statuses, setStatuses] = useState<Status[]>(
     steps.map(() => 'pending'),
   );
-  const [active, setActive] = useState(0);
-  const [recent, setRecent] = useState<string[]>([]);
+  // Live one-liner for the currently running step; summaries persist per step.
+  const [live, setLive] = useState('');
+  const [summaries, setSummaries] = useState<(string | null)[]>(
+    steps.map(() => null),
+  );
   const started = useRef(false);
 
   useEffect(() => {
@@ -31,16 +39,32 @@ export function Runner({
     (async () => {
       const setStatus = (i: number, s: Status) =>
         setStatuses((prev) => prev.map((p, idx) => (idx === i ? s : p)));
+      const setSummaryAt = (i: number, s: string) =>
+        setSummaries((prev) => prev.map((p, idx) => (idx === i ? s : p)));
 
       for (let i = 0; i < steps.length; i++) {
-        setActive(i);
         setStatus(i, 'running');
-        setRecent([]);
+        setLive('');
         const tail: string[] = [];
+        let sawStatus = false;
+        let summary = '';
         const code = await runStep(steps[i].spec, (line) => {
+          if (line.startsWith(STATUS_PREFIX)) {
+            sawStatus = true;
+            setLive(line.slice(STATUS_PREFIX.length).trim());
+            return;
+          }
+          if (line.startsWith(SUMMARY_PREFIX)) {
+            const s = line.slice(SUMMARY_PREFIX.length).trim();
+            summary = summary ? `${summary} · ${s}` : s;
+            setSummaryAt(i, summary);
+            return;
+          }
+          // Raw task output: kept for failure scrollback, and shown live as a
+          // fallback until/unless the task emits a structured status.
           tail.push(line);
           if (tail.length > 30) tail.shift();
-          setRecent(tail.slice(-3));
+          if (!sawStatus) setLive(line);
         });
         if (code === 0) {
           setStatus(i, 'done');
@@ -90,17 +114,14 @@ export function Runner({
             glyph(statuses[i])
           )}{' '}
           {step.label}
+          {statuses[i] === 'running' && live ? (
+            <Text dimColor> — {live}</Text>
+          ) : null}
+          {statuses[i] === 'done' && summaries[i] ? (
+            <Text dimColor> — {summaries[i]}</Text>
+          ) : null}
         </Text>
       ))}
-      {statuses[active] === 'running'
-        ? recent.map((line, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size live tail
-            <Text key={i} dimColor>
-              {'   '}
-              {line}
-            </Text>
-          ))
-        : null}
     </Box>
   );
 }

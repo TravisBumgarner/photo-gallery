@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { loadConfig } from './config.js';
+import { summary } from './progress.js';
 import { expandHome } from './util.js';
 
 // Idempotent: ensure the ingest DB exists with the current schema. Run before
@@ -23,3 +24,4 @@ migrate(drizzle(sqlite), {
 });
 sqlite.close();
 console.log(`Database ready: ${dbPath}`);
+summary('schema ready');

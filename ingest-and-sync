@@ -9,9 +9,12 @@ cd "$(dirname "$0")"
 # NOT frontend (expo/skia) — that's only needed to build the web UI, which
 # ships prebuilt. Docker is NOT required here; only faces/dogs need it, and
 # the orchestrator brings that container up on demand.
-if [ ! -e node_modules/ink ]; then
-  echo "📦 Installing dependencies (first run)..."
-  npm install -w shared -w backend -w offline-ingestion -w cli
+# Guard on npm's own post-install marker at the repo root — workspace deps like
+# `ink` land in cli/node_modules (npm doesn't hoist them), so checking for those
+# re-ran `npm install` (and printed its audit/funding noise) on every launch.
+if [ ! -e node_modules/.package-lock.json ]; then
+  echo "📦 Installing dependencies (first run, this takes a minute)…"
+  npm install -w shared -w backend -w offline-processing -w cli --no-audit --no-fund
 fi
 
 exec npx tsx cli/src/index.tsx "$@"

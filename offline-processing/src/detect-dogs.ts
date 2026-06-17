@@ -4,6 +4,7 @@ import { isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { dogs, photos } from 'shared/db/schema';
 import { imagesDir, loadConfig } from '@/config.js';
+import { status, summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
 interface DetectedDog {
@@ -82,14 +83,17 @@ async function main() {
 
   // Reusing VISION_SERVER_HOST since /detect and /detect-dogs live on the same
   // local sidecar. The env var name is historical.
-  const visionHost = config.VISION_SERVER_HOST;
+  const rawVisionHost = config.VISION_SERVER_HOST;
   const apiKey = config.VISION_SERVER_API_KEY || undefined;
-  if (!visionHost) {
+  if (!rawVisionHost) {
     console.error(
       'VISION_SERVER_HOST must be set in .cli-cache (see README "Vision Server").',
     );
     process.exit(1);
   }
+  // Post-guard const so the type is `string` inside the worker closure (CFA
+  // narrowing of the original is lost across the closure boundary).
+  const visionHost = rawVisionHost;
 
   const localDbPath = config.DATABASE_URL;
   if (!localDbPath) {
@@ -133,6 +137,7 @@ async function main() {
 
   if (unprocessed.length === 0) {
     console.log('\nNothing to process.');
+    summary('nothing new — all photos already analyzed');
     process.exit(0);
   }
 
@@ -157,7 +162,7 @@ async function main() {
         const buf = await fs.readFile(filePath);
         const b64 = buf.toString('base64');
         const tRead = Date.now();
-        const result = await detectWithRetry(visionHost!, apiKey, b64);
+        const result = await detectWithRetry(visionHost, apiKey, b64);
         const tDetect = Date.now();
 
         const W = result.width;
@@ -195,6 +200,9 @@ async function main() {
         console.log(
           `  [${processed + failed}/${unprocessed.length}] ${row.filename}  read ${fmt(tRead - t0)}  detect ${fmt(tDetect - tRead)}  db ${fmt(tDone - tDetect)}  total ${fmt(tDone - t0)}  | ${rate.toFixed(2)} img/s | ${result.dogs.length} dog${result.dogs.length === 1 ? '' : 's'}`,
         );
+        status(
+          `${processed + failed} / ${unprocessed.length} photos · ${totalDogsFound} dogs · ${rate.toFixed(1)} img/s`,
+        );
       } catch (err) {
         failed++;
         consecutiveFailures++;
@@ -221,6 +229,9 @@ async function main() {
   const rate = processed / elapsed || 0;
   console.log(
     `\n  Done: ${processed} ok, ${failed} failed, ${totalDogsFound} dogs total in ${fmt(elapsed * 1000)} | ${rate.toFixed(2)} img/s`,
+  );
+  summary(
+    `${processed.toLocaleString()} analyzed · ${totalDogsFound.toLocaleString()} dog${totalDogsFound === 1 ? '' : 's'} found${failed ? ` · ${failed} failed` : ''}`,
   );
 
   if (aborted) {

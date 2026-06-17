@@ -11,6 +11,7 @@ export interface Prefs {
   adapter: 'lightroom' | 'manual';
   mode: 'create' | 'update';
   tasks: string[];
+  lightroomDir: string;
 }
 
 const DEFAULTS: Prefs = {
@@ -18,12 +19,17 @@ const DEFAULTS: Prefs = {
   adapter: 'manual',
   mode: 'update',
   tasks: ['ingest', 'tag', 'faces', 'dogs'],
+  lightroomDir: '',
 };
 
 export function loadPrefs(): Prefs {
   try {
     if (existsSync(PREFS)) {
-      return { ...DEFAULTS, ...JSON.parse(readFileSync(PREFS, 'utf8')) };
+      // `mode` is deliberately NOT seeded from cache: Create is a destructive,
+      // one-shot wipe, so it must never become a sticky default. A blind re-run
+      // (enter-enter-enter) always resumes via Update; the user has to actively
+      // re-pick Create — and confirm it — each time.
+      return { ...DEFAULTS, ...JSON.parse(readFileSync(PREFS, 'utf8')), mode: 'update' };
     }
   } catch {
     // corrupt/unreadable → fall back to defaults

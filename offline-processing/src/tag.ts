@@ -5,6 +5,7 @@ import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
 import { WasmEmbedder } from 'shared/embed';
 import { imagesDir, loadConfig, modelCacheDir } from '@/config.js';
+import { status, summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
 const RETRY_DELAYS_MS = [500, 1500, 3500];
@@ -72,10 +73,10 @@ async function callGenerateOnce(
     const { done, value } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
-    let nl: number;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? ''; // keep the trailing partial line buffered
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
       if (!line.startsWith('data:')) continue;
       const data = line.slice(5).trim();
       if (data === '[DONE]') continue;
@@ -154,16 +155,19 @@ function vecToBuffer(vec: Float32Array): Buffer {
 async function main() {
   const config = loadConfig();
 
-  const modelHost = config.MODEL_SERVER_HOST;
-  let model = config.MODEL_SERVER_MODEL;
+  const rawModelHost = config.MODEL_SERVER_HOST;
+  const configuredModel = config.MODEL_SERVER_MODEL;
   const apiKey = config.MODEL_SERVER_API_KEY;
-  if (!modelHost || !model) {
+  if (!rawModelHost || !configuredModel) {
     console.error(
       'MODEL_SERVER_HOST and MODEL_SERVER_MODEL must be set in .cli-cache (see README "Model Server").',
     );
     process.exit(1);
   }
-  model = await resolveModel(modelHost, model);
+  // Post-guard const → type `string` inside the worker closure (CFA narrowing
+  // of the original is lost across the closure boundary).
+  const modelHost = rawModelHost;
+  const model = await resolveModel(modelHost, configuredModel);
 
   const localDbPath = config.DATABASE_URL;
   if (!localDbPath) {
@@ -245,7 +249,7 @@ async function main() {
               .toBuffer()
           ).toString('base64');
           const tRead = Date.now();
-          const tags = await callGenerate(modelHost!, model!, apiKey, b64);
+          const tags = await callGenerate(modelHost, model, apiKey, b64);
           const tUpload = Date.now();
           const vec = await embedder.embed(tags);
           const tEmbed = Date.now();
@@ -269,6 +273,9 @@ async function main() {
           const rate = processed / elapsed || 0;
           console.log(
             `  [${processed + failed}/${untagged.length}] ${row.filename}  read ${fmt(tRead - t0)}  upload ${fmt(tUpload - tRead)}  embed ${fmt(tEmbed - tUpload)}  db ${fmt(tDone - tEmbed)}  total ${fmt(tDone - t0)}  | ${rate.toFixed(2)} img/s | ${firstFiveTags}`,
+          );
+          status(
+            `${processed + failed} / ${untagged.length} photos · ${rate.toFixed(1)} img/s`,
           );
         } catch (err) {
           failed++;
@@ -294,6 +301,11 @@ async function main() {
     const rate = processed / elapsed || 0;
     console.log(
       `\n  Done: ${processed} ok, ${failed} failed in ${fmt(elapsed * 1000)} | ${rate.toFixed(2)} img/s`,
+    );
+    summary(
+      processed || failed
+        ? `${processed.toLocaleString()} tagged${failed ? ` · ${failed} failed` : ''}`
+        : 'nothing new — all photos already tagged',
     );
 
     if (aborted) {

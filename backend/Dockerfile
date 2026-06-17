@@ -24,7 +24,7 @@ COPY package.json package-lock.json ./
 COPY shared/package.json shared/
 COPY backend/package.json backend/
 COPY frontend/package.json frontend/
-COPY offline-ingestion/package.json offline-ingestion/
+COPY offline-processing/package.json offline-processing/
 RUN npm install --include-workspace-root -w shared -w backend -w frontend
 
 # Source.
