@@ -8,13 +8,6 @@ import {
   reapplyLabels,
   serializeLabels,
 } from '../labels.js';
-import {
-  decodeEmbedding,
-  encodeEmbedding,
-  parseSidecar,
-  type Sidecar,
-  serializeSidecar,
-} from '../sidecar.js';
 import { createStorage, KEYS } from './index.js';
 
 describe('LocalStorage round-trip', () => {
@@ -26,46 +19,24 @@ describe('LocalStorage round-trip', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('put/get/exists/list/delete under nested prefixes', async () => {
+  it('put/get/exists/list/copy/delete under nested prefixes', async () => {
     const store = await createStorage(`file://${root}`);
-    await store.put(KEYS.sidecar('abc123'), Buffer.from('{"hi":1}'));
+    await store.put('thumbnails/abc123.json', Buffer.from('{"hi":1}'));
     await store.put(KEYS.labels(), Buffer.from('{}'));
 
-    expect(await store.exists(KEYS.sidecar('abc123'))).toBe(true);
-    expect(await store.exists(KEYS.sidecar('missing'))).toBe(false);
-    expect((await store.get(KEYS.sidecar('abc123'))).toString()).toBe('{"hi":1}');
+    expect(await store.exists('thumbnails/abc123.json')).toBe(true);
+    expect(await store.exists('thumbnails/missing.json')).toBe(false);
+    expect((await store.get('thumbnails/abc123.json')).toString()).toBe('{"hi":1}');
 
-    const keys = await store.list('sidecars');
-    expect(keys).toEqual(['sidecars/abc123.json']);
+    const keys = await store.list('thumbnails');
+    expect(keys).toEqual(['thumbnails/abc123.json']);
 
-    await store.delete(KEYS.sidecar('abc123'));
-    expect(await store.exists(KEYS.sidecar('abc123'))).toBe(false);
-  });
-});
+    // copy (used to archive the old DB on publish)
+    await store.copy('thumbnails/abc123.json', 'db/backups/copy.json');
+    expect((await store.get('db/backups/copy.json')).toString()).toBe('{"hi":1}');
 
-describe('sidecar encode/decode', () => {
-  it('round-trips embeddings as base64 Float32 buffers', () => {
-    const vec = new Float32Array([0.1, -0.2, 0.3]);
-    const b64 = encodeEmbedding(Buffer.from(vec.buffer));
-    const back = decodeEmbedding(b64);
-    expect(new Float32Array(back!.buffer, back!.byteOffset, 3)).toEqual(vec);
-    expect(encodeEmbedding(null)).toBeNull();
-    expect(decodeEmbedding(null)).toBeNull();
-  });
-
-  it('serialize/parse validates shape', () => {
-    const sidecar: Sidecar = {
-      version: 1,
-      contentHash: 'hash1',
-      uuid: 'uuid1',
-      tags: 'beach, sunset',
-      tagsEmbedding: encodeEmbedding(Buffer.from(new Float32Array([1, 2]).buffer)),
-      faces: [
-        { bboxX: 0.1, bboxY: 0.1, bboxW: 0.2, bboxH: 0.2, detScore: 0.99, embedding: 'AAA=' },
-      ],
-      dogs: [],
-    };
-    expect(parseSidecar(serializeSidecar(sidecar))).toEqual(sidecar);
+    await store.delete('thumbnails/abc123.json');
+    expect(await store.exists('thumbnails/abc123.json')).toBe(false);
   });
 });
 

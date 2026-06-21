@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { createDb } from './db/index.js';
 import { dogClusters, dogs, faceClusters, faces, photos } from './db/schema.js';
 import {
@@ -6,117 +6,7 @@ import {
   parseLabels,
   reapplyLabels,
 } from './labels.js';
-import { decodeEmbedding, type Detection, parseSidecar } from './sidecar.js';
 import { KEYS, type StorageBackend } from './storage/index.js';
-
-/**
- * Repopulate a freshly-ingested DB from sidecars so the expensive compute
- * (tags, embeddings, detections) is restored from storage instead of re-run.
- * Operates per-photo by content hash and only fills gaps — so it's safe to run
- * before tag/detect, which then skip the rows it restored (their WHERE-NULL
- * guards). Clustering runs afterward on the restored embeddings.
- */
-export interface RestoreResult {
-  photosTagged: number;
-  facesRestored: number;
-  dogsRestored: number;
-  sidecarsMissing: number;
-}
-
-export async function restoreFromSidecars(
-  dbPath: string,
-  storage: StorageBackend,
-): Promise<RestoreResult> {
-  const db = createDb(dbPath);
-  const now = new Date();
-  const result: RestoreResult = {
-    photosTagged: 0,
-    facesRestored: 0,
-    dogsRestored: 0,
-    sidecarsMissing: 0,
-  };
-
-  const rows = db
-    .select({
-      uuid: photos.uuid,
-      contentHash: photos.contentHash,
-      tags: photos.tags,
-      facesProcessedAt: photos.facesProcessedAt,
-      dogsProcessedAt: photos.dogsProcessedAt,
-    })
-    .from(photos)
-    .where(isNotNull(photos.contentHash))
-    .all();
-
-  for (const row of rows) {
-    const hash = row.contentHash as string;
-    const needsTags = row.tags == null;
-    const needsFaces = row.facesProcessedAt == null;
-    const needsDogs = row.dogsProcessedAt == null;
-    if (!needsTags && !needsFaces && !needsDogs) continue;
-
-    if (!(await storage.exists(KEYS.sidecar(hash)))) {
-      result.sidecarsMissing++;
-      continue;
-    }
-    const sidecar = parseSidecar(await storage.get(KEYS.sidecar(hash)));
-
-    if (needsTags && sidecar.tags != null) {
-      db.update(photos)
-        .set({
-          tags: sidecar.tags,
-          tagsEmbedding: decodeEmbedding(sidecar.tagsEmbedding) ?? undefined,
-          updatedAt: now,
-        })
-        .where(eq(photos.uuid, row.uuid))
-        .run();
-      result.photosTagged++;
-    }
-
-    if (needsFaces) {
-      insertDetections(db, faces, row.uuid, sidecar.faces);
-      db.update(photos)
-        .set({ facesProcessedAt: now })
-        .where(eq(photos.uuid, row.uuid))
-        .run();
-      result.facesRestored += sidecar.faces.length;
-    }
-
-    if (needsDogs) {
-      insertDetections(db, dogs, row.uuid, sidecar.dogs);
-      db.update(photos)
-        .set({ dogsProcessedAt: now })
-        .where(eq(photos.uuid, row.uuid))
-        .run();
-      result.dogsRestored += sidecar.dogs.length;
-    }
-  }
-
-  return result;
-}
-
-function insertDetections(
-  db: ReturnType<typeof createDb>,
-  table: typeof faces | typeof dogs,
-  photoUuid: string,
-  detections: Detection[],
-) {
-  if (detections.length === 0) return;
-  db.insert(table)
-    .values(
-      detections.map((d) => ({
-        photoUuid,
-        bboxX: d.bboxX,
-        bboxY: d.bboxY,
-        bboxW: d.bboxW,
-        bboxH: d.bboxH,
-        detScore: d.detScore,
-        embedding: decodeEmbedding(d.embedding) ?? Buffer.alloc(0),
-        clusterId: null,
-      })),
-    )
-    .run();
-}
 
 /**
  * Reattach durable labels (labels.json) to the current clusters after

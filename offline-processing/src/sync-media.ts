@@ -7,7 +7,7 @@ import { expandHome } from './util.js';
 
 // Push images + thumbnails from DESTINATION_DIRECTORY to the storage backend,
 // skipping files already present. Run as part of the Sync phase, after publish
-// (which handles sidecars/labels/DB). No-op-ish when storage == local dir.
+// (which handles labels + the fat/slim DB). No-op-ish when storage == local dir.
 async function main() {
   const config = loadConfig();
   const dest = path.resolve(expandHome(config.DESTINATION_DIRECTORY));

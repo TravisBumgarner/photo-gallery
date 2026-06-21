@@ -1,4 +1,14 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { createStorage, KEYS } from 'shared/storage';
+
+// Load .env relative to this file (src/boot.ts or dist/boot.js → ../.env), not
+// the cwd — so it works whether run from the app dir or anywhere else. None of
+// the imports above read env at load time, so loading it here is in time.
+dotenv.config({
+  path: path.join(path.dirname(fileURLToPath(import.meta.url)), '../.env'),
+});
 
 /**
  * Boot-time DB pull. Runs as a separate step *before* `node dist/index.js`,

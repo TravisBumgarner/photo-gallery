@@ -12,9 +12,9 @@ export const photos = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     uuid: text('uuid').notNull().unique(),
-    // SHA256 of the source file bytes. Keys the durable per-photo sidecar
-    // (expensive compute) so it survives renames and DB loss. Nullable for
-    // rows written before this column existed.
+    // SHA256 of the source file bytes. The stable per-detection anchor for
+    // reattaching labels (labels.json) across re-clustering. Nullable for rows
+    // written before this column existed.
     contentHash: text('content_hash'),
     filename: text('filename').notNull(),
     originalPath: text('original_path').notNull(),

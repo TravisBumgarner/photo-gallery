@@ -1,13 +1,15 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { restoreFromSidecars } from 'shared/rebuild';
-import { createStorage } from 'shared/storage';
+import { createStorage, KEYS } from 'shared/storage';
 import { loadConfig, storageUrl } from './config.js';
 import { summary } from './progress.js';
 import { expandHome } from './util.js';
 
-// Repopulate freshly-ingested photos from sidecars in storage, skipping the
-// expensive model re-runs. Safe to run every time: it only fills gaps, so a
-// first run with no sidecars is a no-op. Run after `ingest`, before tag/detect.
+// Seed the working ingestion DB from the published fat DB when it's missing —
+// i.e. a fresh or wiped machine that just pulled data/out. With the fat DB in
+// hand, the expensive compute (tags, embeddings, detections) is already there;
+// re-ingest only appends new photos. No-op when a working DB already exists
+// (it's the local source of truth) or when there's no published DB yet.
 async function main() {
   const config = loadConfig();
   if (!config.DATABASE_URL) {
@@ -15,19 +17,24 @@ async function main() {
     process.exit(1);
   }
   const dbPath = path.resolve(expandHome(config.DATABASE_URL));
-  const storage = await createStorage(storageUrl(config));
 
-  const r = await restoreFromSidecars(dbPath, storage);
-  console.log(
-    `Restored from sidecars: ${r.photosTagged} tagged, ` +
-      `${r.facesRestored} faces, ${r.dogsRestored} dogs ` +
-      `(${r.sidecarsMissing} photos had no sidecar — will be computed fresh).`,
-  );
-  summary(
-    r.photosTagged || r.facesRestored || r.dogsRestored
-      ? `${r.photosTagged.toLocaleString()} tagged · ${r.facesRestored} faces · ${r.dogsRestored} dogs restored${r.sidecarsMissing ? ` · ${r.sidecarsMissing} to compute fresh` : ''}`
-      : 'no sidecars — everything computed fresh',
-  );
+  if (existsSync(dbPath)) {
+    console.log(`Working database already present at ${dbPath} — keeping it.`);
+    summary('using existing database');
+    return;
+  }
+
+  const storage = await createStorage(storageUrl(config));
+  if (!(await storage.exists(KEYS.dbFat()))) {
+    console.log('No published database to restore — starting fresh.');
+    summary('no backup — starting fresh');
+    return;
+  }
+
+  console.log(`Restoring database from backup → ${dbPath}`);
+  await storage.getToFile(KEYS.dbFat(), dbPath);
+  console.log('Database restored. Re-ingest will only process new photos.');
+  summary('database restored from backup');
 }
 
 main().catch((err) => {

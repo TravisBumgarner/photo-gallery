@@ -3,6 +3,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -11,11 +12,50 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
+/** Human-readable list of the formats the pipeline ingests (mirrors
+ * offline-processing/src/scan.ts VALID_IMAGE_EXTENSIONS). HEIC/RAW are skipped. */
+export const SUPPORTED_IMAGE_FORMATS = 'JPG, PNG, GIF, BMP, TIFF, WebP';
 // The "To Mobile Photo Gallery" preset renames every export to this suffix.
 const VIEWING_RE = /_exported_for_viewing_locally\.[^.]+$/i;
 
 export function expandHome(p: string): string {
   return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+}
+
+/** Case-insensitive tab completion for a partial directory path. Expands ~,
+ * completes against subdirectories of the deepest existing parent. A single
+ * match is filled and gets a trailing slash; multiple matches fill the common
+ * prefix; no match leaves the input unchanged. */
+export function completePath(input: string): string {
+  const expanded = expandHome(input);
+  const slash = expanded.lastIndexOf('/');
+  const dir = slash >= 0 ? expanded.slice(0, slash + 1) : './';
+  const partial = (slash >= 0 ? expanded.slice(slash + 1) : expanded).toLowerCase();
+  let names: string[];
+  try {
+    names = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return input;
+  }
+  const matches = names.filter((n) => n.toLowerCase().startsWith(partial));
+  if (matches.length === 0) return input;
+  if (matches.length === 1) return `${dir}${matches[0]}/`;
+  // Longest common prefix (case-insensitive), keeping the first match's casing.
+  let common = matches[0];
+  for (const m of matches.slice(1)) {
+    let i = 0;
+    while (
+      i < common.length &&
+      i < m.length &&
+      common[i].toLowerCase() === m[i].toLowerCase()
+    ) {
+      i++;
+    }
+    common = common.slice(0, i);
+  }
+  return `${dir}${common}`;
 }
 
 function listDir(dir: string) {
@@ -47,6 +87,32 @@ export const LIGHTROOM_PRESET = path.join(
   'lightroom-export-presets',
   'To Mobile Photo Gallery.lrtemplate',
 );
+/** Per-host deploy guides live here, one folder per target. */
+export const TEMPLATES_DIR = path.join(ROOT, 'templates');
+
+export interface DeployTarget {
+  value: string;
+  label: string;
+  blurb: string;
+}
+export const DEPLOY_TARGETS: DeployTarget[] = [
+  {
+    value: 'localhost',
+    label: 'This computer',
+    blurb: 'Run everything locally — no remote host.',
+  },
+  {
+    value: 'nearlyfreespeech',
+    label: 'NearlyFreeSpeech',
+    blurb: 'Cheap persistent host: rsync up, run the backend as a daemon.',
+  },
+];
+
+/** Absolute path to a target's deploy guide. */
+export function deployGuidePath(target: string): string {
+  return path.join(TEMPLATES_DIR, target, 'deploy.md');
+}
+
 const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 const BACKEND_ENV = path.join(ROOT, 'backend', '.env');
 // Native data layout (no container paths). Ingest writes here; publish reads it.
@@ -54,6 +120,33 @@ const DATA_DIR = path.join(ROOT, 'data');
 const DEST_DIR = path.join(DATA_DIR, 'out');
 const INGEST_DB = path.join(DATA_DIR, 'ingest.sqlite');
 const SERVED_DB = path.join(DATA_DIR, 'served.sqlite');
+
+// TEMPORARY (remove after the testing push): wipe ALL local state back to a
+// fresh-checkout state so an end-to-end run can be repeated from zero. Removes
+// config (.cli-cache, backend/.env), remembered selections, the whole data dir
+// (ingest/served DBs, published output, model cache), and the shutdown marker.
+// Does NOT touch node_modules or any remote/bucket data.
+export function nukeEverything(): string[] {
+  const targets = [
+    CLI_CACHE,
+    BACKEND_ENV,
+    path.join(ROOT, '.orchestrator-prefs.json'),
+    DATA_DIR,
+    path.join(os.tmpdir(), 'photo-gallery-cleanup.json'),
+  ];
+  const removed: string[] = [];
+  for (const p of targets) {
+    try {
+      if (existsSync(p)) {
+        rmSync(p, { recursive: true, force: true });
+        removed.push(p);
+      }
+    } catch {
+      // best-effort
+    }
+  }
+  return removed;
+}
 
 // Keys the pipeline can't run without. An older-format .cli-cache may exist yet
 // lack these (they're written by the current writeConfigFiles) — checking only
@@ -151,6 +244,10 @@ export interface Field {
   label: string;
   default?: string;
   secret?: boolean;
+  /** Render a select (instead of a text input) over these choices. */
+  options?: { label: string; value: string }[];
+  /** A filesystem path — enables case-insensitive Tab completion. */
+  path?: boolean;
   when?: (v: Record<string, string>) => boolean;
   /** Return an error message to block advancing, or null when valid. May be
    * async (e.g. to check a model server). Receives values answered so far. */
@@ -158,8 +255,9 @@ export interface Field {
     value: string,
     values: Record<string, string>,
   ) => string | null | Promise<string | null>;
-  /** One-line explanation shown under the prompt. */
-  hint?: string;
+  /** One-line explanation shown under the prompt. A function can compute it
+   * from the answers so far (e.g. list the models installed on the host). */
+  hint?: string | ((v: Record<string, string>) => string | Promise<string>);
   /** Non-blocking warning (e.g. model may not fit in RAM). Shown on first
    * enter; a second enter on the same value proceeds anyway. */
   advise?: (
@@ -168,30 +266,36 @@ export interface Field {
   ) => string | null | Promise<string | null>;
 }
 
-const isS3 = (v: Record<string, string>) => !!v.STORAGE_URL?.startsWith('s3://');
-
 export const FIELDS: Field[] = [
+  {
+    key: 'DEPLOY_TARGET',
+    label: 'Where will you host the gallery?',
+    default: 'localhost',
+    options: DEPLOY_TARGETS.map((t) => ({ label: t.label, value: t.value })),
+    hint: 'This computer, or NearlyFreeSpeech (rsync up + run as a daemon).',
+  },
   {
     key: 'SOURCE_DIR',
     label: 'Photo source folder (absolute path)',
+    path: true,
+    hint: `The folder the pipeline ingests from. Manual: point it at your photos. Lightroom: your exported copies get moved here first (you’ll pick the export folder later). Reads ${SUPPORTED_IMAGE_FORMATS} — HEIC/RAW are skipped (convert first, or let Lightroom export to JPG).`,
     validate: (raw) => {
       const p = expandHome(raw.trim());
       if (!p) return 'Required.';
-      if (!existsSync(p)) return `No such folder: ${p}`;
-      if (!statSync(p).isDirectory()) return `Not a folder: ${p}`;
-      if (!hasPhotos(p)) return 'No images found in that folder.';
+      if (existsSync(p) && !statSync(p).isDirectory()) return `Not a folder: ${p}`;
+      return null;
+    },
+    // "Missing folder" / "no images" are advisory, not blocking: with Lightroom
+    // this folder is empty (or not created yet) until exports move into it.
+    advise: (raw) => {
+      const p = expandHome(raw.trim());
+      if (!existsSync(p))
+        return 'Folder doesn’t exist yet — fine for Lightroom (created when exports move in); double-check it for a prepared folder. Enter again to keep it.';
+      if (!hasPhotos(p))
+        return 'No images here yet — fine for Lightroom (exports land here later); double-check it for a manual folder. Enter again to keep it.';
       return null;
     },
   },
-  {
-    key: 'STORAGE_URL',
-    label: 'Storage URL — blank = local disk, or s3://bucket/prefix',
-    default: '',
-  },
-  { key: 'STORAGE_S3_ENDPOINT', label: 'S3 endpoint (R2/Spaces/MinIO; blank for AWS)', default: '', when: isS3 },
-  { key: 'STORAGE_S3_REGION', label: 'S3 region', default: 'us-east-1', when: isS3 },
-  { key: 'STORAGE_S3_ACCESS_KEY_ID', label: 'S3 access key id', when: isS3 },
-  { key: 'STORAGE_S3_SECRET_ACCESS_KEY', label: 'S3 secret access key', secret: true, when: isS3 },
   {
     key: 'MODEL_SERVER_HOST',
     label: 'Vision-LLM host (for tagging)',
@@ -213,9 +317,26 @@ export const FIELDS: Field[] = [
   },
   {
     key: 'MODEL_SERVER_MODEL',
-    label: 'Vision-LLM model name (e.g. llama3.2-vision)',
+    label: 'Vision-LLM model (blank = skip tagging)',
     default: '',
-    hint: 'Leave blank to skip tagging. If set, it must be pulled on the host.',
+    hint: async (v) => {
+      const host = (v.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
+        /\/+$/,
+        '',
+      );
+      try {
+        const res = await fetch(`${host}/api/tags`, {
+          signal: AbortSignal.timeout(4000),
+        });
+        const data = (await res.json()) as { models?: { name: string }[] };
+        const names = (data.models ?? []).map((m) => m.name);
+        if (names.length)
+          return `Installed on ${host}: ${names.join(', ')}  ·  more: https://ollama.com/library`;
+        return `Nothing installed on ${host} yet  ·  browse https://ollama.com/library`;
+      } catch {
+        return 'Browse models: https://ollama.com/library';
+      }
+    },
     validate: async (model, values) => {
       if (!model) return null; // blank = skip tagging
       const host = (values.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
@@ -312,24 +433,20 @@ export function writeConfigFiles(v: Record<string, string>): {
   cliCache: string;
   backendEnv: string;
 } {
-  const line = (k: string) => (v[k] ? `${k}=${v[k]}` : '');
   const cliCache = `${[
+    `DEPLOY_TARGET=${v.DEPLOY_TARGET || 'localhost'}`,
     `SOURCE_DIR=${v.SOURCE_DIR}`,
     `DESTINATION_DIRECTORY=${DEST_DIR}`,
     `DATABASE_URL=${INGEST_DB}`,
     VISION_SERVER_HOST_LINE,
-    line('STORAGE_URL'),
-    line('STORAGE_S3_ENDPOINT'),
-    line('STORAGE_S3_REGION'),
-    line('STORAGE_S3_ACCESS_KEY_ID'),
-    line('STORAGE_S3_SECRET_ACCESS_KEY'),
     `MODEL_SERVER_HOST=${v.MODEL_SERVER_HOST}`,
     `MODEL_SERVER_MODEL=${v.MODEL_SERVER_MODEL ?? ''}`,
-    line('MODEL_SERVER_API_KEY'),
+    v.MODEL_SERVER_API_KEY ? `MODEL_SERVER_API_KEY=${v.MODEL_SERVER_API_KEY}` : '',
   ]
     .filter(Boolean)
     .join('\n')}\n`;
 
+  // localhost + nearlyfreespeech both serve media from local disk (file://).
   const backendEnv = `${[
     'PORT=8084',
     'NODE_ENV=production',
@@ -337,7 +454,9 @@ export function writeConfigFiles(v: Record<string, string>): {
     `SESSION_SECRET=${randomBytes(32).toString('hex')}`,
     `APP_PASSWORD=${v.APP_PASSWORD}`,
     'CORS_ORIGIN=*',
-    `STORAGE_URL=${v.STORAGE_URL || `file://${DEST_DIR}`}`,
+    `STORAGE_URL=file://${DEST_DIR}`,
+    // Discriminator for the backend's boot-time config validation (per host).
+    `BACKEND_SERVER=${v.DEPLOY_TARGET || 'localhost'}`,
   ]
     .filter(Boolean)
     .join('\n')}\n`;

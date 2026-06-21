@@ -1,17 +1,24 @@
 import React from 'react';
 import { Box, Text, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
-import TextInput from 'ink-text-input';
+import { TextField } from './TextField.js';
 import { useEffect, useMemo, useState } from 'react';
 import {
   blastRadius,
+  completePath,
   countLightroomExports,
+  DEPLOY_TARGETS,
+  deployGuidePath,
   expandHome,
   LIGHTROOM_PRESET,
   loadExistingValues,
   needsSetup,
+  SUPPORTED_IMAGE_FORMATS,
 } from './configFiles.js';
+import { DeployStep } from './DeployStep.js';
 import { LabelStep } from './LabelStep.js';
+import { PullStep } from './PullStep.js';
+import { ServeStep } from './ServeStep.js';
 import { MultiSelect } from './MultiSelect.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 import { Runner } from './Runner.js';
@@ -31,6 +38,7 @@ type Screen =
   | 'setup'
   | 'start'
   | 'view'
+  | 'deploy'
   | 'phases'
   | 'source'
   | 'lightroom'
@@ -39,7 +47,11 @@ type Screen =
   | 'tasks'
   | 'run-pre'
   | 'label'
-  | 'run-post';
+  | 'run-post'
+  | 'done'
+  | 'serve'
+  | 'deployRun'
+  | 'pull';
 
 /** Mask a secret for display — present or not, never the value. */
 const masked = (v?: string) => (v ? '•••• (set)' : '(not set)');
@@ -67,12 +79,13 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const [lightroomDir, setLightroomDir] = useState<string>(prefs.lightroomDir);
   const [lrDraft, setLrDraft] = useState('');
   const [lrError, setLrError] = useState<string | null>(null);
+  const [deployTarget, setDeployTarget] = useState<string>(prefs.deployTarget);
 
   // Persist selections once we commit to running.
   useEffect(() => {
     if (screen === 'run-pre')
-      savePrefs({ phases, adapter, mode, tasks, lightroomDir });
-  }, [screen, phases, adapter, mode, tasks, lightroomDir]);
+      savePrefs({ phases, adapter, mode, tasks, lightroomDir, deployTarget });
+  }, [screen, phases, adapter, mode, tasks, lightroomDir, deployTarget]);
 
   // Pre = source + pipeline up to clustering. Then (faces/dogs) the labeling UI.
   // Post = publish (with new labels) + sync.
@@ -121,15 +134,54 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               { label: 'Continue with these settings', value: 'continue' },
               { label: 'View settings', value: 'view' },
               {
-                label:
-                  'Edit settings (photo folder, S3 destination, model, password)',
+                label: 'Edit settings (photo folder, host, model, password)',
                 value: 'edit',
               },
+              { label: 'Put my gallery online (deploy / serve)', value: 'deploy' },
+              { label: 'Pull published data down from my host', value: 'pull' },
             ]}
             onSelect={(item) => {
               if (item.value === 'view') setScreen('view');
               else if (item.value === 'edit') setScreen('setup');
+              else if (item.value === 'deploy') setScreen('deploy');
+              else if (item.value === 'pull') setScreen('pull');
               else setScreen('phases');
+            }}
+          />
+        </Box>
+      )}
+
+      {screen === 'deploy' && (
+        <Box flexDirection="column">
+          <Text>Where do you want to put your gallery?</Text>
+          <Text dimColor>
+            “This computer” serves it locally. Others deploy your published
+            gallery to that host.
+          </Text>
+          <SelectInput
+            initialIndex={Math.max(
+              0,
+              DEPLOY_TARGETS.findIndex((t) => t.value === deployTarget),
+            )}
+            items={[
+              ...DEPLOY_TARGETS.map((t) => ({ label: t.label, value: t.value })),
+              { label: '← Back', value: '__back' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === '__back') {
+                setScreen('start');
+                return;
+              }
+              setDeployTarget(item.value);
+              savePrefs({
+                phases,
+                adapter,
+                mode,
+                tasks,
+                lightroomDir,
+                deployTarget: item.value,
+              });
+              setScreen(item.value === 'localhost' ? 'serve' : 'deployRun');
             }}
           />
         </Box>
@@ -138,26 +190,14 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       {screen === 'view' && (
         <Box flexDirection="column">
           <Text bold>Settings</Text>
+          <Text>Hosting: {cfg.DEPLOY_TARGET || 'localhost'}</Text>
+          <Text dimColor>
+            {'  '}Guide: {deployGuidePath(cfg.DEPLOY_TARGET || 'localhost')}
+          </Text>
           <Text>Photo folder: {cfg.SOURCE_DIR || '(not set)'}</Text>
           <Text>
             Online gallery: {cfg.STORAGE_URL || 'this computer (local disk)'}
           </Text>
-          {cfg.STORAGE_URL?.startsWith('s3://') ? (
-            <Box flexDirection="column">
-              <Text dimColor>
-                {'  '}S3 endpoint: {cfg.STORAGE_S3_ENDPOINT || '(AWS default)'}
-              </Text>
-              <Text dimColor>
-                {'  '}S3 region: {cfg.STORAGE_S3_REGION || '(default)'}
-              </Text>
-              <Text dimColor>
-                {'  '}S3 access key id: {cfg.STORAGE_S3_ACCESS_KEY_ID || '(not set)'}
-              </Text>
-              <Text dimColor>
-                {'  '}S3 secret key: {masked(cfg.STORAGE_S3_SECRET_ACCESS_KEY)}
-              </Text>
-            </Box>
-          ) : null}
           <Text>
             Tagging model: {cfg.MODEL_SERVER_MODEL || 'none'}
             {cfg.MODEL_SERVER_HOST ? ` @ ${cfg.MODEL_SERVER_HOST}` : ''}
@@ -214,6 +254,9 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               else setScreen(phases.includes('process') ? 'mode' : 'run-pre');
             }}
           />
+          <Text dimColor>
+            Reads {SUPPORTED_IMAGE_FORMATS} — HEIC/RAW are skipped.
+          </Text>
         </Box>
       )}
 
@@ -236,9 +279,10 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           </Text>
           <Box>
             <Text>Folder you exported to: </Text>
-            <TextInput
+            <TextField
               value={lrDraft}
               onChange={setLrDraft}
+              onTab={completePath}
               onSubmit={(raw) => {
                 const dir = expandHome((raw.trim() || lightroomDir).trim());
                 if (!dir) {
@@ -351,7 +395,66 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
 
       {screen === 'label' && <LabelStep onDone={() => setScreen('run-post')} />}
 
-      {screen === 'run-post' && <Runner steps={post} onDone={() => exit()} />}
+      {screen === 'run-post' && (
+        <Runner steps={post} onDone={() => setScreen('done')} />
+      )}
+
+      {screen === 'done' && (
+        <Box flexDirection="column">
+          <Text color="green" bold>
+            ✓ All done — your gallery data is built and published.
+          </Text>
+          {(cfg.DEPLOY_TARGET || 'localhost') === 'localhost' ? (
+            <Box flexDirection="column">
+              <Text>Bring it up on this computer?</Text>
+              <SelectInput
+                items={[
+                  {
+                    label: 'Yes — build the web UI and serve it now',
+                    value: 'serve',
+                  },
+                  { label: 'No — just finish', value: 'finish' },
+                ]}
+                onSelect={(item) =>
+                  item.value === 'serve' ? setScreen('serve') : exit()
+                }
+              />
+            </Box>
+          ) : (
+            <Box flexDirection="column">
+              <Text>
+                Put it online now — deploy to{' '}
+                <Text bold>{cfg.DEPLOY_TARGET}</Text>?
+              </Text>
+              <SelectInput
+                items={[
+                  {
+                    label: `Yes — deploy to ${cfg.DEPLOY_TARGET}`,
+                    value: 'deploy',
+                  },
+                  { label: 'No — just finish', value: 'finish' },
+                ]}
+                onSelect={(item) => {
+                  if (item.value === 'deploy') {
+                    setDeployTarget(cfg.DEPLOY_TARGET || 'localhost');
+                    setScreen('deployRun');
+                  } else {
+                    exit();
+                  }
+                }}
+              />
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {screen === 'serve' && <ServeStep onDone={() => exit()} />}
+
+      {screen === 'deployRun' && (
+        <DeployStep target={deployTarget} onDone={() => exit()} />
+      )}
+
+      {screen === 'pull' && <PullStep onDone={() => setScreen('start')} />}
     </Box>
   );
 }

@@ -51,7 +51,7 @@ export function runStep(spec: Spec, onLine: (line: string) => void): Promise<num
   return new Promise((resolve) => {
     const child = spawnTracked(spec.cmd, spec.args, {
       cwd: spec.cwd,
-      env: process.env,
+      env: spec.env ? { ...process.env, ...spec.env } : process.env,
     });
     // Auto-confirm the ingest "Proceed? (y/n)" prompt; no-op for other tasks.
     child.stdin?.write('y\n');

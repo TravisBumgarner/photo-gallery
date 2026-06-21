@@ -74,7 +74,7 @@ const KINDS: Record<string, Kind> = {
     bboxH: faces.bboxH,
     detScore: faces.detScore,
     updatedAt: faceClusters.updatedAt,
-    minUnlabeled: 5,
+    minUnlabeled: 3,
   },
   dogs: {
     clusters: dogClusters,

@@ -3,8 +3,18 @@ import React from 'react';
 import { render } from 'ink';
 import { App } from './App.js';
 import { resetCleanup, stopServices } from './cleanup.js';
-import { migrateConfig } from './configFiles.js';
+import { migrateConfig, nukeEverything } from './configFiles.js';
 import { killAll } from './exec.js';
+
+// TEMPORARY testing flag (remove later): reset to a fresh-checkout state, then
+// continue into a clean first-run setup. Handled before anything reads config.
+if (process.argv.includes('--nuke-everything')) {
+  const removed = nukeEverything();
+  console.log('🧨  --nuke-everything: reset to a fresh state (temporary flag).');
+  if (removed.length) for (const p of removed) console.log(`   removed ${p}`);
+  else console.log('   (nothing to remove — already clean)');
+  console.log('');
+}
 
 // The wizard already gates Create behind an explicit, count-bearing confirm
 // screen (App's 'create-confirm'), and clear-local-db runs non-interactively
@@ -32,6 +42,7 @@ if (args.includes('--help') || args.includes('-h')) {
 Usage:
   ./ingest-and-sync            Run the Source → Process → Sync wizard
   ./ingest-and-sync --setup    Re-run setup (photo folder, model host, storage, password)
+  ./ingest-and-sync --nuke-everything   TEMP: wipe all local state, start fresh
   ./ingest-and-sync --help     Show this help
 
 Setup runs automatically on first use. After that, your prompt choices are

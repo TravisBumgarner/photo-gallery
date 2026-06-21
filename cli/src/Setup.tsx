@@ -1,18 +1,19 @@
 import React from 'react';
-import { Box, Text } from 'ink';
-import TextInput from 'ink-text-input';
+import { Box, Text, useInput } from 'ink';
+import SelectInput from 'ink-select-input';
 import { useEffect, useMemo, useState } from 'react';
 import {
   applicableFields,
+  completePath,
   type Field,
   loadExistingValues,
   writeConfigFiles,
 } from './configFiles.js';
+import { TextField } from './TextField.js';
 
 /** Setup wizard: walks the config fields and writes .cli-cache + backend/.env.
  * Runs every time, pre-filled from the current config (gray placeholders) —
- * enter keeps a value, type to change it. S3 fields appear once STORAGE_URL is
- * s3://. */
+ * enter keeps a value, type to change it. */
 export function Setup({ onComplete }: { onComplete: () => void }) {
   const existing = useMemo(loadExistingValues, []);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -22,12 +23,25 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   const [checking, setChecking] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [warnedValue, setWarnedValue] = useState<string | null>(null);
+  const [hintText, setHintText] = useState('');
 
   const fields = applicableFields(values);
   const field = fields[idx];
 
-  // What enter submits: the current config value, else the static default.
-  const effectiveDefault = (f: Field) => existing[f.key] ?? f.default ?? '';
+  // What enter submits: a value already entered this session (so going back
+  // doesn't lose it), else the current config value, else the static default.
+  const effectiveDefault = (f: Field) =>
+    values[f.key] ?? existing[f.key] ?? f.default ?? '';
+
+  // Esc steps back to the previous field.
+  useInput((_input, key) => {
+    if (key.escape && idx > 0 && !checking) {
+      setError(null);
+      setWarning(null);
+      setWarnedValue(null);
+      setIdx(idx - 1);
+    }
+  });
 
   // Start each field empty so the default shows as a gray placeholder; hitting
   // enter on an empty field submits the default (see submit()).
@@ -36,6 +50,25 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
     setError(null);
     setWarning(null);
     setWarnedValue(null);
+  }, [field?.key]);
+
+  // Resolve the hint (which may be an async function, e.g. listing installed
+  // models) whenever the field changes.
+  useEffect(() => {
+    let cancelled = false;
+    const h = field?.hint;
+    if (typeof h === 'function') {
+      setHintText('');
+      Promise.resolve(h(values)).then((t) => {
+        if (!cancelled) setHintText(t);
+      });
+    } else {
+      setHintText(h ?? '');
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field?.key]);
 
   if (!field) return null;
@@ -82,23 +115,39 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
         Saved to offline-processing/.cli-cache + backend/.env — edit those later, or
         delete them to run setup again.
       </Text>
-      <Box>
-        <Text>{field.label}: </Text>
-        <TextInput
-          value={draft}
-          onChange={setDraft}
-          onSubmit={submit}
-          mask={field.secret ? '*' : undefined}
-          placeholder={
-            field.secret
-              ? effectiveDefault(field)
-                ? '(unchanged — enter to keep)'
-                : undefined
-              : effectiveDefault(field) || undefined
-          }
-        />
-      </Box>
-      {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
+      {field.options ? (
+        <Box flexDirection="column">
+          <Text>{field.label}</Text>
+          <SelectInput
+            initialIndex={Math.max(
+              0,
+              field.options.findIndex((o) => o.value === effectiveDefault(field)),
+            )}
+            items={field.options}
+            onSelect={(item) => submit(item.value)}
+          />
+        </Box>
+      ) : (
+        <Box>
+          <Text>{field.label}: </Text>
+          <TextField
+            value={draft}
+            onChange={setDraft}
+            onSubmit={submit}
+            mask={field.secret ? '*' : undefined}
+            onTab={field.path ? completePath : undefined}
+            placeholder={
+              field.secret
+                ? effectiveDefault(field)
+                  ? '(unchanged — enter to keep)'
+                  : undefined
+                : effectiveDefault(field) || undefined
+            }
+          />
+        </Box>
+      )}
+      {hintText ? <Text dimColor>  {hintText}</Text> : null}
+      {idx > 0 ? <Text dimColor>  Esc: back</Text> : null}
       {checking ? <Text color="cyan">  checking…</Text> : null}
       {warning ? <Text color="yellow">  ⚠ {warning}</Text> : null}
       {error ? <Text color="red">  ✖ {error}</Text> : null}

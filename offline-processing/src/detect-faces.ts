@@ -4,7 +4,7 @@ import { isNull, sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { faces, photos } from 'shared/db/schema';
 import { imagesDir, loadConfig } from '@/config.js';
-import { status, summary } from '@/progress.js';
+import { fmtDuration, status, summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
 interface DetectedFace {
@@ -204,7 +204,7 @@ async function main() {
           `  [${processed + failed}/${unprocessed.length}] ${row.filename}  read ${fmt(tRead - t0)}  detect ${fmt(tDetect - tRead)}  db ${fmt(tDone - tDetect)}  total ${fmt(tDone - t0)}  | ${rate.toFixed(2)} img/s | ${result.faces.length} face${result.faces.length === 1 ? '' : 's'}`,
         );
         status(
-          `${processed + failed} / ${unprocessed.length} photos · ${totalFacesFound} faces · ${rate.toFixed(1)} img/s`,
+          `${processed + failed} / ${unprocessed.length} photos · ${totalFacesFound} faces · ${(elapsed / processed).toFixed(1)} s/img · ETA ${fmtDuration((unprocessed.length - (processed + failed)) * (elapsed / processed))}`,
         );
       } catch (err) {
         failed++;

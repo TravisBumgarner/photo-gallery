@@ -12,6 +12,7 @@ export interface Prefs {
   mode: 'create' | 'update';
   tasks: string[];
   lightroomDir: string;
+  deployTarget: string;
 }
 
 const DEFAULTS: Prefs = {
@@ -20,6 +21,7 @@ const DEFAULTS: Prefs = {
   mode: 'update',
   tasks: ['ingest', 'tag', 'faces', 'dogs'],
   lightroomDir: '',
+  deployTarget: '',
 };
 
 export function loadPrefs(): Prefs {

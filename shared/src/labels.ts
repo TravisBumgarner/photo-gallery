@@ -3,9 +3,8 @@ import { z } from 'zod';
 /**
  * Durable human labels — the one irreplaceable bit of ingestion state. Cluster
  * IDs churn on re-clustering, so labels are pinned to *immutable detections*
- * (file content hash + bbox), not cluster IDs. On rebuild you re-cluster from
- * the sidecar embeddings, then reattach each label to whichever cluster now
- * holds the plurality of its anchor detections.
+ * (file content hash + bbox), not cluster IDs. After re-clustering, each label
+ * reattaches to whichever cluster now holds the plurality of its anchors.
  *
  * Stored as a single `labels.json` in the storage backend, backed up with it.
  */

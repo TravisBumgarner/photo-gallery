@@ -5,7 +5,7 @@ import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
 import { WasmEmbedder } from 'shared/embed';
 import { imagesDir, loadConfig, modelCacheDir } from '@/config.js';
-import { status, summary } from '@/progress.js';
+import { fmtDuration, status, summary } from '@/progress.js';
 import { settings } from '@/settings.js';
 
 const RETRY_DELAYS_MS = [500, 1500, 3500];
@@ -275,7 +275,7 @@ async function main() {
             `  [${processed + failed}/${untagged.length}] ${row.filename}  read ${fmt(tRead - t0)}  upload ${fmt(tUpload - tRead)}  embed ${fmt(tEmbed - tUpload)}  db ${fmt(tDone - tEmbed)}  total ${fmt(tDone - t0)}  | ${rate.toFixed(2)} img/s | ${firstFiveTags}`,
           );
           status(
-            `${processed + failed} / ${untagged.length} photos · ${rate.toFixed(1)} img/s`,
+            `${processed + failed} / ${untagged.length} photos · ${(elapsed / processed).toFixed(1)} s/img · ETA ${fmtDuration((untagged.length - (processed + failed)) * (elapsed / processed))}`,
           );
         } catch (err) {
           failed++;

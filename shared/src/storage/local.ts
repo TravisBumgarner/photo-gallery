@@ -45,6 +45,12 @@ export class LocalStorage implements StorageBackend {
     }
   }
 
+  async copy(srcKey: string, destKey: string): Promise<void> {
+    const dest = this.resolve(destKey);
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.copyFile(this.resolve(srcKey), dest);
+  }
+
   async list(prefix: string): Promise<string[]> {
     const base = this.resolve(prefix);
     let entries: string[] = [];

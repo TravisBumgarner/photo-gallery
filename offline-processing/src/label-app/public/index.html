@@ -279,7 +279,7 @@
       return {
         unlabeled: 'Groups that formed but aren’t named yet — type a name to label them.',
         ungrouped: `Individual ${noun} that didn’t join a group (too few similar photos). Add more of them and re-run, and they’ll show up as a group.`,
-        merge: `Is the same ${who()} split into separate groups? Select them, then Merge into one — photos move into the lowest #, which keeps its name.`,
+        merge: `Every group, including small ones the Unlabeled tab hides. Type a name to label any of them. Or, if the same ${who()} split into separate groups, select 2+ and Merge — photos move into the lowest #, which keeps its name.`,
         labeled: 'Groups you’ve already named.',
         ignored: `Groups you’ve marked to skip (not a real ${who()}, junk, etc.).`,
       }[status] || '';
@@ -339,18 +339,28 @@
       const isSel = selected.has(c.id);
       el.className = `card${isSel ? ' sel' : ''}`;
       const crops = c.samples.map((s) => `<div class="crop" style="${cropStyle(s)}"></div>`).join('');
+      // The Merge tab shows every group (incl. small ones the Unlabeled tab hides
+      // below its minUnlabeled cutoff), so it carries the name box too — otherwise
+      // a small group would be visible here but nameable nowhere.
       el.innerHTML = `
     <div class="crops">${crops}</div>
     <div class="meta">#${c.id} · ${c.count} ${itemsWord()}${c.label ? ` · ${c.label}` : ''}</div>
-    <button type="button" class="act sel-btn ${isSel ? '' : 'primary'}">${isSel ? 'Deselect' : 'Select'}</button>`;
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" placeholder="${kind === 'people' ? 'name (e.g. mom)' : 'name (e.g. bowser)'}" value="${c.label ?? ''}" />
+      <button type="button" class="act primary" data-act="save">Save</button>
+    </div>
+    <button type="button" class="act sel-btn">${isSel ? 'Deselect' : 'Select to merge'}</button>`;
+      const input = el.querySelector('input[type=text]');
+      el.querySelector('[data-act=save]').onclick = async () => {
+        await patch(c.id, { label: input.value.trim() || null });
+        afterMutation();
+      };
       el.querySelector('.sel-btn').onclick = () => {
         if (selected.has(c.id)) selected.delete(c.id);
         else selected.set(c.id, c);
         const nowSel = selected.has(c.id);
         el.classList.toggle('sel', nowSel);
-        const btn = el.querySelector('.sel-btn');
-        btn.textContent = nowSel ? 'Deselect' : 'Select';
-        btn.classList.toggle('primary', !nowSel);
+        el.querySelector('.sel-btn').textContent = nowSel ? 'Deselect' : 'Select to merge';
         renderMergeBar();
       };
       return el;

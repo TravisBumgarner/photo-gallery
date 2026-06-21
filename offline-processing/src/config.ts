@@ -10,8 +10,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   SOURCE_DIR: z.string(),
   DESTINATION_DIRECTORY: z.string(),
-  // Where `publish` writes sidecars/labels/read-only DB. Defaults to the local
-  // DESTINATION_DIRECTORY (single-box case); set to s3://… for a real bucket.
+  // Where `publish` writes labels + the fat/slim DB (a file://… dir).
+  // Defaults to the local DESTINATION_DIRECTORY.
   STORAGE_URL: z.string().optional(),
   // Ingest-only (used only by index.ts). Default them so non-ingest entrypoints
   // — the label app shares this loadConfig() — don't have to set them. The cli

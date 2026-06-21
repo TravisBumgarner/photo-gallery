@@ -10,16 +10,13 @@ import {
   type LabelsFile,
   serializeLabels,
 } from './labels.js';
-import {
-  type Detection,
-  encodeEmbedding,
-  type Sidecar,
-  serializeSidecar,
-} from './sidecar.js';
 import { KEYS, type StorageBackend } from './storage/index.js';
 
 /** Max member detections recorded per label as reattachment anchors. */
 const ANCHORS_PER_LABEL = 25;
+
+/** How many archived fat DBs to retain in db/backups/ (oldest pruned). */
+const BACKUPS_TO_KEEP = 5;
 
 export interface PublishOptions {
   /** Path to the authoritative (fat) ingestion DB. */
@@ -31,72 +28,56 @@ export interface PublishOptions {
 
 export interface PublishResult {
   version: string;
-  sidecars: number;
-  skippedNoHash: number;
   peopleLabels: number;
   dogLabels: number;
+  /** Whether the previous fat DB was archived to db/backups/ before overwrite. */
+  backedUp: boolean;
 }
 
 type Row = Record<string, unknown>;
 
-function toDetection(row: Row): Detection {
-  return {
-    bboxX: row.bboxX as number,
-    bboxY: row.bboxY as number,
-    bboxW: row.bboxW as number,
-    bboxH: row.bboxH as number,
-    detScore: row.detScore as number,
-    embedding: encodeEmbedding(row.embedding as Buffer) ?? '',
-  };
-}
-
 /**
- * Publish a read-only release from the fat ingestion DB:
- *   1. one sidecar per photo (expensive compute, keyed by content hash)
- *   2. labels.json (human labels pinned to detection anchors)
- *   3. a slim, embedding-free DB snapshot + a `latest` pointer
+ * Publish a release from the fat ingestion DB:
+ *   1. the fat DB itself (with embeddings) — the durable artifact a fresh
+ *      machine pulls to rebuild without re-running the vision models
+ *   2. labels.json (human labels pinned to detection anchors, so they survive
+ *      re-clustering)
+ *   3. a slim, embedding-free DB snapshot + a `latest` pointer (for serving)
  *
- * Media (images/thumbnails) is published separately — it's large and already
- * lives in the backend; this handles only the derived/index artifacts.
+ * Media (images/thumbnails) is published separately via syncMediaToStorage.
  */
 export async function publishToStorage(
   opts: PublishOptions,
 ): Promise<PublishResult> {
   const db = createDb(opts.dbPath);
 
-  const allPhotos = db.select().from(photos).all() as Row[];
   const allFaces = db.select().from(faces).all() as Row[];
   const allDogs = db.select().from(dogs).all() as Row[];
+  const allPhotos = db.select().from(photos).all() as Row[];
 
   const hashByUuid = new Map<string, string>();
   for (const p of allPhotos) {
     if (p.contentHash) hashByUuid.set(p.uuid as string, p.contentHash as string);
   }
-
   const facesByPhoto = groupBy(allFaces, (f) => f.photoUuid as string);
   const dogsByPhoto = groupBy(allDogs, (d) => d.photoUuid as string);
 
-  // 1. Sidecars (skip photos lacking a content hash — nothing to key on).
-  let sidecars = 0;
-  let skippedNoHash = 0;
-  for (const p of allPhotos) {
-    const contentHash = p.contentHash as string | null;
-    if (!contentHash) {
-      skippedNoHash++;
-      continue;
+  // 1. The fat DB — durable, embeddings intact. NOT vacuumed, so rsync only
+  //    ships the deltas. Copied straight up (it's not being written concurrently
+  //    here, same as the slim snapshot's copyFileSync below). Archive the
+  //    previous one first so a bad publish never destroys the last good DB.
+  let backedUp = false;
+  if (await opts.storage.exists(KEYS.dbFat())) {
+    await opts.storage.copy(KEYS.dbFat(), KEYS.dbFatBackup(opts.version));
+    backedUp = true;
+    // Retain only the newest BACKUPS_TO_KEEP archives. Keys sort chronologically
+    // (the version is an ISO-ish timestamp), so newest-first then drop the tail.
+    const backups = (await opts.storage.list('db/backups')).sort().reverse();
+    for (const key of backups.slice(BACKUPS_TO_KEEP)) {
+      await opts.storage.delete(key);
     }
-    const sidecar: Sidecar = {
-      version: 1,
-      contentHash,
-      uuid: p.uuid as string,
-      tags: (p.tags as string | null) ?? null,
-      tagsEmbedding: encodeEmbedding(p.tagsEmbedding as Buffer | null),
-      faces: (facesByPhoto.get(p.uuid as string) ?? []).map(toDetection),
-      dogs: (dogsByPhoto.get(p.uuid as string) ?? []).map(toDetection),
-    };
-    await opts.storage.put(KEYS.sidecar(contentHash), serializeSidecar(sidecar));
-    sidecars++;
   }
+  await opts.storage.putFile(KEYS.dbFat(), opts.dbPath);
 
   // 2. labels.json — labeled or ignored clusters, pinned to anchor detections.
   const people = buildLabelEntries(
@@ -116,7 +97,7 @@ export async function publishToStorage(
   const labels: LabelsFile = { version: 1, people, dogs: dogLabelEntries };
   await opts.storage.put(KEYS.labels(), serializeLabels(labels));
 
-  // 3. Slim, embedding-free DB snapshot + latest pointer.
+  // 3. Slim, embedding-free DB snapshot + latest pointer (what serving pulls).
   const slimPath = buildSlimDb(opts.dbPath);
   try {
     await opts.storage.putFile(KEYS.dbVersion(opts.version), slimPath);
@@ -127,10 +108,9 @@ export async function publishToStorage(
 
   return {
     version: opts.version,
-    sidecars,
-    skippedNoHash,
     peopleLabels: people.length,
     dogLabels: dogLabelEntries.length,
+    backedUp,
   };
 }
 

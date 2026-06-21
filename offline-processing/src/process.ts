@@ -53,8 +53,8 @@ export async function processImage(
 ): Promise<PhotoRecord> {
   const filename = path.basename(imagePath);
 
-  // Content hash of the source bytes — keys the durable sidecar so the
-  // expensive compute survives renames and DB loss.
+  // Content hash of the source bytes — the stable anchor for reattaching labels
+  // across re-clustering (see shared/labels.ts).
   const contentHash = createHash('sha256')
     .update(await fs.readFile(imagePath))
     .digest('hex');

@@ -1,13 +1,20 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+export const ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../..',
+);
 export const OP_DIR = path.join(ROOT, 'offline-processing');
+export const FRONTEND_DIR = path.join(ROOT, 'frontend');
+export const BACKEND_DIR = path.join(ROOT, 'backend');
 
 export interface Spec {
   cmd: string;
   args: string[];
   cwd: string;
+  /** Extra env merged over the parent's (e.g. deploy params for a script). */
+  env?: Record<string, string>;
 }
 
 export interface Step {
@@ -88,12 +95,17 @@ export function processSteps(opts: ProcessOpts): Step[] {
   if (opts.tag) steps.push(preflightModelStep());
   if (opts.faces || opts.dogs) steps.push(visionServerStep());
 
+  // Seed the working DB from the published backup if it's missing (fresh/wiped
+  // machine that pulled data/out) — before migrate so its schema gets topped up.
+  // Skipped on "start over", which deliberately recomputes from scratch.
+  if (opts.mode !== 'create') {
+    steps.push(task('restore', 'Restore database from backup'));
+  }
   steps.push(task('migrate', 'Prepare database')); // idempotent
   if (opts.tag) steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
   if (opts.mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
   if (opts.ingest) {
     steps.push(task('ingest', 'Ingest photos'));
-    steps.push(task('restore', 'Restore compute from sidecars'));
   }
   if (opts.tag) steps.push(task('tag', 'Text-tag + embed'));
   if (opts.faces) {
@@ -121,8 +133,8 @@ export function publishStep(): Step {
   return task('publish', 'Publish read-only release');
 }
 
-/** Sync phase: push media to the bucket (publish already pushed the DB +
- * sidecars + labels to STORAGE_URL). */
+/** Sync phase: push media to storage (publish already pushed the fat + slim DB
+ * and labels to STORAGE_URL). */
 export function syncSteps(): Step[] {
-  return [task('sync-media', 'Push media to the bucket')];
+  return [task('sync-media', 'Push media to storage')];
 }

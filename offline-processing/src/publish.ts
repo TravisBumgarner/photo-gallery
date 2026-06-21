@@ -5,8 +5,9 @@ import { loadConfig, storageUrl } from './config.js';
 import { summary } from './progress.js';
 import { expandHome } from './util.js';
 
-// Publish a read-only release from the fat ingestion DB: per-photo sidecars,
-// labels.json, and a slim embedding-free DB snapshot + `latest` pointer. Media
+// Publish a release from the fat ingestion DB: the fat DB itself (durable, with
+// embeddings — previous one archived to db/backups/), labels.json, and a slim
+// embedding-free DB snapshot + `latest` pointer for serving. Media
 // (images/thumbnails) is published separately. Run after ingest/tag/cluster.
 async function main() {
   const config = loadConfig();
@@ -28,13 +29,12 @@ async function main() {
   const result = await publishToStorage({ dbPath, storage, version });
 
   console.log(
-    `Done: ${result.sidecars} sidecars` +
-      (result.skippedNoHash ? ` (${result.skippedNoHash} skipped — no content hash)` : '') +
-      `, ${result.peopleLabels} people + ${result.dogLabels} dog labels, ` +
+    `Done: fat DB published${result.backedUp ? ' (previous archived to db/backups/)' : ''}, ` +
+      `${result.peopleLabels} people + ${result.dogLabels} dog labels, ` +
       `slim DB published as ${result.version}.`,
   );
   summary(
-    `${result.sidecars.toLocaleString()} sidecars · ${result.peopleLabels} people + ${result.dogLabels} dog labels published`,
+    `database published${result.backedUp ? ' (old one backed up)' : ''} · ${result.peopleLabels} people + ${result.dogLabels} dog labels`,
   );
 }
 
