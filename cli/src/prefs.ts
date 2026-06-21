@@ -5,33 +5,23 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PREFS = path.join(ROOT, '.orchestrator-prefs.json');
 
-/** Last-used wizard selections, so re-runs are enter-enter-enter. */
+/** Last-used wizard selections, so re-runs are quick. */
 export interface Prefs {
-  phases: string[];
-  adapter: 'lightroom' | 'manual';
-  mode: 'create' | 'update';
-  tasks: string[];
-  lightroomDir: string;
+  /** Last import-from folder (Add mode). */
+  importDir: string;
+  /** Last hosting target picked in the deploy menu. */
   deployTarget: string;
 }
 
 const DEFAULTS: Prefs = {
-  phases: ['process', 'sync'],
-  adapter: 'manual',
-  mode: 'update',
-  tasks: ['ingest', 'tag', 'faces', 'dogs'],
-  lightroomDir: '',
+  importDir: '',
   deployTarget: '',
 };
 
 export function loadPrefs(): Prefs {
   try {
     if (existsSync(PREFS)) {
-      // `mode` is deliberately NOT seeded from cache: Create is a destructive,
-      // one-shot wipe, so it must never become a sticky default. A blind re-run
-      // (enter-enter-enter) always resumes via Update; the user has to actively
-      // re-pick Create — and confirm it — each time.
-      return { ...DEFAULTS, ...JSON.parse(readFileSync(PREFS, 'utf8')), mode: 'update' };
+      return { ...DEFAULTS, ...JSON.parse(readFileSync(PREFS, 'utf8')) };
     }
   } catch {
     // corrupt/unreadable → fall back to defaults

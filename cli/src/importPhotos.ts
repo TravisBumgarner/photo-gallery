@@ -11,15 +11,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expandHome } from './configFiles.js';
 
-// Moves the Lightroom preset's viewing copies (*_exported_for_viewing_locally.*)
-// OUT of the export folder and INTO the ingest folder (SOURCE_DIR), preserving
-// the nested folder structure. Originals/RAW are left in place. Runs as a step
-// under the orchestrator's Runner: the wizard has already collected + dry-tested
-// the export folder and passes it as argv[2], so this is non-interactive.
+// Move every image OUT of an import-from folder (argv[2]) and INTO the staging
+// library (SOURCE_DIR), preserving nested structure. The wizard collects the
+// import folder, so this runs non-interactively. Lightroom = export with the
+// preset, then point the import folder here.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
-// The suffix Lightroom's "To Mobile Photo Gallery" preset appends to each export.
-const VIEWING_RE = /_exported_for_viewing_locally\.[^.]+$/i;
+const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
+const ARCHIVE_DIR_NAME = '_already_processed';
 
 function readCliCache(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -42,13 +41,16 @@ function listDir(dir: string) {
   }
 }
 
-/** Absolute paths of every viewing copy under `dir`, recursing all the way. */
-function findExports(dir: string): string[] {
+function findImages(dir: string): string[] {
   const out: string[] = [];
   for (const e of listDir(dir)) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...findExports(full));
-    else if (e.isFile() && VIEWING_RE.test(e.name)) out.push(full);
+    if (e.isDirectory()) {
+      if (e.name === ARCHIVE_DIR_NAME) continue; // never pull from the archive
+      out.push(...findImages(full));
+    } else if (e.isFile() && IMAGE_RE.test(e.name)) {
+      out.push(full);
+    }
   }
   return out;
 }
@@ -71,30 +73,26 @@ function die(msg: string): never {
 
 function main() {
   const src = expandHome((process.argv[2] ?? '').trim()).replace(/\/+$/, '');
-  if (!src || !existsSync(src)) die(`Folder does not exist: '${src}'`);
+  if (!src || !existsSync(src)) die(`Import folder doesn't exist: '${src}'`);
 
   const dest = expandHome((readCliCache().SOURCE_DIR ?? '').trim()).replace(
     /\/+$/,
     '',
   );
-  if (!dest) die('No ingestion folder set (SOURCE_DIR missing from .cli-cache).');
+  if (!dest) die('No staging folder set (SOURCE_DIR missing from .cli-cache).');
   mkdirSync(dest, { recursive: true });
 
   if (path.resolve(src) === path.resolve(dest)) {
-    die('Lightroom folder and ingestion folder are the same — nothing to move.');
+    die('Import folder and staging folder are the same — nothing to move.');
   }
 
-  const files = findExports(src);
-  console.log(
-    `Found ${files.length} *_exported_for_viewing_locally files under ${src}`,
-  );
+  const files = findImages(src);
+  console.log(`Found ${files.length} image(s) under ${src}`);
   if (files.length === 0) {
-    console.log('Nothing to move.');
+    console.log('Nothing to import.');
     return;
   }
-  console.log(
-    `Moving into ${dest} (folder structure preserved; originals left in place).`,
-  );
+  console.log(`Moving into staging ${dest} (folder structure preserved)…`);
 
   let moved = 0;
   for (const f of files) {
@@ -103,7 +101,7 @@ function main() {
     moveFile(f, target);
     moved++;
   }
-  console.log(`Moved ${moved} files into ${dest}`);
+  console.log(`Moved ${moved} image(s) into staging.`);
 }
 
 main();

@@ -56,7 +56,10 @@ async function main() {
 
   // Scan for images
   console.log('\nScanning for images...');
-  const imagePaths = await scanDirectory(sourceDir);
+  // Start over re-ingests the archived originals too (the library is the source
+  // of truth for a rebuild); normal runs skip the archive.
+  const includeArchive = process.env.INGEST_INCLUDE_ARCHIVE === '1';
+  const imagePaths = await scanDirectory(sourceDir, includeArchive);
   console.log(`Found ${imagePaths.length} images\n`);
 
   const records: PhotoRecord[] = [];

@@ -57,84 +57,83 @@ function visionServerStep(): Step {
   };
 }
 
-export type SourceAdapter = 'lightroom' | 'manual';
+/** The three ways to run the pipeline:
+ *   add    — import a folder into staging, ingest the new photos, process them.
+ *   repair — no import; just (re)run compute on the existing library (resume).
+ *   create — wipe, then re-ingest the whole library (incl. the archive) + recompute. */
+export type RunMode = 'add' | 'repair' | 'create';
 
-export interface ProcessOpts {
-  mode: 'create' | 'update';
-  ingest: boolean;
-  tag: boolean;
-  faces: boolean;
-  dogs: boolean;
+/** Move photos from an import-from folder into the staging library (add mode). */
+export function importStep(importDir: string): Step {
+  return {
+    id: 'import-photos',
+    label: 'Import photos into staging',
+    spec: {
+      cmd: 'npx',
+      args: ['tsx', path.join(ROOT, 'cli/src/importPhotos.ts'), importDir],
+      cwd: ROOT,
+    },
+  };
 }
 
-/** Source phase: get photos into the ingest folder. Manual = already there.
- * The Lightroom export folder is collected (and dry-tested) by the wizard and
- * passed in here, so prepareLightroom runs non-interactively. */
-export function sourceSteps(adapter: SourceAdapter, lightroomDir = ''): Step[] {
-  if (adapter === 'lightroom') {
-    return [
-      {
-        id: 'prepare-lightroom',
-        label: 'Move Lightroom exports into the ingest folder',
-        spec: {
-          cmd: 'npx',
-          args: ['tsx', path.join(ROOT, 'cli/src/prepareLightroom.ts'), lightroomDir],
-          cwd: ROOT,
-        },
-      },
-    ];
-  }
-  return [];
+/** Move processed originals out of staging into _already_processed (add/create). */
+export function archiveStep(): Step {
+  return {
+    id: 'archive',
+    label: 'Archive processed originals',
+    spec: {
+      cmd: 'npx',
+      args: ['tsx', path.join(ROOT, 'cli/src/archivePhotos.ts')],
+      cwd: ROOT,
+    },
+  };
 }
 
-/** Process phase: the offline pipeline, mirroring ./oi's task order. */
-export function processSteps(opts: ProcessOpts): Step[] {
+/** Ingest the staging library. Start over also re-ingests the archive. */
+function ingestStep(mode: RunMode): Step {
+  return {
+    id: 'ingest',
+    label: 'Ingest photos',
+    spec: {
+      cmd: 'npm',
+      args: ['run', 'ingest'],
+      cwd: OP_DIR,
+      ...(mode === 'create' ? { env: { INGEST_INCLUDE_ARCHIVE: '1' } } : {}),
+    },
+  };
+}
+
+/** The full compute pipeline — always tag + faces + dogs (no per-task picking). */
+export function processSteps(mode: RunMode): Step[] {
   const steps: Step[] = [];
-  // Up-front readiness — everything that can fail must fail here, before the
-  // hours-long ingest/tag/detect work, so a walk-away run never dies at hour 3.
-  if (opts.tag) steps.push(preflightModelStep());
-  if (opts.faces || opts.dogs) steps.push(visionServerStep());
+  // Up-front readiness — fail here, before the hours-long work.
+  steps.push(preflightModelStep());
+  steps.push(visionServerStep());
 
-  // Seed the working DB from the published backup if it's missing (fresh/wiped
-  // machine that pulled data/out) — before migrate so its schema gets topped up.
-  // Skipped on "start over", which deliberately recomputes from scratch.
-  if (opts.mode !== 'create') {
+  // Seed the working DB from the published backup if missing (fresh machine that
+  // pulled data/out). Skipped on "start over", which recomputes from scratch.
+  if (mode !== 'create') {
     steps.push(task('restore', 'Restore database from backup'));
   }
   steps.push(task('migrate', 'Prepare database')); // idempotent
-  if (opts.tag) steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
-  if (opts.mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
-  if (opts.ingest) {
-    steps.push(task('ingest', 'Ingest photos'));
-  }
-  if (opts.tag) steps.push(task('tag', 'Text-tag + embed'));
-  if (opts.faces) {
-    steps.push(task('detect-faces', 'Detect faces'));
-    steps.push(task('cluster-faces', 'Cluster faces'));
-  }
-  if (opts.dogs) {
-    steps.push(task('detect-dogs', 'Detect dogs'));
-    steps.push(task('cluster-dogs', 'Cluster dogs'));
-  }
-  if (opts.faces || opts.dogs) {
-    steps.push(task('reapply-labels', 'Reattach saved labels'));
-  }
+  steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
+  if (mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
+  if (mode !== 'repair') steps.push(ingestStep(mode));
+  steps.push(task('tag', 'Text-tag + embed'));
+  steps.push(task('detect-faces', 'Detect faces'));
+  steps.push(task('cluster-faces', 'Cluster faces'));
+  steps.push(task('detect-dogs', 'Detect dogs'));
+  steps.push(task('cluster-dogs', 'Cluster dogs'));
+  steps.push(task('reapply-labels', 'Reattach saved labels'));
   return steps;
 }
 
-/** Up-front check that the online gallery destination is reachable + writable,
- * so a bad bucket/credentials fails fast instead of hours later at publish/sync. */
+/** Up-front check that STORAGE_URL is reachable + writable, so it fails fast. */
 export function storageCheckStep(): Step {
-  return task('check-storage', 'Check online gallery');
+  return task('check-storage', 'Check storage');
 }
 
 /** Publish runs after labeling so newly-named clusters are included. */
 export function publishStep(): Step {
   return task('publish', 'Publish read-only release');
-}
-
-/** Sync phase: push media to storage (publish already pushed the fat + slim DB
- * and labels to STORAGE_URL). */
-export function syncSteps(): Step[] {
-  return [task('sync-media', 'Push media to storage')];
 }

@@ -1,50 +1,44 @@
+import { existsSync } from 'node:fs';
 import React from 'react';
-import { Box, Text, useApp } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
-import { TextField } from './TextField.js';
 import { useEffect, useMemo, useState } from 'react';
 import {
   blastRadius,
   completePath,
-  countLightroomExports,
   DEPLOY_TARGETS,
   deployGuidePath,
   expandHome,
-  LIGHTROOM_PRESET,
   loadExistingValues,
   needsSetup,
 } from './configFiles.js';
 import { ConfigStep } from './ConfigStep.js';
 import { DeployStep } from './DeployStep.js';
 import { LabelStep } from './LabelStep.js';
-import { PullStep } from './PullStep.js';
-import { ServeStep } from './ServeStep.js';
-import { MultiSelect } from './MultiSelect.js';
 import { loadPrefs, savePrefs } from './prefs.js';
+import { PullStep } from './PullStep.js';
 import { Runner } from './Runner.js';
+import { ServeStep } from './ServeStep.js';
 import { Setup } from './Setup.js';
 import {
-  type ProcessOpts,
-  type SourceAdapter,
-  type Step,
+  archiveStep,
+  importStep,
   processSteps,
   publishStep,
-  sourceSteps,
+  type RunMode,
+  type Step,
   storageCheckStep,
-  syncSteps,
 } from './steps.js';
+import { TextField } from './TextField.js';
 
 type Screen =
   | 'setup'
   | 'start'
   | 'view'
   | 'deploy'
-  | 'phases'
-  | 'source'
-  | 'lightroom'
-  | 'mode'
+  | 'pickMode'
+  | 'import'
   | 'create-confirm'
-  | 'tasks'
   | 'run-pre'
   | 'label'
   | 'run-post'
@@ -60,63 +54,59 @@ const masked = (v?: string) => (v ? '•••• (set)' : '(not set)');
 
 export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const { exit } = useApp();
-  // Seed every prompt from last run's choices → enter-enter-enter on re-runs.
   const prefs = useMemo(loadPrefs, []);
   // --setup forces the wizard. With no config (fresh machine), offer a choice
-  // first — set up from scratch, or restore a settings backup — instead of
-  // forcing the wizard before the menu is reachable. Otherwise straight in.
+  // first — set up, or restore a backup — instead of forcing the wizard.
   const [screen, setScreen] = useState<Screen>(
     forceSetup ? 'setup' : needsSetup() ? 'firstRun' : 'start',
   );
-  // Current config (photo folder, model, storage) for the View screen.
   const cfg = useMemo(loadExistingValues, []);
-  const [phases, setPhases] = useState<string[]>(prefs.phases);
-  const [adapter, setAdapter] = useState<SourceAdapter>(prefs.adapter);
-  const [mode, setMode] = useState<'create' | 'update'>(prefs.mode);
-  const [tasks, setTasks] = useState<string[]>(prefs.tasks);
-  // Blast radius for a Create wipe, computed when Create is picked.
+
+  const [runMode, setRunMode] = useState<RunMode>('add');
+  const [importDir, setImportDir] = useState<string>(prefs.importDir);
+  const [importDraft, setImportDraft] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
   const [blast, setBlast] = useState<{ photos: number; hasDb: boolean } | null>(
     null,
   );
-  // Lightroom export folder + its screen's draft/error state.
-  const [lightroomDir, setLightroomDir] = useState<string>(prefs.lightroomDir);
-  const [lrDraft, setLrDraft] = useState('');
-  const [lrError, setLrError] = useState<string | null>(null);
   const [deployTarget, setDeployTarget] = useState<string>(prefs.deployTarget);
 
   // Persist selections once we commit to running.
   useEffect(() => {
-    if (screen === 'run-pre')
-      savePrefs({ phases, adapter, mode, tasks, lightroomDir, deployTarget });
-  }, [screen, phases, adapter, mode, tasks, lightroomDir, deployTarget]);
+    if (screen === 'run-pre') savePrefs({ importDir, deployTarget });
+  }, [screen, importDir, deployTarget]);
 
-  // Pre = source + pipeline up to clustering. Then (faces/dogs) the labeling UI.
-  // Post = publish (with new labels) + sync.
-  const { pre, post, needsLabel } = useMemo(() => {
-    const pre: Step[] = [];
-    const post: Step[] = [];
-    // Validate the online gallery destination up front — before the hours-long
-    // pipeline — whenever the run will write to it (publish and/or sync), so a
-    // bad bucket/credentials fails fast instead of at the very end.
-    if (phases.includes('process') || phases.includes('sync')) {
-      pre.push(storageCheckStep());
+  // Esc goes back on the navigation screens (run/setup/label/serve manage their own).
+  useInput((_input, key) => {
+    if (!key.escape) return;
+    if (screen === 'pickMode' || screen === 'view' || screen === 'deploy') {
+      setScreen('start');
+    } else if (screen === 'import' || screen === 'create-confirm') {
+      setScreen('pickMode');
     }
-    if (phases.includes('source')) pre.push(...sourceSteps(adapter, lightroomDir));
-    let opts: ProcessOpts | null = null;
-    if (phases.includes('process')) {
-      opts = {
-        mode,
-        ingest: tasks.includes('ingest'),
-        tag: tasks.includes('tag'),
-        faces: tasks.includes('faces'),
-        dogs: tasks.includes('dogs'),
-      };
-      pre.push(...processSteps(opts));
-      post.push(publishStep());
+  });
+
+  // pre = import + compute up to clustering; then the labeling UI; then post.
+  const { pre, post } = useMemo(() => {
+    const pre: Step[] = [storageCheckStep()];
+    if (runMode === 'add') pre.push(importStep(importDir));
+    pre.push(...processSteps(runMode));
+    const post: Step[] = [publishStep()];
+    if (runMode !== 'repair') post.push(archiveStep());
+    return { pre, post };
+  }, [runMode, importDir]);
+
+  const startAdd = (raw: string) => {
+    const dir = expandHome((raw.trim() || importDir).trim());
+    if (!dir || !existsSync(dir)) {
+      setImportError('That folder doesn’t exist — type the folder your new photos are in.');
+      return;
     }
-    if (phases.includes('sync')) post.push(...syncSteps());
-    return { pre, post, needsLabel: !!opts && (opts.faces || opts.dogs) };
-  }, [phases, adapter, mode, tasks, lightroomDir]);
+    setImportError(null);
+    setImportDir(dir);
+    setRunMode('add');
+    setScreen('run-pre');
+  };
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -137,20 +127,17 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
         </Box>
       )}
 
-      {screen === 'setup' && <Setup onComplete={() => setScreen('phases')} />}
+      {screen === 'setup' && <Setup onComplete={() => setScreen('pickMode')} />}
 
       {screen === 'start' && (
         <Box flexDirection="column">
-          <Text dimColor>Photos: {cfg.SOURCE_DIR || '(not set)'}</Text>
-          <Text dimColor>
-            Online gallery: {cfg.STORAGE_URL || 'this computer (local disk)'}
-          </Text>
+          <Text dimColor>Staging library: {cfg.SOURCE_DIR || '(not set)'}</Text>
           <SelectInput
             items={[
               { label: 'Continue with these settings', value: 'continue' },
               { label: 'View settings', value: 'view' },
               {
-                label: 'Edit settings (photo folder, host, model, password)',
+                label: 'Edit settings (staging folder, host, model, password)',
                 value: 'edit',
               },
               { label: 'Put my gallery online (deploy / serve)', value: 'deploy' },
@@ -163,9 +150,93 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               else if (item.value === 'deploy') setScreen('deploy');
               else if (item.value === 'pull') setScreen('pull');
               else if (item.value === 'config') setScreen('config');
-              else setScreen('phases');
+              else setScreen('pickMode');
             }}
           />
+        </Box>
+      )}
+
+      {screen === 'pickMode' && (
+        <Box flexDirection="column">
+          <Text>What would you like to do?</Text>
+          <SelectInput
+            items={[
+              { label: 'Add new photos', value: 'add' },
+              { label: 'Finish / repair processing (no new photos)', value: 'repair' },
+              { label: 'Start over (re-process my whole library)', value: 'create' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'add') {
+                setImportDraft('');
+                setImportError(null);
+                setScreen('import');
+              } else if (item.value === 'repair') {
+                setRunMode('repair');
+                setScreen('run-pre');
+              } else {
+                setBlast(blastRadius());
+                setScreen('create-confirm');
+              }
+            }}
+          />
+          <Text dimColor>  Esc: back</Text>
+        </Box>
+      )}
+
+      {screen === 'import' && (
+        <Box flexDirection="column">
+          <Text bold>Add new photos</Text>
+          <Text>
+            Point me at a folder of new photos — I’ll move them into your staging
+            library and process them.
+          </Text>
+          <Text dimColor>
+            Using Lightroom? Export with the “To Mobile Photo Gallery” preset,
+            then enter that export folder here.
+          </Text>
+          <Box>
+            <Text>Import from folder: </Text>
+            <TextField
+              value={importDraft}
+              onChange={setImportDraft}
+              onTab={completePath}
+              onSubmit={startAdd}
+              placeholder={importDir || undefined}
+            />
+          </Box>
+          {importError ? <Text color="red">  ✖ {importError}</Text> : null}
+          <Text dimColor>  Esc: back</Text>
+        </Box>
+      )}
+
+      {screen === 'create-confirm' && (
+        <Box flexDirection="column">
+          <Text color="red" bold>
+            ⚠ Start over re-processes your whole library
+          </Text>
+          <Text>
+            This wipes the database + gallery and re-ingests everything in your
+            staging library (including the _already_processed archive), then
+            re-runs tagging and detection. Your photo files aren’t deleted.
+            {blast?.photos
+              ? ` ~${blast.photos.toLocaleString()} photos will be reprocessed.`
+              : ''}
+          </Text>
+          <SelectInput
+            items={[
+              { label: 'Yes, start over', value: 'yes' },
+              { label: 'No — go back', value: 'no' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'yes') {
+                setRunMode('create');
+                setScreen('run-pre');
+              } else {
+                setScreen('pickMode');
+              }
+            }}
+          />
+          <Text dimColor>  Esc: back</Text>
         </Box>
       )}
 
@@ -191,17 +262,11 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
                 return;
               }
               setDeployTarget(item.value);
-              savePrefs({
-                phases,
-                adapter,
-                mode,
-                tasks,
-                lightroomDir,
-                deployTarget: item.value,
-              });
+              savePrefs({ importDir, deployTarget: item.value });
               setScreen(item.value === 'localhost' ? 'serve' : 'deployRun');
             }}
           />
+          <Text dimColor>  Esc: back</Text>
         </Box>
       )}
 
@@ -212,10 +277,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           <Text dimColor>
             {'  '}Guide: {deployGuidePath(cfg.DEPLOY_TARGET || 'localhost')}
           </Text>
-          <Text>Photo folder: {cfg.SOURCE_DIR || '(not set)'}</Text>
-          <Text>
-            Online gallery: {cfg.STORAGE_URL || 'this computer (local disk)'}
-          </Text>
+          <Text>Staging library: {cfg.SOURCE_DIR || '(not set)'}</Text>
           <Text>
             Tagging model: {cfg.MODEL_SERVER_MODEL || 'none'}
             {cfg.MODEL_SERVER_HOST ? ` @ ${cfg.MODEL_SERVER_HOST}` : ''}
@@ -230,169 +292,16 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
             onSelect={(item) => {
               if (item.value === 'edit') setScreen('setup');
               else if (item.value === 'back') setScreen('start');
-              else setScreen('phases');
+              else setScreen('pickMode');
             }}
           />
+          <Text dimColor>  Esc: back</Text>
         </Box>
       )}
 
-      {screen === 'phases' && (
-        <Box flexDirection="column">
-          <Text>What would you like to do?</Text>
-          <MultiSelect
-            initial={phases}
-            items={[
-              { value: 'source', label: 'Import new photos from Lightroom' },
-              { value: 'process', label: 'Make my photos searchable, and find people & dogs' },
-              { value: 'sync', label: 'Put them in my online gallery' },
-            ]}
-            onSubmit={(sel) => {
-              setPhases(sel);
-              // 'source' = the Lightroom export-move (its only job). Manual folders
-              // need no import step — ingest reads them directly — so go straight
-              // to the Lightroom screen.
-              if (sel.includes('source')) {
-                setAdapter('lightroom');
-                setScreen('lightroom');
-              } else if (sel.includes('process')) setScreen('mode');
-              else setScreen('run-pre');
-            }}
-          />
-        </Box>
+      {screen === 'run-pre' && (
+        <Runner steps={pre} onDone={() => setScreen('label')} />
       )}
-
-      {screen === 'lightroom' && (
-        <Box flexDirection="column">
-          <Text bold>Exporting from Lightroom</Text>
-          <Text>
-            1. In Lightroom, open the Export window. Right-click “Preset” on the
-            left, choose Import…, and pick this file:
-          </Text>
-          <Text dimColor>   {LIGHTROOM_PRESET}</Text>
-          <Text>
-            2. Select your photos and click Export, using the “To Mobile Photo
-            Gallery” preset. It saves small copies next to your originals — your
-            originals are never touched.
-          </Text>
-          <Text>
-            3. Type the folder you exported into and press enter — I’ll make sure
-            the photos are there:
-          </Text>
-          <Box>
-            <Text>Folder you exported to: </Text>
-            <TextField
-              value={lrDraft}
-              onChange={setLrDraft}
-              onTab={completePath}
-              onSubmit={(raw) => {
-                const dir = expandHome((raw.trim() || lightroomDir).trim());
-                if (!dir) {
-                  setLrError('Please type the folder you exported into.');
-                  return;
-                }
-                const found = countLightroomExports(dir);
-                if (found === 0) {
-                  setLrError(
-                    `Didn’t find any exported photos in ${dir}. Export from Lightroom first, then press enter to try again.`,
-                  );
-                  return;
-                }
-                setLrError(null);
-                setLightroomDir(dir);
-                setScreen(phases.includes('process') ? 'mode' : 'run-pre');
-              }}
-              placeholder={lightroomDir || undefined}
-            />
-          </Box>
-          {lrError ? <Text color="red">  ✖ {lrError}</Text> : null}
-        </Box>
-      )}
-
-      {screen === 'mode' && (
-        <Box flexDirection="column">
-          <Text>Adding new photos, or starting over?</Text>
-          <SelectInput
-            initialIndex={mode === 'update' ? 0 : 1}
-            items={[
-              { label: 'Add new photos (keep what I’ve already done)', value: 'update' },
-              { label: 'Start over (erase everything and redo it)', value: 'create' },
-            ]}
-            onSelect={(item) => {
-              const m = item.value as 'create' | 'update';
-              setMode(m);
-              if (m === 'create') {
-                // Gate the wipe behind an explicit, count-bearing confirm —
-                // unless there's nothing to lose (fresh setup), where Create
-                // and Update are equivalent.
-                const radius = blastRadius();
-                if (radius.photos > 0 || radius.hasDb) {
-                  setBlast(radius);
-                  setScreen('create-confirm');
-                  return;
-                }
-              }
-              setScreen('tasks');
-            }}
-          />
-        </Box>
-      )}
-
-      {screen === 'create-confirm' && (
-        <Box flexDirection="column">
-          <Text color="red" bold>
-            ⚠ Starting over deletes everything you’ve done
-          </Text>
-          <Text>
-            This deletes{' '}
-            <Text bold>{blast?.photos.toLocaleString() ?? 0} photos</Text>
-            {blast?.hasDb ? ' and everything found so far (search info, people, dogs, and any names you added)' : ''}
-            , then starts fresh. This can’t be undone.
-          </Text>
-          <Text dimColor>
-            Adding new photos keeps all of that and only handles what’s new.
-          </Text>
-          <SelectInput
-            items={[
-              { label: 'Yes, erase everything and start over', value: 'create' },
-              { label: 'No — keep everything, just add new photos', value: 'update' },
-            ]}
-            onSelect={(item) => {
-              setMode(item.value as 'create' | 'update');
-              setScreen('tasks');
-            }}
-          />
-        </Box>
-      )}
-
-      {screen === 'tasks' && (
-        <Box flexDirection="column">
-          <Text>What should I do with your photos?</Text>
-          <Text dimColor>Pick what you want — everything else happens automatically.</Text>
-          <MultiSelect
-            initial={tasks}
-            items={[
-              { value: 'ingest', label: 'Bring in my photos' },
-              { value: 'tag', label: 'Make them searchable — type “beach” to find your beach photos' },
-              { value: 'faces', label: 'Find people' },
-              { value: 'dogs', label: 'Find dogs' },
-            ]}
-            onSubmit={(sel) => {
-              setTasks(sel);
-              setScreen('run-pre');
-            }}
-          />
-        </Box>
-      )}
-
-      {screen === 'run-pre' &&
-        (pre.length + post.length > 0 ? (
-          <Runner
-            steps={pre}
-            onDone={() => setScreen(needsLabel ? 'label' : 'run-post')}
-          />
-        ) : (
-          <Text color="yellow">Nothing chosen — there’s nothing to do.</Text>
-        ))}
 
       {screen === 'label' && <LabelStep onDone={() => setScreen('run-post')} />}
 

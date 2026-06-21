@@ -276,9 +276,9 @@ export const FIELDS: Field[] = [
   },
   {
     key: 'SOURCE_DIR',
-    label: 'Photo source folder (absolute path)',
+    label: 'Staging library folder (absolute path)',
     path: true,
-    hint: `Where your photos are. Reads ${SUPPORTED_IMAGE_FORMATS} — not HEIC or RAW (convert those first). Using Lightroom? Pick any empty folder; your exports get moved here for you.`,
+    hint: `Your permanent photo library. New photos get moved in here, processed, then tucked into an _already_processed archive inside it. Reads ${SUPPORTED_IMAGE_FORMATS} — not HEIC or RAW (convert those first). A fresh empty folder is fine.`,
     validate: (raw) => {
       const p = expandHome(raw.trim());
       if (!p) return 'Required.';
