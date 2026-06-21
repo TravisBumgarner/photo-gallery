@@ -15,6 +15,7 @@ import {
   needsSetup,
   SUPPORTED_IMAGE_FORMATS,
 } from './configFiles.js';
+import { ConfigStep } from './ConfigStep.js';
 import { DeployStep } from './DeployStep.js';
 import { LabelStep } from './LabelStep.js';
 import { PullStep } from './PullStep.js';
@@ -51,7 +52,8 @@ type Screen =
   | 'done'
   | 'serve'
   | 'deployRun'
-  | 'pull';
+  | 'pull'
+  | 'config';
 
 /** Mask a secret for display — present or not, never the value. */
 const masked = (v?: string) => (v ? '•••• (set)' : '(not set)');
@@ -139,12 +141,14 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               },
               { label: 'Put my gallery online (deploy / serve)', value: 'deploy' },
               { label: 'Pull published data down from my host', value: 'pull' },
+              { label: 'Back up / restore my settings', value: 'config' },
             ]}
             onSelect={(item) => {
               if (item.value === 'view') setScreen('view');
               else if (item.value === 'edit') setScreen('setup');
               else if (item.value === 'deploy') setScreen('deploy');
               else if (item.value === 'pull') setScreen('pull');
+              else if (item.value === 'config') setScreen('config');
               else setScreen('phases');
             }}
           />
@@ -455,6 +459,8 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       )}
 
       {screen === 'pull' && <PullStep onDone={() => setScreen('start')} />}
+
+      {screen === 'config' && <ConfigStep onDone={() => setScreen('start')} />}
     </Box>
   );
 }
