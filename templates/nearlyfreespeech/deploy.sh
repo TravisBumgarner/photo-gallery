@@ -69,6 +69,9 @@ if ! ssh $KEYOPT -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=
 fi
 
 echo "🎨 Building the web UI…"
+# Frontend deps aren't installed by ingest-and-sync (only needed to build the
+# UI), so install them if missing — else `npx expo` grabs a random latest expo.
+[ -d frontend/node_modules/expo ] || npm install -w frontend --no-audit --no-fund
 # NODE_PATH so the root-hoisted @expo/metro-config can resolve `expo` (which npm
 # keeps in frontend/node_modules) — otherwise the export dies with
 # "Cannot find module 'expo/package.json'".

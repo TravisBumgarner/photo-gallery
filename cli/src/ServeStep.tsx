@@ -13,10 +13,14 @@ const FRONTEND_DIST = path.join(BACKEND_DIR, 'frontend-dist');
 
 // Build the web UI into backend/frontend-dist (same as ./mvp), then the backend
 // serves it. EXPO_PUBLIC_API_BASE_URL="" so the bundled UI talks to its own origin.
+// Build the web UI (cwd = frontend/). ingest-and-sync doesn't install frontend
+// deps (expo is heavy + only needed to build the UI), so install them here if
+// missing — otherwise `npx expo` downloads a random latest expo and fails.
 // NODE_PATH so the root-hoisted @expo/metro-config can resolve `expo` (npm keeps
 // it in frontend/node_modules) — without it the export dies with "Cannot find
 // module 'expo/package.json'".
 const BUILD_CMD =
+  '([ -d node_modules/expo ] || (cd .. && npm install -w frontend --no-audit --no-fund)) && ' +
   'NODE_PATH="$PWD/node_modules" EXPO_PUBLIC_API_BASE_URL="" ' +
   'npx expo export --platform web --output-dir dist ' +
   '&& rm -rf ../backend/frontend-dist && cp -R dist ../backend/frontend-dist';
@@ -149,7 +153,9 @@ export function ServeStep({ onDone }: { onDone: () => void }) {
     <Box flexDirection="column">
       {phase === 'building' && (
         <>
-          <Text color="cyan">Building the web UI… (first time, ~1 min)</Text>
+          <Text color="cyan">
+            Building the web UI… (first time installs the web tools — a few minutes)
+          </Text>
           {detail ? <Text dimColor>  {detail}</Text> : null}
         </>
       )}
