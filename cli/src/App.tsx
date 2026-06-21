@@ -53,7 +53,8 @@ type Screen =
   | 'serve'
   | 'deployRun'
   | 'pull'
-  | 'config';
+  | 'config'
+  | 'firstRun';
 
 /** Mask a secret for display — present or not, never the value. */
 const masked = (v?: string) => (v ? '•••• (set)' : '(not set)');
@@ -62,10 +63,11 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const { exit } = useApp();
   // Seed every prompt from last run's choices → enter-enter-enter on re-runs.
   const prefs = useMemo(loadPrefs, []);
-  // Setup runs on --setup or when config is missing; otherwise straight to the
-  // wizard.
+  // --setup forces the wizard. With no config (fresh machine), offer a choice
+  // first — set up from scratch, or restore a settings backup — instead of
+  // forcing the wizard before the menu is reachable. Otherwise straight in.
   const [screen, setScreen] = useState<Screen>(
-    forceSetup || needsSetup() ? 'setup' : 'start',
+    forceSetup ? 'setup' : needsSetup() ? 'firstRun' : 'start',
   );
   // Current config (photo folder, model, storage) for the View screen.
   const cfg = useMemo(loadExistingValues, []);
@@ -122,6 +124,19 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       <Text color="magenta" bold>
         📷 Photo Gallery
       </Text>
+
+      {screen === 'firstRun' && (
+        <Box flexDirection="column">
+          <Text>No settings found on this machine.</Text>
+          <SelectInput
+            items={[
+              { label: 'Set up from scratch', value: 'setup' },
+              { label: 'Restore from a backup zip', value: 'config' },
+            ]}
+            onSelect={(item) => setScreen(item.value as Screen)}
+          />
+        </Box>
+      )}
 
       {screen === 'setup' && <Setup onComplete={() => setScreen('phases')} />}
 
