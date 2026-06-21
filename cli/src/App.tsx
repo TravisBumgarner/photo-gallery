@@ -13,7 +13,6 @@ import {
   LIGHTROOM_PRESET,
   loadExistingValues,
   needsSetup,
-  SUPPORTED_IMAGE_FORMATS,
 } from './configFiles.js';
 import { ConfigStep } from './ConfigStep.js';
 import { DeployStep } from './DeployStep.js';
@@ -243,39 +242,22 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           <MultiSelect
             initial={phases}
             items={[
-              { value: 'source', label: 'Get my photos ready' },
+              { value: 'source', label: 'Import new photos from Lightroom' },
               { value: 'process', label: 'Make my photos searchable, and find people & dogs' },
               { value: 'sync', label: 'Put them in my online gallery' },
             ]}
             onSubmit={(sel) => {
               setPhases(sel);
-              if (sel.includes('source')) setScreen('source');
-              else if (sel.includes('process')) setScreen('mode');
+              // 'source' = the Lightroom export-move (its only job). Manual folders
+              // need no import step — ingest reads them directly — so go straight
+              // to the Lightroom screen.
+              if (sel.includes('source')) {
+                setAdapter('lightroom');
+                setScreen('lightroom');
+              } else if (sel.includes('process')) setScreen('mode');
               else setScreen('run-pre');
             }}
           />
-        </Box>
-      )}
-
-      {screen === 'source' && (
-        <Box flexDirection="column">
-          <Text>Where are your photos?</Text>
-          <SelectInput
-            initialIndex={adapter === 'lightroom' ? 0 : 1}
-            items={[
-              { label: 'In Lightroom (I’ll help you export them)', value: 'lightroom' },
-              { label: 'In a folder I’ve already set up', value: 'manual' },
-            ]}
-            onSelect={(item) => {
-              const a = item.value as SourceAdapter;
-              setAdapter(a);
-              if (a === 'lightroom') setScreen('lightroom');
-              else setScreen(phases.includes('process') ? 'mode' : 'run-pre');
-            }}
-          />
-          <Text dimColor>
-            Reads {SUPPORTED_IMAGE_FORMATS} — HEIC/RAW are skipped.
-          </Text>
         </Box>
       )}
 
