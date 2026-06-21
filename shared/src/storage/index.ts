@@ -37,6 +37,9 @@ export const KEYS = {
   dbVersion: (version: string) => `db/prod-${version}.sqlite`,
   /** Pointer file holding the current version string. */
   dbLatest: () => 'db/latest',
+  /** The fat DB's generation counter (mirrors meta.generation) — a monotonic
+   * int used to refuse overwriting newer published work. */
+  dbFatGeneration: () => 'db/fat-generation',
 } as const;
 
 /**

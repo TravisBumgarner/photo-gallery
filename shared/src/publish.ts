@@ -2,6 +2,7 @@ import { copyFileSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { bumpGeneration, readGeneration } from './db/generation.js';
 import { createDb } from './db/index.js';
 import { dogClusters, dogs, faceClusters, faces, photos } from './db/schema.js';
 import {
@@ -28,6 +29,8 @@ export interface PublishOptions {
 
 export interface PublishResult {
   version: string;
+  /** The fat DB's generation after this publish (monotonic, bumped each run). */
+  generation: number;
   peopleLabels: number;
   dogLabels: number;
   /** Whether the previous fat DB was archived to db/backups/ before overwrite. */
@@ -49,6 +52,27 @@ type Row = Record<string, unknown>;
 export async function publishToStorage(
   opts: PublishOptions,
 ): Promise<PublishResult> {
+  // Fail before any upload if the source DB is corrupt or half-written.
+  assertIntegrity(opts.dbPath);
+
+  // Generation guard: never overwrite a bucket fat DB that's newer than ours.
+  // (A machine that restored an old backup, or a second writer, would otherwise
+  // silently clobber newer published work.) Bump only after the check passes so
+  // the new fat + slim both carry the advanced generation.
+  const localGen = readGeneration(opts.dbPath);
+  if (await opts.storage.exists(KEYS.dbFatGeneration())) {
+    const remoteGen = Number(
+      (await opts.storage.get(KEYS.dbFatGeneration())).toString().trim(),
+    );
+    if (Number.isFinite(remoteGen) && remoteGen > localGen) {
+      throw new Error(
+        `Refusing to publish: bucket fat DB is newer (generation ${remoteGen}) ` +
+          `than local (generation ${localGen}). Restore the bucket DB first.`,
+      );
+    }
+  }
+  const generation = bumpGeneration(opts.dbPath);
+
   const db = createDb(opts.dbPath);
 
   const allFaces = db.select().from(faces).all() as Row[];
@@ -62,24 +86,8 @@ export async function publishToStorage(
   const facesByPhoto = groupBy(allFaces, (f) => f.photoUuid as string);
   const dogsByPhoto = groupBy(allDogs, (d) => d.photoUuid as string);
 
-  // 1. The fat DB — durable, embeddings intact. NOT vacuumed, so rsync only
-  //    ships the deltas. Copied straight up (it's not being written concurrently
-  //    here, same as the slim snapshot's copyFileSync below). Archive the
-  //    previous one first so a bad publish never destroys the last good DB.
-  let backedUp = false;
-  if (await opts.storage.exists(KEYS.dbFat())) {
-    await opts.storage.copy(KEYS.dbFat(), KEYS.dbFatBackup(opts.version));
-    backedUp = true;
-    // Retain only the newest BACKUPS_TO_KEEP archives. Keys sort chronologically
-    // (the version is an ISO-ish timestamp), so newest-first then drop the tail.
-    const backups = (await opts.storage.list('db/backups')).sort().reverse();
-    for (const key of backups.slice(BACKUPS_TO_KEEP)) {
-      await opts.storage.delete(key);
-    }
-  }
-  await opts.storage.putFile(KEYS.dbFat(), opts.dbPath);
-
-  // 2. labels.json — labeled or ignored clusters, pinned to anchor detections.
+  // labels.json — labeled or ignored clusters, pinned to anchor detections.
+  // Pure read; built before any upload so the destructive steps come last.
   const people = buildLabelEntries(
     db.select().from(faceClusters).all() as Row[],
     facesByPhoto,
@@ -95,19 +103,52 @@ export async function publishToStorage(
     'dogLabel',
   );
   const labels: LabelsFile = { version: 1, people, dogs: dogLabelEntries };
-  await opts.storage.put(KEYS.labels(), serializeLabels(labels));
 
-  // 3. Slim, embedding-free DB snapshot + latest pointer (what serving pulls).
+  // 1. Slim, embedding-free snapshot. Build it and verify its row counts match
+  //    the fat DB *before* publishing anything — a truncated copy would yield a
+  //    valid-looking but wrong snapshot, and flipping `latest` to it would feed
+  //    the server broken data silently.
   const slimPath = buildSlimDb(opts.dbPath);
   try {
+    verifySlim(slimPath, {
+      photos: allPhotos.length,
+      faces: allFaces.length,
+      dogs: allDogs.length,
+    });
+
+    // 2. Non-destructive uploads: labels, then the immutable slim snapshot.
+    await opts.storage.put(KEYS.labels(), serializeLabels(labels));
     await opts.storage.putFile(KEYS.dbVersion(opts.version), slimPath);
+
+    // 3. Cutover — flip `latest` only once the new slim is uploaded + verified.
     await opts.storage.put(KEYS.dbLatest(), Buffer.from(opts.version));
   } finally {
     unlinkSync(slimPath);
   }
 
+  // 4. Last, the destructive step: archive the previous fat DB, then overwrite
+  //    it. Done after the cutover so a failure here leaves serving on the new
+  //    slim and the bucket fat one publish behind (recoverable) — never
+  //    corrupted. NOT vacuumed, so rsync only ships the deltas.
+  let backedUp = false;
+  if (await opts.storage.exists(KEYS.dbFat())) {
+    await opts.storage.copy(KEYS.dbFat(), KEYS.dbFatBackup(opts.version));
+    backedUp = true;
+    // Retain only the newest BACKUPS_TO_KEEP archives. Keys sort chronologically
+    // (the version is an ISO-ish timestamp), so newest-first then drop the tail.
+    const backups = (await opts.storage.list('db/backups')).sort().reverse();
+    for (const key of backups.slice(BACKUPS_TO_KEEP)) {
+      await opts.storage.delete(key);
+    }
+  }
+  await opts.storage.putFile(KEYS.dbFat(), opts.dbPath);
+  // Advance the bucket's generation only after the fat DB it describes is up,
+  // so the mirror never claims a generation the bucket fat doesn't have.
+  await opts.storage.put(KEYS.dbFatGeneration(), Buffer.from(String(generation)));
+
   return {
     version: opts.version,
+    generation,
     peopleLabels: people.length,
     dogLabels: dogLabelEntries.length,
     backedUp,
@@ -154,6 +195,55 @@ function buildLabelEntries(
     entries.push({ label, ignored, anchors });
   }
   return entries;
+}
+
+/** Abort the publish if the source DB is corrupt or truncated. `quick_check`
+ * is the cheaper sibling of `integrity_check` — enough to catch a half-written
+ * or torn file before we derive a snapshot from it. */
+function assertIntegrity(dbPath: string): void {
+  const sqlite = new Database(dbPath, { readonly: true });
+  try {
+    const result = sqlite.pragma('quick_check', { simple: true });
+    if (result !== 'ok') {
+      throw new Error(
+        `Refusing to publish: fat DB failed integrity check (${dbPath}): ${result}`,
+      );
+    }
+  } finally {
+    sqlite.close();
+  }
+}
+
+/** Abort before cutover unless the slim snapshot's row counts match the fat DB
+ * exactly — slim is a byte copy with only the embedding columns emptied, so any
+ * mismatch (or a zero-photo library) means the copy is bad. */
+function verifySlim(
+  slimPath: string,
+  expected: { photos: number; faces: number; dogs: number },
+): void {
+  const sqlite = new Database(slimPath, { readonly: true });
+  try {
+    const count = (table: string): number =>
+      (sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number })
+        .n;
+    const got = {
+      photos: count('photos'),
+      faces: count('faces'),
+      dogs: count('dogs'),
+    };
+    for (const key of ['photos', 'faces', 'dogs'] as const) {
+      if (got[key] !== expected[key]) {
+        throw new Error(
+          `Refusing to publish: slim DB ${key} count ${got[key]} != fat ${expected[key]}.`,
+        );
+      }
+    }
+    if (got.photos === 0) {
+      throw new Error('Refusing to publish: slim DB has zero photos.');
+    }
+  } finally {
+    sqlite.close();
+  }
 }
 
 /** Copy the DB and strip embeddings (the bulk), then VACUUM to reclaim space.

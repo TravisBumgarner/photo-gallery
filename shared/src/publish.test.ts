@@ -175,6 +175,50 @@ describe('publishToStorage', () => {
     );
   });
 
+  it('bumps the generation each publish and mirrors it to storage', async () => {
+    const storage = await createStorage(`file://${path.join(tmp, 'gen')}`);
+
+    const first = await publishToStorage({
+      dbPath,
+      storage,
+      version: '2026-06-15T00-00-00Z',
+    });
+    expect(first.generation).toBe(1);
+    expect((await storage.get(KEYS.dbFatGeneration())).toString()).toBe('1');
+
+    const second = await publishToStorage({
+      dbPath,
+      storage,
+      version: '2026-06-16T00-00-00Z',
+    });
+    expect(second.generation).toBe(2);
+    expect((await storage.get(KEYS.dbFatGeneration())).toString()).toBe('2');
+  });
+
+  it('refuses to publish when the bucket fat DB is a newer generation', async () => {
+    const storage = await createStorage(`file://${path.join(tmp, 'stale')}`);
+    // Bucket already advanced past our local DB (generation 0).
+    await storage.put(KEYS.dbFatGeneration(), Buffer.from('5'));
+
+    await expect(
+      publishToStorage({ dbPath, storage, version: '2026-06-15T00-00-00Z' }),
+    ).rejects.toThrow(/newer \(generation 5\)/);
+
+    // Nothing was written — the guard fires before any upload.
+    expect(await storage.exists(KEYS.dbFat())).toBe(false);
+    expect(await storage.exists(KEYS.dbLatest())).toBe(false);
+  });
+
+  it('refuses to publish a DB that fails the integrity check', async () => {
+    // Truncate the DB file to corrupt it.
+    await fs.writeFile(dbPath, Buffer.from('not a sqlite file'));
+    const storage = await createStorage(`file://${path.join(tmp, 'corrupt')}`);
+    await expect(
+      publishToStorage({ dbPath, storage, version: '2026-06-15T00-00-00Z' }),
+    ).rejects.toThrow();
+    expect(await storage.exists(KEYS.dbFat())).toBe(false);
+  });
+
   it('keeps only the newest 5 DB backups', async () => {
     const storage = await createStorage(`file://${path.join(tmp, 'bucket2')}`);
     for (let i = 0; i < 7; i++) {

@@ -7,6 +7,13 @@ import {
   text,
 } from 'drizzle-orm/sqlite-core';
 
+// Small key/value table for DB-level metadata. Currently holds `generation`,
+// a monotonic counter bumped on every publish (see db/generation.ts).
+export const meta = sqliteTable('meta', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
+
 export const photos = sqliteTable(
   'photos',
   {

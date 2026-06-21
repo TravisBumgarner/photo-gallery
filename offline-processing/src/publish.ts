@@ -29,12 +29,13 @@ async function main() {
   const result = await publishToStorage({ dbPath, storage, version });
 
   console.log(
-    `Done: fat DB published${result.backedUp ? ' (previous archived to db/backups/)' : ''}, ` +
+    `Done: fat DB published (generation ${result.generation})` +
+      `${result.backedUp ? ' (previous archived to db/backups/)' : ''}, ` +
       `${result.peopleLabels} people + ${result.dogLabels} dog labels, ` +
       `slim DB published as ${result.version}.`,
   );
   summary(
-    `database published${result.backedUp ? ' (old one backed up)' : ''} · ${result.peopleLabels} people + ${result.dogLabels} dog labels`,
+    `database published (gen ${result.generation})${result.backedUp ? ' (old one backed up)' : ''} · ${result.peopleLabels} people + ${result.dogLabels} dog labels`,
   );
 }
 

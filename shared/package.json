@@ -5,6 +5,7 @@
   "exports": {
     "./db": "./src/db/index.ts",
     "./db/schema": "./src/db/schema.ts",
+    "./db/generation": "./src/db/generation.ts",
     "./types": "./src/types.ts",
     "./schemas": "./src/schemas.ts",
     "./embed": "./src/embed.ts",
