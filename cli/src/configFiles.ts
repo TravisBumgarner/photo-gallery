@@ -278,7 +278,7 @@ export const FIELDS: Field[] = [
     key: 'SOURCE_DIR',
     label: 'Photo source folder (absolute path)',
     path: true,
-    hint: `The folder the pipeline ingests from. Manual: point it at your photos. Lightroom: your exported copies get moved here first (you’ll pick the export folder later). Reads ${SUPPORTED_IMAGE_FORMATS} — HEIC/RAW are skipped (convert first, or let Lightroom export to JPG).`,
+    hint: `Where your photos are. Reads ${SUPPORTED_IMAGE_FORMATS} — not HEIC or RAW (convert those first). Using Lightroom? Pick any empty folder; your exports get moved here for you.`,
     validate: (raw) => {
       const p = expandHome(raw.trim());
       if (!p) return 'Required.';
@@ -317,7 +317,7 @@ export const FIELDS: Field[] = [
   },
   {
     key: 'MODEL_SERVER_MODEL',
-    label: 'Vision-LLM model (blank = skip tagging)',
+    label: 'Vision-LLM model',
     default: '',
     hint: async (v) => {
       const host = (v.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
@@ -338,7 +338,6 @@ export const FIELDS: Field[] = [
       }
     },
     validate: async (model, values) => {
-      if (!model) return null; // blank = skip tagging
       const host = (values.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
         /\/+$/,
         '',
@@ -346,7 +345,7 @@ export const FIELDS: Field[] = [
       const local = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
       const base = (s: string) => s.split(':')[0];
 
-      // Already installed on the host?
+      // What's installed on the host? (also called out in any error below)
       let names: string[] | null = null;
       try {
         const res = await fetch(`${host}/api/tags`, {
@@ -359,12 +358,15 @@ export const FIELDS: Field[] = [
       } catch {
         names = null; // server down / unreachable
       }
+      const installed =
+        names && names.length ? ` Installed: ${names.join(', ')}.` : '';
+
+      if (!model) return `Required.${installed}`;
       if (names?.some((n) => n === model || base(n) === base(model))) return null;
 
       if (!local) {
         if (names === null) return `Can't reach ${host}.`;
-        const avail = names.map(base).join(', ');
-        return `"${model}" not on ${host}.${avail ? ` Available: ${avail}` : ''}`;
+        return `"${model}" not on ${host}.${installed}`;
       }
 
       // Local + not installed: confirm it's a real model before the preflight
@@ -375,7 +377,7 @@ export const FIELDS: Field[] = [
           signal: AbortSignal.timeout(4000),
         });
         if (reg.status === 404) {
-          return `"${model}" isn't a known Ollama model — see https://ollama.com/library`;
+          return `"${model}" isn't a known Ollama model — see https://ollama.com/library.${installed}`;
         }
       } catch {
         // offline / can't verify → allow (preflight will catch a bad pull)
