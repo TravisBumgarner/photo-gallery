@@ -152,9 +152,13 @@ export const DEPLOY_PARAMS: Record<string, DeployParam[]> = {
     },
     {
       key: 'DEPLOY_SITE_URL',
-      label: 'Public site URL (blank = allow any)',
+      label: 'Public site URL',
       default: '',
-      hint: 'Your gallery’s public URL (https://your-site.nfshost.com) — used as the login cookie’s allowed origin.',
+      hint: 'Your gallery’s public URL (https://your-site.nfshost.com) — the login cookie’s allowed origin.',
+      validate: (v) =>
+        v.trim().startsWith('http')
+          ? null
+          : 'Required — e.g. https://your-site.nfshost.com',
     },
   ],
 };
