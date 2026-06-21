@@ -25,8 +25,10 @@ export function Runner({
   const [statuses, setStatuses] = useState<Status[]>(
     steps.map(() => 'pending'),
   );
-  // Live one-liner for the currently running step; summaries persist per step.
+  // Live one-liner (structured status) for the running step; summaries persist
+  // per step; tailLines is the recent raw output shown under the running step.
   const [live, setLive] = useState('');
+  const [tailLines, setTailLines] = useState<string[]>([]);
   const [summaries, setSummaries] = useState<(string | null)[]>(
     steps.map(() => null),
   );
@@ -45,12 +47,11 @@ export function Runner({
       for (let i = 0; i < steps.length; i++) {
         setStatus(i, 'running');
         setLive('');
+        setTailLines([]);
         const tail: string[] = [];
-        let sawStatus = false;
         let summary = '';
         const code = await runStep(steps[i].spec, (line) => {
           if (line.startsWith(STATUS_PREFIX)) {
-            sawStatus = true;
             setLive(line.slice(STATUS_PREFIX.length).trim());
             return;
           }
@@ -61,10 +62,10 @@ export function Runner({
             return;
           }
           // Raw task output: kept for failure scrollback, and shown live as a
-          // fallback until/unless the task emits a structured status.
+          // rolling tail under the running step.
           tail.push(line);
           if (tail.length > 30) tail.shift();
-          if (!sawStatus) setLive(line);
+          setTailLines(tail.slice(-8));
         });
         if (code === 0) {
           setStatus(i, 'done');
@@ -105,22 +106,33 @@ export function Runner({
   return (
     <Box flexDirection="column">
       {steps.map((step, i) => (
-        <Text key={step.id} color={color(statuses[i])}>
-          {statuses[i] === 'running' ? (
-            <Text color="cyan">
-              <Spinner type="dots" />
-            </Text>
-          ) : (
-            glyph(statuses[i])
-          )}{' '}
-          {step.label}
-          {statuses[i] === 'running' && live ? (
-            <Text dimColor> — {live}</Text>
-          ) : null}
-          {statuses[i] === 'done' && summaries[i] ? (
-            <Text dimColor> — {summaries[i]}</Text>
-          ) : null}
-        </Text>
+        <Box key={step.id} flexDirection="column">
+          <Text color={color(statuses[i])}>
+            {statuses[i] === 'running' ? (
+              <Text color="cyan">
+                <Spinner type="dots" />
+              </Text>
+            ) : (
+              glyph(statuses[i])
+            )}{' '}
+            {step.label}
+            {statuses[i] === 'running' && live ? (
+              <Text dimColor> — {live}</Text>
+            ) : null}
+            {statuses[i] === 'done' && summaries[i] ? (
+              <Text dimColor> — {summaries[i]}</Text>
+            ) : null}
+          </Text>
+          {/* Recent raw output under the active step. */}
+          {statuses[i] === 'running' &&
+            tailLines.map((l, idx) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: rolling tail snapshot
+              <Text key={idx} dimColor>
+                {'    '}
+                {l}
+              </Text>
+            ))}
+        </Box>
       ))}
     </Box>
   );
