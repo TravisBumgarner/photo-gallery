@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -10,11 +10,18 @@ import {
   writeConfigFiles,
 } from './configFiles.js';
 import { TextField } from './TextField.js';
+import { useEscapeBack } from './useEscapeBack.js';
 
 /** Setup wizard: walks the config fields and writes .cli-cache + backend/.env.
  * Runs every time, pre-filled from the current config (gray placeholders) —
  * enter keeps a value, type to change it. */
-export function Setup({ onComplete }: { onComplete: () => void }) {
+export function Setup({
+  onComplete,
+  onCancel,
+}: {
+  onComplete: () => void;
+  onCancel: () => void;
+}) {
   const existing = useMemo(loadExistingValues, []);
   const [values, setValues] = useState<Record<string, string>>({});
   const [idx, setIdx] = useState(0);
@@ -33,15 +40,20 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
   const effectiveDefault = (f: Field) =>
     values[f.key] ?? existing[f.key] ?? f.default ?? '';
 
-  // Esc steps back to the previous field.
-  useInput((_input, key) => {
-    if (key.escape && idx > 0 && !checking) {
-      setError(null);
-      setWarning(null);
-      setWarnedValue(null);
-      setIdx(idx - 1);
-    }
-  });
+  // Esc steps back a field; on the first field it cancels setup entirely.
+  // Disabled while a validation check is in flight.
+  useEscapeBack(
+    checking
+      ? null
+      : idx > 0
+        ? () => {
+            setError(null);
+            setWarning(null);
+            setWarnedValue(null);
+            setIdx(idx - 1);
+          }
+        : onCancel,
+  );
 
   // Start each field empty so the default shows as a gray placeholder; hitting
   // enter on an empty field submits the default (see submit()).
@@ -110,10 +122,8 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
 
   return (
     <Box flexDirection="column">
-      <Text color="yellow">Setup ({idx + 1}/{fields.length})</Text>
-      <Text dimColor>
-        Saved to offline-processing/.cli-cache + backend/.env — edit those later, or
-        delete them to run setup again.
+      <Text color="yellow">
+        Setup · step {idx + 1} of {fields.length}
       </Text>
       {field.options ? (
         <Box flexDirection="column">
@@ -147,7 +157,10 @@ export function Setup({ onComplete }: { onComplete: () => void }) {
         </Box>
       )}
       {hintText ? <Text dimColor>  {hintText}</Text> : null}
-      {idx > 0 ? <Text dimColor>  Esc: back</Text> : null}
+      {idx + 1 === fields.length ? (
+        <Text dimColor>  You can re-run setup anytime.</Text>
+      ) : null}
+      <Text dimColor>  Esc to {idx > 0 ? 'go back' : 'cancel'}</Text>
       {checking ? <Text color="cyan">  checking…</Text> : null}
       {warning ? <Text color="yellow">  ⚠ {warning}</Text> : null}
       {error ? <Text color="red">  ✖ {error}</Text> : null}

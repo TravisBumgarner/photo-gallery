@@ -13,7 +13,11 @@ const SUMMARY_PREFIX = '@@PG_SUMMARY@@';
 
 /** Runs a list of steps sequentially, showing a live checklist. Each step shows
  * a live status while running and a one-line summary once done (both emitted by
- * the task via progress.ts). Stops on the first failure. */
+ * the task via progress.ts). Stops on the first failure.
+ *
+ * No Esc/back here on purpose: the steps spawn subprocesses (ingest, detection,
+ * publish) that shouldn't be interrupted mid-flight. A failure stops the run and
+ * surfaces its output to the scrollback on its own. */
 export function Runner({
   steps,
   onDone,

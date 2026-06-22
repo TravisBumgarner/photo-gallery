@@ -3,35 +3,18 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   renameSync,
   unlinkSync,
 } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { expandHome } from './configFiles.js';
+import { expandHome, STAGING_DIR } from './configFiles.js';
 
 // Move every image OUT of an import-from folder (argv[2]) and INTO the staging
-// library (SOURCE_DIR), preserving nested structure. The wizard collects the
+// inbox (STAGING_DIR), preserving nested structure. The wizard collects the
 // import folder, so this runs non-interactively. Lightroom = export with the
 // preset, then point the import folder here.
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
 const ARCHIVE_DIR_NAME = '_already_processed';
-
-function readCliCache(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(CLI_CACHE, 'utf8').split('\n')) {
-      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m) out[m[1]] = m[2];
-    }
-  } catch {
-    // no config yet
-  }
-  return out;
-}
 
 function listDir(dir: string) {
   try {
@@ -75,11 +58,7 @@ function main() {
   const src = expandHome((process.argv[2] ?? '').trim()).replace(/\/+$/, '');
   if (!src || !existsSync(src)) die(`Import folder doesn't exist: '${src}'`);
 
-  const dest = expandHome((readCliCache().SOURCE_DIR ?? '').trim()).replace(
-    /\/+$/,
-    '',
-  );
-  if (!dest) die('No staging folder set (SOURCE_DIR missing from .cli-cache).');
+  const dest = STAGING_DIR;
   mkdirSync(dest, { recursive: true });
 
   if (path.resolve(src) === path.resolve(dest)) {

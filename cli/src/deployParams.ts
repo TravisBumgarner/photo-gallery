@@ -101,6 +101,9 @@ export interface DeployParam {
   label: string;
   default?: string;
   hint?: string;
+  /** Clean up the entered value before validation + save (e.g. add a missing
+   * https:// scheme), so the user doesn't get bounced for a fixable typo. */
+  normalize?: (value: string) => string;
   /** Render a pick-list instead of a text input (computed at render time, e.g.
    * the SSH keys found in ~/.ssh). */
   options?: () => { label: string; value: string }[];
@@ -118,8 +121,8 @@ export const DEPLOY_PARAMS: Record<string, DeployParam[]> = {
   nearlyfreespeech: [
     {
       key: 'DEPLOY_SSH_HOST',
-      label: 'SSH host (member_site@host, or a ~/.ssh/config alias)',
-      hint: 'e.g. youruser_yoursite@ssh.nyc1.nearlyfreespeech.net, or an ssh-config Host alias. (A bare hostname uses your laptop username and will fail — you’ll pick a key next.)',
+      label: 'Server address',
+      hint: 'Example: youruser_yoursite@ssh.nyc1.nearlyfreespeech.net',
       validate: (v) =>
         !v.trim()
           ? 'Required.'
@@ -132,7 +135,7 @@ export const DEPLOY_PARAMS: Record<string, DeployParam[]> = {
       label: 'SSH key',
       default: '',
       options: listSshKeys,
-      hint: 'Which private key authenticates to the host. Picking it tests the connection now. “Default” uses your agent / ssh-config identity.',
+      hint: 'Which key connects to the server — picking it tests the connection.',
       // Live connection test — needs both host and key, so it lives here (the
       // host field only format-checks). Empty key = default identities.
       validate: async (key, v) => {
@@ -146,26 +149,35 @@ export const DEPLOY_PARAMS: Record<string, DeployParam[]> = {
       key: 'DEPLOY_REMOTE_DIR',
       label: 'Remote directory',
       default: '/home/protected',
-      hint: 'Where the app + data live on the host. /home/protected is private (not web-served).',
+      hint: 'Where files live on the server.',
       validate: (v) =>
         v.trim().startsWith('/') ? null : 'Absolute path required (starts with /).',
     },
     {
       key: 'DEPLOY_SITE_URL',
-      label: 'Public site URL',
+      label: 'Gallery web address',
       default: '',
-      hint: 'Your gallery’s public URL (https://your-site.nfshost.com) — the login cookie’s allowed origin.',
+      hint: 'Where people will visit it — https:// is added if you leave it off.',
+      // Accept a bare hostname (photo-gallery.nfshost.com) and add the scheme.
+      normalize: (v) => {
+        const t = v.trim();
+        if (!t) return t;
+        return /^https?:\/\//i.test(t) ? t : `https://${t.replace(/^\/+/, '')}`;
+      },
       validate: (v) =>
-        v.trim().startsWith('http')
-          ? null
-          : 'Required — e.g. https://your-site.nfshost.com',
+        v.trim() ? null : 'Required — e.g. photo-gallery.nfshost.com',
     },
   ],
 };
 
-/** Absolute path to a target's runnable deploy script. */
+/** Absolute path to a target's runnable app-deploy script. */
 export function deployScriptPath(target: string): string {
   return path.join(ROOT, 'templates', target, 'deploy.sh');
+}
+
+/** Absolute path to a target's data-publish script (photos + DB). */
+export function pushScriptPath(target: string): string {
+  return path.join(ROOT, 'templates', target, 'push.sh');
 }
 
 type Store = Record<string, Record<string, string>>;

@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# Deploy to NearlyFreeSpeech.NET — "prod is a clone of local".
+# Deploy the APP to NearlyFreeSpeech.NET (code only — not the photos/DB).
 #
-# Builds the web UI + backend locally, rsyncs the compiled app and the published
-# gallery output (images, thumbnails, DB) up to the host, installs production
-# deps remotely, writes the host .env + run.sh, and loads the read-only DB.
+# Builds the web UI + backend locally, rsyncs the compiled app up to the host,
+# installs production deps remotely, and writes the host .env + run.sh. The
+# photos + database are pushed separately by push.sh ("Publish photos"), which
+# also loads the read-only serving DB. Run this rarely — only when the app
+# itself changes; run push.sh after every Process.
 #
 # How it serves on NFSN (two one-time panel settings — see the summary this
 # prints at the end):
@@ -30,7 +32,6 @@ cd "$ROOT"
 REMOTE="${DEPLOY_SSH_HOST:?Set DEPLOY_SSH_HOST (e.g. user_site@ssh.phx.nearlyfreespeech.net)}"
 REMOTE_DIR="${DEPLOY_REMOTE_DIR:-/home/protected}"
 SITE_URL="${DEPLOY_SITE_URL:-}"
-OUT_DIR="$ROOT/data/out"
 
 # Optional explicit identity (a non-default key). Expand a leading ~ since it
 # arrives as a literal in the env. Threaded into both ssh and rsync.
@@ -39,12 +40,6 @@ SSH_KEY="${SSH_KEY/#\~/$HOME}"
 KEYOPT=""
 [ -n "$SSH_KEY" ] && KEYOPT="-i $SSH_KEY"
 RSH="ssh $KEYOPT -o ConnectTimeout=15"
-
-# Refuse to deploy nothing — the published gallery must exist locally first.
-if [ ! -f "$OUT_DIR/db/latest" ]; then
-  echo "✖ No published gallery in $OUT_DIR — run the pipeline (publish) first."
-  exit 1
-fi
 
 # Reuse the local serving secrets so prod matches local exactly.
 LOCAL_ENV="$ROOT/backend/.env"
@@ -145,9 +140,6 @@ if [ -d backend/drizzle ]; then
   rsync -azPh -e "$RSH" --delete --timeout=300 backend/drizzle/ "$REMOTE:$REMOTE_DIR/drizzle/"
 fi
 
-echo "🖼️  Syncing published gallery (images, thumbnails, DB)…"
-rsync -azPh -e "$RSH" --delete --timeout=300 "$OUT_DIR/" "$REMOTE:$REMOTE_DIR/data/out/"
-
 echo "📦 Installing production dependencies on the host…"
 ssh $KEYOPT "$REMOTE" "
   set -euo pipefail
@@ -165,10 +157,9 @@ ssh $KEYOPT "$REMOTE" "mkdir -p '$REMOTE_DIR/node_modules/shared/dist'"
 rsync -azPh -e "$RSH" --delete --timeout=300 shared/dist/ "$REMOTE:$REMOTE_DIR/node_modules/shared/dist/"
 rsync -azPh -e "$RSH" --timeout=300 /tmp/pg-deploy-shared-package.json "$REMOTE:$REMOTE_DIR/node_modules/shared/package.json"
 
-echo "🗄️  Loading the read-only DB on the host…"
-ssh $KEYOPT "$REMOTE" "cd '$REMOTE_DIR' && node dist/boot.js"
-
-echo "✅ Deployed to $REMOTE:$REMOTE_DIR"
+echo "✅ App deployed to $REMOTE:$REMOTE_DIR"
+echo "   Next: Publish photos — pushes your gallery + loads the database. The"
+echo "   site has nothing to serve until you do (this deploy is code only)."
 echo
 echo "════ One-time NFSN panel setup (only needed the first time) ════════"
 echo

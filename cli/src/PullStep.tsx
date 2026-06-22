@@ -78,12 +78,17 @@ export function PullStep({ onDone }: { onDone: () => void }) {
   if (stage === 'params') {
     return (
       <Box flexDirection="column">
-        <Text>Pull the published gallery down from your host (host/key reused from deploy):</Text>
+        <Text bold>Download the gallery from your server</Text>
+        <Text dimColor>
+          Copies the database + photos down to this machine (e.g. onto a new or
+          wiped computer). Uses your saved deploy connection.
+        </Text>
         <ParamForm
           fields={PULL_PARAMS}
           initial={loadDeployParams('nearlyfreespeech')}
           onPersist={(v) => saveDeployParams('nearlyfreespeech', v)}
           onSubmit={run}
+          onCancel={onDone}
         />
       </Box>
     );
@@ -92,7 +97,7 @@ export function PullStep({ onDone }: { onDone: () => void }) {
   if (stage === 'running') {
     return (
       <Box flexDirection="column">
-        <Text color="cyan">Pulling data/out from the host…</Text>
+        <Text color="cyan">Pulling from your host…</Text>
         {tail.current.slice(-8).map((l, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: rolling tail snapshot
           <Text key={i} dimColor>
@@ -109,11 +114,10 @@ export function PullStep({ onDone }: { onDone: () => void }) {
     return (
       <Box flexDirection="column">
         <Text color="green" bold>
-          ✓ Pulled — local data/out now matches the host.
+          ✓ Pulled — your local copy now matches the host.
         </Text>
         <Text dimColor>
-          Serve it here (Put my gallery online → This computer), or run the
-          pipeline — it restores the pulled database and only processes new photos.
+          You can now serve it here, or add new photos and reprocess.
         </Text>
         {endActions}
       </Box>

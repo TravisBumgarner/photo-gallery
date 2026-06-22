@@ -3,35 +3,18 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   renameSync,
   unlinkSync,
 } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { expandHome } from './configFiles.js';
+import { STAGING_DIR } from './configFiles.js';
 
-// After ingest, move the originals out of the staging library into its
+// After ingest, move the originals out of the staging inbox into its
 // _already_processed/ archive (so staging stays an inbox and they're not
 // re-scanned). Downstream tag/faces/dogs read the resized copies in data/out,
 // not staging, so this is safe to run right after ingest.
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
 const ARCHIVE_DIR_NAME = '_already_processed';
-
-function readCliCache(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(CLI_CACHE, 'utf8').split('\n')) {
-      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m) out[m[1]] = m[2];
-    }
-  } catch {
-    // no config yet
-  }
-  return out;
-}
 
 function listDir(dir: string) {
   try {
@@ -67,11 +50,8 @@ function moveFile(from: string, to: string): void {
 }
 
 function main() {
-  const staging = expandHome((readCliCache().SOURCE_DIR ?? '').trim()).replace(
-    /\/+$/,
-    '',
-  );
-  if (!staging || !existsSync(staging)) {
+  const staging = STAGING_DIR;
+  if (!existsSync(staging)) {
     console.log('No staging folder — nothing to archive.');
     return;
   }

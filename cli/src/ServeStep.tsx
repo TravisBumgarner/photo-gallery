@@ -142,6 +142,9 @@ export function ServeStep({ onDone }: { onDone: () => void }) {
     };
   }, []);
 
+  // No Esc here: the gallery server is a live child process. Enter is the
+  // single, explicit "stop it and go back" — no ambiguous Esc that might leave
+  // the server orphaned.
   useInput((_input, key) => {
     if (key.return) {
       killTree(server.current);
@@ -154,7 +157,7 @@ export function ServeStep({ onDone }: { onDone: () => void }) {
       {phase === 'building' && (
         <>
           <Text color="cyan">
-            Building the web UI… (first time installs the web tools — a few minutes)
+            Building the gallery (first run takes a few minutes)…
           </Text>
           {detail ? <Text dimColor>  {detail}</Text> : null}
         </>

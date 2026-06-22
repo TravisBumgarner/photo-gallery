@@ -1,7 +1,15 @@
 # Deploy templates
 
 One folder per hosting target. `localhost/` and `nearlyfreespeech/` each have a
-`deploy.md` (and NearlyFreeSpeech a `deploy.sh`) for getting the gallery online.
+`deploy.md`. NearlyFreeSpeech also has runnable scripts, **split by what they
+move** (the CLI runs them for you):
+
+- `deploy.sh` — the **app** (code): build + push backend/frontend, deps, `.env`.
+  Run rarely, only when the app changes. ("Update the app")
+- `push.sh` — the **data** (photos + DB): rsync `data/out` up and load the
+  serving DB. Run after every Process. ("Publish photos")
+- `pull.sh` — the inverse of `push.sh`: bring the data back **down** (recover on
+  a new/wiped machine).
 
 ## How the gallery deploys
 
@@ -22,9 +30,10 @@ Build + publish on your machine first:
 ./ingest-and-sync
 ```
 
-This processes your photos and publishes the slim DB + sidecars + media to
-`STORAGE_URL` (`file://…/data/out`). You then rsync that output to the host (the
-NearlyFreeSpeech deploy does this for you).
+This processes your photos and publishes the slim DB + media (images,
+thumbnails) to `STORAGE_URL` (`file://…/data/out`). Deploying the **app** once
+sets up the host; **Publish photos** then pushes that output up (and re-loads the
+serving DB) after each Process.
 
 ## Backend env
 

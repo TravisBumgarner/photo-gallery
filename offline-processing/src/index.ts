@@ -1,10 +1,9 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { createDb } from 'shared/db';
 import { photos } from 'shared/db/schema';
-import { loadConfig } from '@/config.js';
+import { loadConfig, STAGING_DIR } from '@/config.js';
 import { endExiftool } from '@/exif.js';
 import type { PhotoRecord } from '@/process.js';
 import { processImage } from '@/process.js';
@@ -18,10 +17,7 @@ const PARALLEL_BATCH_SIZE = settings.ingest.batchSize;
 async function main() {
   const config = loadConfig();
 
-  const rawSourceDir = config.SOURCE_DIR;
-  const sourceDir = rawSourceDir.startsWith('~')
-    ? path.join(os.homedir(), rawSourceDir.slice(1))
-    : rawSourceDir;
+  const sourceDir = STAGING_DIR;
   const destinationDir = config.DESTINATION_DIRECTORY;
 
   if (!config.DATABASE_URL) {
@@ -50,9 +46,11 @@ async function main() {
     process.exit(0);
   }
 
-  // Create output directories
+  // Create output + staging directories (staging may not exist yet on a fresh
+  // checkout — manual ingestion drops photos into it).
   await fs.mkdir(outputDir, { recursive: true });
   await fs.mkdir(thumbnailDir, { recursive: true });
+  await fs.mkdir(sourceDir, { recursive: true });
 
   // Scan for images
   console.log('\nScanning for images...');
@@ -65,7 +63,7 @@ async function main() {
   const records: PhotoRecord[] = [];
 
   if (imagePaths.length === 0) {
-    console.log('No images found in SOURCE_DIR.');
+    console.log(`No images found in staging (${sourceDir}).`);
   } else if (dryRun) {
     console.log('Files that would be processed:\n');
     for (const imagePath of imagePaths) {

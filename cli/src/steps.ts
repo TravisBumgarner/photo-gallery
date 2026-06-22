@@ -57,13 +57,14 @@ function visionServerStep(): Step {
   };
 }
 
-/** The three ways to run the pipeline:
- *   add    — import a folder into staging, ingest the new photos, process them.
- *   repair — no import; just (re)run compute on the existing library (resume).
- *   create — wipe, then re-ingest the whole library (incl. the archive) + recompute. */
-export type RunMode = 'add' | 'repair' | 'create';
+/** The two ways to run the pipeline:
+ *   process — ingest whatever's new in staging, then (re)run compute. Resumable:
+ *             re-running picks up new photos and finishes anything unfinished.
+ *   create  — wipe, then re-ingest the whole library (incl. the archive) + recompute. */
+export type RunMode = 'process' | 'create';
 
-/** Move photos from an import-from folder into the staging library (add mode). */
+/** Move photos from an import-from folder into the staging inbox (the Add step,
+ * run on its own — separate from processing). */
 export function importStep(importDir: string): Step {
   return {
     id: 'import-photos',
@@ -116,15 +117,17 @@ export function processSteps(mode: RunMode): Step[] {
     steps.push(task('restore', 'Restore database from backup'));
   }
   steps.push(task('migrate', 'Prepare database')); // idempotent
-  steps.push(task('prefetch-embedder', 'Fetch text-embedding model'));
+  steps.push(task('prefetch-embedder', 'Preparing search'));
   if (mode === 'create') steps.push(task('clear-local-db', 'Wipe local data'));
-  if (mode !== 'repair') steps.push(ingestStep(mode));
-  steps.push(task('tag', 'Text-tag + embed'));
+  // Always ingest: a no-op when staging is empty (dedup by content hash), so it
+  // safely picks up new photos and resumes after an interruption.
+  steps.push(ingestStep(mode));
+  steps.push(task('tag', 'Tagging photos'));
   steps.push(task('detect-faces', 'Detect faces'));
   steps.push(task('cluster-faces', 'Cluster faces'));
   steps.push(task('detect-dogs', 'Detect dogs'));
   steps.push(task('cluster-dogs', 'Cluster dogs'));
-  steps.push(task('reapply-labels', 'Reattach saved labels'));
+  steps.push(task('reapply-labels', 'Restoring your labels'));
   return steps;
 }
 
@@ -135,5 +138,5 @@ export function storageCheckStep(): Step {
 
 /** Publish runs after labeling so newly-named clusters are included. */
 export function publishStep(): Step {
-  return task('publish', 'Publish read-only release');
+  return task('publish', 'Publishing');
 }

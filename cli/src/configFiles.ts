@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -66,20 +66,6 @@ function listDir(dir: string) {
   }
 }
 
-/** True if `dir` contains at least one image, searching a few levels deep. */
-function hasPhotos(dir: string, depth = 4): boolean {
-  const entries = listDir(dir);
-  for (const e of entries) if (e.isFile() && IMAGE_RE.test(e.name)) return true;
-  if (depth > 0) {
-    for (const e of entries) {
-      if (e.isDirectory() && hasPhotos(path.join(dir, e.name), depth - 1)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 /** The Lightroom export preset the user imports, then exports with. */
 export const LIGHTROOM_PRESET = path.join(
@@ -93,19 +79,10 @@ export const TEMPLATES_DIR = path.join(ROOT, 'templates');
 export interface DeployTarget {
   value: string;
   label: string;
-  blurb: string;
 }
 export const DEPLOY_TARGETS: DeployTarget[] = [
-  {
-    value: 'localhost',
-    label: 'This computer',
-    blurb: 'Run everything locally — no remote host.',
-  },
-  {
-    value: 'nearlyfreespeech',
-    label: 'NearlyFreeSpeech',
-    blurb: 'Cheap persistent host: rsync up, run the backend as a daemon.',
-  },
+  { value: 'localhost', label: 'This computer' },
+  { value: 'nearlyfreespeech', label: 'NearlyFreeSpeech' },
 ];
 
 /** Absolute path to a target's deploy guide. */
@@ -115,6 +92,10 @@ export function deployGuidePath(target: string): string {
 
 const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 const BACKEND_ENV = path.join(ROOT, 'backend', '.env');
+/** Fixed staging inbox — photos awaiting ingestion live here, then move to the
+ * _already_processed archive after ingest. Not a user setting; it's always
+ * <repo root>/pending-ingestion. Mirrors offline-processing/src/config.ts. */
+export const STAGING_DIR = path.join(ROOT, 'pending-ingestion');
 // Native data layout (no container paths). Ingest writes here; publish reads it.
 const DATA_DIR = path.join(ROOT, 'data');
 const DEST_DIR = path.join(DATA_DIR, 'out');
@@ -152,7 +133,7 @@ export function nukeEverything(): string[] {
 // lack these (they're written by the current writeConfigFiles) — checking only
 // for file existence let such a cache crash deep in the run (loadConfig's zod
 // parse) instead of failing the up-front setup gate.
-const REQUIRED_CLI_KEYS = ['SOURCE_DIR', 'DESTINATION_DIRECTORY', 'DATABASE_URL'];
+const REQUIRED_CLI_KEYS = ['DESTINATION_DIRECTORY', 'DATABASE_URL'];
 
 /** Setup is needed when a config file is missing OR is an older/partial format
  * lacking a required key — either way, run the (pre-filled) setup wizard. */
@@ -172,6 +153,28 @@ function countImages(dir: string, depth = 4): number {
     }
   }
   return n;
+}
+
+/** Name of the post-ingest archive subfolder (mirrors scan.ts). */
+const ARCHIVE_DIR_NAME = '_already_processed';
+
+/** Count photos waiting in the staging inbox, excluding the processed archive —
+ * what an ingest run would actually pick up. Used to stop a manual run that
+ * would silently do nothing. */
+export function countStagingPhotos(depth = 6): number {
+  const walk = (dir: string, d: number): number => {
+    let n = 0;
+    for (const e of listDir(dir)) {
+      if (e.isDirectory()) {
+        if (e.name === ARCHIVE_DIR_NAME || d <= 0) continue;
+        n += walk(path.join(dir, e.name), d - 1);
+      } else if (e.isFile() && IMAGE_RE.test(e.name)) {
+        n++;
+      }
+    }
+    return n;
+  };
+  return walk(STAGING_DIR, depth);
 }
 
 /** Count exported viewing copies (*_exported_for_viewing_locally.*) anywhere
@@ -269,38 +272,15 @@ export interface Field {
 export const FIELDS: Field[] = [
   {
     key: 'DEPLOY_TARGET',
-    label: 'Where will you host the gallery?',
+    label: 'Where will the gallery be hosted?',
     default: 'localhost',
     options: DEPLOY_TARGETS.map((t) => ({ label: t.label, value: t.value })),
-    hint: 'This computer, or NearlyFreeSpeech (rsync up + run as a daemon).',
-  },
-  {
-    key: 'SOURCE_DIR',
-    label: 'Staging library folder (absolute path)',
-    path: true,
-    hint: `Your permanent photo library. New photos get moved in here, processed, then tucked into an _already_processed archive inside it. Reads ${SUPPORTED_IMAGE_FORMATS} — not HEIC or RAW (convert those first). A fresh empty folder is fine.`,
-    validate: (raw) => {
-      const p = expandHome(raw.trim());
-      if (!p) return 'Required.';
-      if (existsSync(p) && !statSync(p).isDirectory()) return `Not a folder: ${p}`;
-      return null;
-    },
-    // "Missing folder" / "no images" are advisory, not blocking: with Lightroom
-    // this folder is empty (or not created yet) until exports move into it.
-    advise: (raw) => {
-      const p = expandHome(raw.trim());
-      if (!existsSync(p))
-        return 'Folder doesn’t exist yet — fine for Lightroom (created when exports move in); double-check it for a prepared folder. Enter again to keep it.';
-      if (!hasPhotos(p))
-        return 'No images here yet — fine for Lightroom (exports land here later); double-check it for a manual folder. Enter again to keep it.';
-      return null;
-    },
   },
   {
     key: 'MODEL_SERVER_HOST',
-    label: 'Vision-LLM host (for tagging)',
+    label: 'Where’s the tagging model running?',
     default: 'http://localhost:11434',
-    hint: 'Local: Ollama is started + the model pulled for you. Remote (http://IP:11434): health-checked here until it responds.',
+    hint: 'This computer — I’ll start it for you. Another machine — run `./model-server` there first, then enter the address it prints (see offline-processing/README.md → “Run the models on another machine”).',
     validate: async (host) => {
       if (!host) return 'Required.';
       if (/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host)) return null; // local: started for you
@@ -317,7 +297,7 @@ export const FIELDS: Field[] = [
   },
   {
     key: 'MODEL_SERVER_MODEL',
-    label: 'Vision-LLM model',
+    label: 'Tagging model',
     default: '',
     hint: async (v) => {
       const host = (v.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
@@ -416,13 +396,18 @@ export const FIELDS: Field[] = [
   },
   {
     key: 'MODEL_SERVER_API_KEY',
-    label: 'Vision-LLM API key',
+    label: 'Tagging model API key',
     secret: true,
     default: '',
     // Only a remote/authenticated host needs a key; local Ollama doesn't.
     when: (v) => !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(v.MODEL_SERVER_HOST ?? 'localhost'),
   },
-  { key: 'APP_PASSWORD', label: 'Gallery password (serving login)', secret: true },
+  {
+    key: 'APP_PASSWORD',
+    label: 'Gallery password',
+    secret: true,
+    hint: 'Used to log into your gallery.',
+  },
 ];
 
 /** Field defs that apply given the values collected so far. */
@@ -437,7 +422,6 @@ export function writeConfigFiles(v: Record<string, string>): {
 } {
   const cliCache = `${[
     `DEPLOY_TARGET=${v.DEPLOY_TARGET || 'localhost'}`,
-    `SOURCE_DIR=${v.SOURCE_DIR}`,
     `DESTINATION_DIRECTORY=${DEST_DIR}`,
     `DATABASE_URL=${INGEST_DB}`,
     VISION_SERVER_HOST_LINE,
@@ -465,5 +449,8 @@ export function writeConfigFiles(v: Record<string, string>): {
 
   writeFileSync(CLI_CACHE, cliCache);
   writeFileSync(BACKEND_ENV, backendEnv);
+  // The staging inbox is a fixed location; create it so manual ingestion has a
+  // folder to drop photos into right after setup.
+  mkdirSync(STAGING_DIR, { recursive: true });
   return { cliCache: CLI_CACHE, backendEnv: BACKEND_ENV };
 }

@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
 import React from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
@@ -6,11 +7,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   blastRadius,
   completePath,
+  countStagingPhotos,
   DEPLOY_TARGETS,
-  deployGuidePath,
   expandHome,
   loadExistingValues,
   needsSetup,
+  STAGING_DIR,
+  SUPPORTED_IMAGE_FORMATS,
 } from './configFiles.js';
 import { ConfigStep } from './ConfigStep.js';
 import { DeployStep } from './DeployStep.js';
@@ -34,10 +37,13 @@ import { TextField } from './TextField.js';
 type Screen =
   | 'setup'
   | 'start'
-  | 'view'
+  | 'settings'
   | 'deploy'
-  | 'pickMode'
+  | 'addPhotos'
   | 'import'
+  | 'manual'
+  | 'run-import'
+  | 'process-confirm'
   | 'create-confirm'
   | 'run-pre'
   | 'label'
@@ -49,8 +55,27 @@ type Screen =
   | 'config'
   | 'firstRun';
 
-/** Mask a secret for display — present or not, never the value. */
-const masked = (v?: string) => (v ? '•••• (set)' : '(not set)');
+/** The single remote deploy target (the non-localhost one). */
+const REMOTE_TARGET =
+  DEPLOY_TARGETS.find((t) => t.value !== 'localhost')?.value ?? 'nearlyfreespeech';
+
+/** Open a folder in the OS file manager (best-effort; the path is shown anyway). */
+function openInFileManager(p: string): void {
+  const [cmd, args] =
+    process.platform === 'darwin'
+      ? ['open', [p]]
+      : process.platform === 'win32'
+        ? ['explorer', [p]]
+        : ['xdg-open', [p]];
+  try {
+    spawn(cmd as string, args as string[], {
+      stdio: 'ignore',
+      detached: true,
+    }).unref();
+  } catch {
+    // no opener — the path is printed on screen
+  }
+}
 
 export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const { exit } = useApp();
@@ -62,41 +87,66 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   );
   const cfg = useMemo(loadExistingValues, []);
 
-  const [runMode, setRunMode] = useState<RunMode>('add');
+  const [runMode, setRunMode] = useState<RunMode>('process');
   const [importDir, setImportDir] = useState<string>(prefs.importDir);
   const [importDraft, setImportDraft] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [manualError, setManualError] = useState<string | null>(null);
+  // Where setup/config return when launched from more than one place (first-run
+  // vs the Settings screen).
+  const [returnTo, setReturnTo] = useState<Screen>('start');
   const [blast, setBlast] = useState<{ photos: number; hasDb: boolean } | null>(
     null,
   );
   const [deployTarget, setDeployTarget] = useState<string>(prefs.deployTarget);
+  // Which half of a remote deploy DeployStep runs: 'app' (code) or 'data' (photos+DB).
+  const [deployAction, setDeployAction] = useState<'app' | 'data'>('data');
 
   // Persist selections once we commit to running.
   useEffect(() => {
-    if (screen === 'run-pre') savePrefs({ importDir, deployTarget });
+    if (screen === 'run-pre' || screen === 'run-import') {
+      savePrefs({ importDir, deployTarget });
+    }
   }, [screen, importDir, deployTarget]);
 
-  // Esc goes back on the navigation screens (run/setup/label/serve manage their own).
+  // Esc = go back one level. Delegated screens (setup/config/deploy-run/pull
+  // manage their own Esc; run/label/serve are live processes that intentionally
+  // don't take Esc — see their components). The top-level menus quit.
   useInput((_input, key) => {
     if (!key.escape) return;
-    if (screen === 'pickMode' || screen === 'view' || screen === 'deploy') {
+    if (
+      screen === 'addPhotos' ||
+      screen === 'process-confirm' ||
+      screen === 'settings' ||
+      screen === 'deploy'
+    ) {
       setScreen('start');
-    } else if (screen === 'import' || screen === 'create-confirm') {
-      setScreen('pickMode');
+    } else if (screen === 'import' || screen === 'manual') {
+      setScreen('addPhotos');
+    } else if (screen === 'create-confirm') {
+      setScreen('settings');
+    } else if (
+      screen === 'start' ||
+      screen === 'firstRun' ||
+      screen === 'done'
+    ) {
+      exit();
     }
   });
 
-  // pre = import + compute up to clustering; then the labeling UI; then post.
-  const { pre, post } = useMemo(() => {
-    const pre: Step[] = [storageCheckStep()];
-    if (runMode === 'add') pre.push(importStep(importDir));
-    pre.push(...processSteps(runMode));
-    const post: Step[] = [publishStep()];
-    if (runMode !== 'repair') post.push(archiveStep());
-    return { pre, post };
-  }, [runMode, importDir]);
+  // The Process pipeline: ingest + compute, then the labeling UI, then publish.
+  const { pre, post } = useMemo(
+    () => ({
+      pre: [storageCheckStep(), ...processSteps(runMode)],
+      post: [publishStep(), archiveStep()],
+    }),
+    [runMode],
+  );
+  // The Add step runs on its own — just move photos into staging.
+  const importSteps = useMemo(() => [importStep(importDir)], [importDir]);
 
-  const startAdd = (raw: string) => {
+  // Add → import: validate the folder, then run the move (→ "added" prompt).
+  const startImport = (raw: string) => {
     const dir = expandHome((raw.trim() || importDir).trim());
     if (!dir || !existsSync(dir)) {
       setImportError('That folder doesn’t exist — type the folder your new photos are in.');
@@ -104,9 +154,24 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
     }
     setImportError(null);
     setImportDir(dir);
-    setRunMode('add');
-    setScreen('run-pre');
+    setScreen('run-import');
   };
+
+  // Add → manual: the photos are already in staging. Refuse if it's empty.
+  const confirmManual = () => {
+    mkdirSync(STAGING_DIR, { recursive: true });
+    if (countStagingPhotos() === 0) {
+      setManualError(
+        'No photos in the staging folder yet — add some, then try again.',
+      );
+      return;
+    }
+    setManualError(null);
+    setScreen('process-confirm');
+  };
+
+  // Process: confirm first (it's the long step), then run the pipeline.
+  const startProcess = () => setScreen('process-confirm');
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -116,108 +181,187 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
 
       {screen === 'firstRun' && (
         <Box flexDirection="column">
-          <Text>No settings found on this machine.</Text>
+          <Text bold>Let's get set up.</Text>
           <SelectInput
             items={[
               { label: 'Set up from scratch', value: 'setup' },
-              { label: 'Restore from a backup zip', value: 'config' },
+              { label: 'Restore from a backup', value: 'config' },
+              { label: 'Quit', value: 'quit' },
             ]}
-            onSelect={(item) => setScreen(item.value as Screen)}
+            onSelect={(item) => {
+              if (item.value === 'quit') {
+                exit();
+                return;
+              }
+              // First run lands on the home menu once done, either way.
+              setReturnTo('start');
+              setScreen(item.value as Screen);
+            }}
           />
         </Box>
       )}
 
-      {screen === 'setup' && <Setup onComplete={() => setScreen('pickMode')} />}
+      {screen === 'setup' && (
+        <Setup
+          onComplete={() => setScreen(returnTo)}
+          // Cancel returns to where setup was opened from — unless there's still
+          // no usable config, in which case back to the first-run choice.
+          onCancel={() => setScreen(needsSetup() ? 'firstRun' : returnTo)}
+        />
+      )}
 
       {screen === 'start' && (
         <Box flexDirection="column">
-          <Text dimColor>Staging library: {cfg.SOURCE_DIR || '(not set)'}</Text>
+          <Text>What do you want to do?</Text>
           <SelectInput
             items={[
-              { label: 'Continue with these settings', value: 'continue' },
-              { label: 'View settings', value: 'view' },
-              {
-                label: 'Edit settings (staging folder, host, model, password)',
-                value: 'edit',
-              },
-              { label: 'Put my gallery online (deploy / serve)', value: 'deploy' },
-              { label: 'Pull published data down from my host', value: 'pull' },
-              { label: 'Back up / restore my settings', value: 'config' },
+              { label: 'Add photos', value: 'add' },
+              { label: 'Process photos', value: 'process' },
+              { label: 'Serve / deploy the gallery', value: 'deploy' },
+              { label: 'Settings', value: 'settings' },
+              { label: 'Quit', value: 'quit' },
             ]}
             onSelect={(item) => {
-              if (item.value === 'view') setScreen('view');
-              else if (item.value === 'edit') setScreen('setup');
+              if (item.value === 'add') setScreen('addPhotos');
+              else if (item.value === 'process') startProcess();
               else if (item.value === 'deploy') setScreen('deploy');
-              else if (item.value === 'pull') setScreen('pull');
-              else if (item.value === 'config') setScreen('config');
-              else setScreen('pickMode');
+              else if (item.value === 'settings') setScreen('settings');
+              else exit();
             }}
           />
         </Box>
       )}
 
-      {screen === 'pickMode' && (
+      {screen === 'addPhotos' && (
         <Box flexDirection="column">
-          <Text>What would you like to do?</Text>
+          <Text bold>Add photos</Text>
+          <Text dimColor>Get photos into the staging folder. Process them next.</Text>
           <SelectInput
             items={[
-              { label: 'Add new photos', value: 'add' },
-              { label: 'Finish / repair processing (no new photos)', value: 'repair' },
-              { label: 'Start over (re-process my whole library)', value: 'create' },
+              { label: 'Import a Lightroom export', value: 'import' },
+              { label: 'Add photos manually', value: 'manual' },
+              { label: '← Back', value: 'back' },
             ]}
             onSelect={(item) => {
-              if (item.value === 'add') {
+              if (item.value === 'import') {
                 setImportDraft('');
                 setImportError(null);
                 setScreen('import');
-              } else if (item.value === 'repair') {
-                setRunMode('repair');
-                setScreen('run-pre');
+              } else if (item.value === 'manual') {
+                setManualError(null);
+                setScreen('manual');
               } else {
-                setBlast(blastRadius());
-                setScreen('create-confirm');
+                setScreen('start');
               }
             }}
           />
-          <Text dimColor>  Esc: back</Text>
+        </Box>
+      )}
+
+      {screen === 'manual' && (
+        <Box flexDirection="column">
+          <Text bold>Add photos manually</Text>
+          <Text>Put your photos in this folder:</Text>
+          <Text color="cyan">{STAGING_DIR}</Text>
+          <Text dimColor>
+            Nested folders are fine. Reads {SUPPORTED_IMAGE_FORMATS} — not HEIC or
+            RAW (convert those first).
+          </Text>
+          <Text dimColor>
+            {'  '}
+            {countStagingPhotos()} photo(s) in the folder right now.
+          </Text>
+          <SelectInput
+            items={[
+              { label: 'Open the folder', value: 'open' },
+              { label: 'Done — I’ve added my photos', value: 'go' },
+              { label: '← Back', value: 'back' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'open') {
+                mkdirSync(STAGING_DIR, { recursive: true });
+                openInFileManager(STAGING_DIR);
+              } else if (item.value === 'go') {
+                confirmManual();
+              } else {
+                setScreen('addPhotos');
+              }
+            }}
+          />
+          {manualError ? <Text color="red">  ✖ {manualError}</Text> : null}
         </Box>
       )}
 
       {screen === 'import' && (
         <Box flexDirection="column">
-          <Text bold>Add new photos</Text>
+          <Text bold>Import a Lightroom export</Text>
           <Text>
-            Point me at a folder of new photos — I’ll move them into your staging
-            library and process them.
-          </Text>
-          <Text dimColor>
-            Using Lightroom? Export with the “To Mobile Photo Gallery” preset,
-            then enter that export folder here.
+            Export with the “To Mobile Photo Gallery” preset, then enter the
+            export folder:
           </Text>
           <Box>
-            <Text>Import from folder: </Text>
+            <Text>Export folder: </Text>
             <TextField
               value={importDraft}
               onChange={setImportDraft}
               onTab={completePath}
-              onSubmit={startAdd}
+              onSubmit={startImport}
               placeholder={importDir || undefined}
             />
           </Box>
           {importError ? <Text color="red">  ✖ {importError}</Text> : null}
-          <Text dimColor>  Esc: back</Text>
+          <Text dimColor>  Tab completes paths · Esc to go back</Text>
+        </Box>
+      )}
+
+      {screen === 'run-import' && (
+        <Runner steps={importSteps} onDone={() => setScreen('process-confirm')} />
+      )}
+
+      {screen === 'process-confirm' && (
+        <Box flexDirection="column">
+          <Text bold>Process photos</Text>
+          <Text>
+            This ingests new photos, runs tagging + face/dog detection, then
+            publishes the gallery.
+          </Text>
+          <Text dimColor>
+            {countStagingPhotos()} new photo(s) in staging.
+          </Text>
+          <Text color="yellow">
+            ⚠ This can take a while — minutes to hours to days on a large library
+            or without a GPU.
+          </Text>
+          <Text color="yellow">
+            {'  '}Keep your laptop awake and plugged in until it finishes (it
+            won’t run while the machine is asleep). It’s resumable, so you can
+            stop and run it again later.
+          </Text>
+          <SelectInput
+            items={[
+              { label: 'Start processing', value: 'go' },
+              { label: '← Back', value: 'back' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'go') {
+                setRunMode('process');
+                setScreen('run-pre');
+              } else {
+                setScreen('start');
+              }
+            }}
+          />
         </Box>
       )}
 
       {screen === 'create-confirm' && (
         <Box flexDirection="column">
           <Text color="red" bold>
-            ⚠ Start over re-processes your whole library
+            ⚠ Start over reprocesses everything
           </Text>
           <Text>
-            This wipes the database + gallery and re-ingests everything in your
-            staging library (including the _already_processed archive), then
-            re-runs tagging and detection. Your photo files aren’t deleted.
+            This wipes the database and reprocesses every photo from scratch
+            (tagging and detection re-run). Your photo files are kept.
             {blast?.photos
               ? ` ~${blast.photos.toLocaleString()} photos will be reprocessed.`
               : ''}
@@ -225,77 +369,84 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           <SelectInput
             items={[
               { label: 'Yes, start over', value: 'yes' },
-              { label: 'No — go back', value: 'no' },
+              { label: '← No, go back', value: 'no' },
             ]}
             onSelect={(item) => {
               if (item.value === 'yes') {
                 setRunMode('create');
                 setScreen('run-pre');
               } else {
-                setScreen('pickMode');
+                setScreen('settings');
               }
             }}
           />
-          <Text dimColor>  Esc: back</Text>
         </Box>
       )}
 
       {screen === 'deploy' && (
         <Box flexDirection="column">
-          <Text>Where do you want to put your gallery?</Text>
-          <Text dimColor>
-            “This computer” serves it locally. Others deploy your published
-            gallery to that host.
-          </Text>
+          <Text bold>Serve / deploy the gallery</Text>
           <SelectInput
-            initialIndex={Math.max(
-              0,
-              DEPLOY_TARGETS.findIndex((t) => t.value === deployTarget),
-            )}
             items={[
-              ...DEPLOY_TARGETS.map((t) => ({ label: t.label, value: t.value })),
-              { label: '← Back', value: '__back' },
+              { label: 'Serve on this computer', value: 'serve' },
+              { label: 'Publish photos to your site', value: 'publish' },
+              { label: 'Update the app on your site', value: 'app' },
+              { label: '← Back', value: 'back' },
             ]}
             onSelect={(item) => {
-              if (item.value === '__back') {
+              if (item.value === 'serve') {
+                setDeployTarget('localhost');
+                savePrefs({ importDir, deployTarget: 'localhost' });
+                setScreen('serve');
+              } else if (item.value === 'publish' || item.value === 'app') {
+                setDeployTarget(REMOTE_TARGET);
+                savePrefs({ importDir, deployTarget: REMOTE_TARGET });
+                setDeployAction(item.value === 'publish' ? 'data' : 'app');
+                setScreen('deployRun');
+              } else {
                 setScreen('start');
-                return;
               }
-              setDeployTarget(item.value);
-              savePrefs({ importDir, deployTarget: item.value });
-              setScreen(item.value === 'localhost' ? 'serve' : 'deployRun');
             }}
           />
-          <Text dimColor>  Esc: back</Text>
         </Box>
       )}
 
-      {screen === 'view' && (
+      {screen === 'settings' && (
         <Box flexDirection="column">
           <Text bold>Settings</Text>
-          <Text>Hosting: {cfg.DEPLOY_TARGET || 'localhost'}</Text>
-          <Text dimColor>
-            {'  '}Guide: {deployGuidePath(cfg.DEPLOY_TARGET || 'localhost')}
-          </Text>
-          <Text>Staging library: {cfg.SOURCE_DIR || '(not set)'}</Text>
-          <Text>
-            Tagging model: {cfg.MODEL_SERVER_MODEL || 'none'}
-            {cfg.MODEL_SERVER_HOST ? ` @ ${cfg.MODEL_SERVER_HOST}` : ''}
-          </Text>
-          <Text>Gallery password: {masked(cfg.APP_PASSWORD)}</Text>
           <SelectInput
             items={[
-              { label: 'Continue with these settings', value: 'continue' },
-              { label: 'Edit settings', value: 'edit' },
-              { label: 'Back', value: 'back' },
+              { label: 'Edit settings (host, model, password)', value: 'edit' },
+              { label: 'Back up / restore settings', value: 'config' },
+              // Only meaningful with a remote host to pull from.
+              ...((cfg.DEPLOY_TARGET ?? 'localhost') !== 'localhost'
+                ? [
+                    {
+                      label: 'Download the gallery from your server',
+                      value: 'pull',
+                    },
+                  ]
+                : []),
+              { label: 'Start over (wipe & reprocess everything)', value: 'start-over' },
+              { label: '← Back', value: 'back' },
             ]}
             onSelect={(item) => {
-              if (item.value === 'edit') setScreen('setup');
-              else if (item.value === 'back') setScreen('start');
-              else setScreen('pickMode');
+              if (item.value === 'edit') {
+                setReturnTo('settings');
+                setScreen('setup');
+              } else if (item.value === 'config') {
+                setReturnTo('settings');
+                setScreen('config');
+              } else if (item.value === 'pull') {
+                setScreen('pull');
+              } else if (item.value === 'start-over') {
+                setBlast(blastRadius());
+                setScreen('create-confirm');
+              } else {
+                setScreen('start');
+              }
             }}
           />
-          <Text dimColor>  Esc: back</Text>
         </Box>
       )}
 
@@ -333,20 +484,18 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           ) : (
             <Box flexDirection="column">
               <Text>
-                Put it online now — deploy to{' '}
-                <Text bold>{cfg.DEPLOY_TARGET}</Text>?
+                Publish these photos to your site (
+                <Text bold>{cfg.DEPLOY_TARGET}</Text>) now?
               </Text>
               <SelectInput
                 items={[
-                  {
-                    label: `Yes — deploy to ${cfg.DEPLOY_TARGET}`,
-                    value: 'deploy',
-                  },
+                  { label: 'Yes — publish photos', value: 'publish' },
                   { label: 'No — just finish', value: 'finish' },
                 ]}
                 onSelect={(item) => {
-                  if (item.value === 'deploy') {
-                    setDeployTarget(cfg.DEPLOY_TARGET || 'localhost');
+                  if (item.value === 'publish') {
+                    setDeployTarget(REMOTE_TARGET);
+                    setDeployAction('data');
                     setScreen('deployRun');
                   } else {
                     exit();
@@ -361,12 +510,19 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       {screen === 'serve' && <ServeStep onDone={() => exit()} />}
 
       {screen === 'deployRun' && (
-        <DeployStep target={deployTarget} onDone={() => exit()} />
+        <DeployStep
+          target={deployTarget}
+          action={deployAction}
+          onDone={() => exit()}
+          onBack={() => setScreen('deploy')}
+        />
       )}
 
-      {screen === 'pull' && <PullStep onDone={() => setScreen('start')} />}
+      {screen === 'pull' && <PullStep onDone={() => setScreen('settings')} />}
 
-      {screen === 'config' && <ConfigStep onDone={() => setScreen('start')} />}
+      {screen === 'config' && (
+        <ConfigStep onDone={() => setScreen(needsSetup() ? 'firstRun' : returnTo)} />
+      )}
     </Box>
   );
 }

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import SelectInput from 'ink-select-input';
 import type { DeployParam } from './deployParams.js';
 import { TextField } from './TextField.js';
+import { useEscapeBack } from './useEscapeBack.js';
 
 /** A small sequential form over deploy params: one field at a time, each
  * pre-filled with its saved/last value so re-runs are enter-enter-enter (and
@@ -14,6 +15,7 @@ export function ParamForm({
   initial,
   onSubmit,
   onPersist,
+  onCancel,
 }: {
   fields: DeployParam[];
   initial: Record<string, string>;
@@ -21,6 +23,9 @@ export function ParamForm({
   /** Called with the accumulated answers after each field advances, so a value
    * is remembered even if a later field's check fails and the run is abandoned. */
   onPersist?: (values: Record<string, string>) => void;
+  /** Esc on the first field calls this (back out of the form). Omit to keep the
+   * first field non-cancellable. */
+  onCancel?: () => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [values, setValues] = useState<Record<string, string>>(initial);
@@ -30,15 +35,20 @@ export function ParamForm({
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
-  // Esc steps back to the prior field (restoring what was entered there).
-  useInput((_input, key) => {
-    if (key.escape && idx > 0 && !checking) {
-      const prev = idx - 1;
-      setError(null);
-      setIdx(prev);
-      setDraft(values[fields[prev].key] ?? fields[prev].default ?? '');
-    }
-  });
+  // Esc steps back to the prior field (restoring what was entered there); on the
+  // first field it backs out of the form. Disabled while a check is in flight.
+  useEscapeBack(
+    checking
+      ? null
+      : idx > 0
+        ? () => {
+            const prev = idx - 1;
+            setError(null);
+            setIdx(prev);
+            setDraft(values[fields[prev].key] ?? fields[prev].default ?? '');
+          }
+        : onCancel,
+  );
 
   const field = fields[idx];
   if (!field) return null;
@@ -50,7 +60,8 @@ export function ParamForm({
 
   const submit = async (raw: string) => {
     if (checking) return; // ignore enter-mashing while a check is in flight
-    const val = options ? raw : (raw.trim() || field.default || '').trim();
+    const base = options ? raw : (raw.trim() || field.default || '').trim();
+    const val = field.normalize ? field.normalize(base) : base;
     setError(null);
     setChecking(true);
     const err = (await field.validate?.(val, values)) ?? null;
@@ -97,7 +108,11 @@ export function ParamForm({
         </Box>
       )}
       {field.hint ? <Text dimColor>  {field.hint}</Text> : null}
-      {idx > 0 ? <Text dimColor>  Esc: back</Text> : null}
+      {idx > 0 ? (
+        <Text dimColor>  Esc to go back</Text>
+      ) : onCancel ? (
+        <Text dimColor>  Esc to cancel</Text>
+      ) : null}
       {checking ? <Text color="cyan">  Checking…</Text> : null}
       {error ? <Text color="red">  ✖ {error}</Text> : null}
     </Box>

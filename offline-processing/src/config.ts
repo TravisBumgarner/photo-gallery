@@ -1,14 +1,20 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 import { expandHome } from './util.js';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+/** Fixed staging inbox — photos awaiting ingestion live here, then move to the
+ * _already_processed archive after ingest. Not a user setting; it's always
+ * <repo root>/pending-ingestion. */
+export const STAGING_DIR = path.join(ROOT, 'pending-ingestion');
 
 // Most of these come from docker-compose.yml (container paths, run flags); only
 // the model host/model/keys originate in .cli-cache, which ./oi creates and fills
 // in from its prompts. Secrets are the *_API_KEY fields.
 const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
-  SOURCE_DIR: z.string(),
   DESTINATION_DIRECTORY: z.string(),
   // Where `publish` writes labels + the fat/slim DB (a file://… dir).
   // Defaults to the local DESTINATION_DIRECTORY.

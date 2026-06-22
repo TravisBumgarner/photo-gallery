@@ -3,12 +3,12 @@ import { Box, Text } from 'ink';
 import SelectInput from 'ink-select-input';
 import {
   backupConfigs,
-  CONFIG_FILES,
   defaultBackupPath,
   restoreConfigs,
 } from './configBackup.js';
 import { completePath } from './configFiles.js';
 import { TextField } from './TextField.js';
+import { useEscapeBack } from './useEscapeBack.js';
 
 type Stage =
   | 'menu'
@@ -25,6 +25,16 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   const [info, setInfo] = useState('');
   const [error, setError] = useState('');
   const [draft, setDraft] = useState('');
+
+  // Esc: from a substage back to the menu; from the menu, back out entirely.
+  // Disabled mid-operation so a backup/restore in flight isn't interrupted.
+  useEscapeBack(
+    stage === 'working'
+      ? null
+      : stage === 'menu'
+        ? onDone
+        : () => setStage('menu'),
+  );
 
   const doBackup = () => {
     setStage('working');
@@ -56,15 +66,12 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   if (stage === 'menu') {
     return (
       <Box flexDirection="column">
-        <Text>Back up or restore your settings</Text>
-        <Text dimColor>
-          Covers your gallery password, pipeline config, deploy details, and
-          remembered choices — the files that aren’t in git.
-        </Text>
+        <Text bold>Back up / restore settings</Text>
+        <Text dimColor>Your settings: hosting, passwords, and deploy details.</Text>
         <SelectInput
           items={[
-            { label: 'Back up to a zip in my Downloads', value: 'backup' },
-            { label: 'Restore from a zip', value: 'restore' },
+            { label: 'Back up to Downloads', value: 'backup' },
+            { label: 'Restore from a backup', value: 'restore' },
             { label: '← Back', value: 'back' },
           ]}
           onSelect={(item) => {
@@ -80,9 +87,10 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   if (stage === 'restorePath') {
     return (
       <Box flexDirection="column">
-        <Text>Path to a settings .zip (overwrites your current settings):</Text>
+        <Text bold>Restore from a backup</Text>
+        <Text dimColor>This replaces your current settings.</Text>
         <Box>
-          <Text>Zip file: </Text>
+          <Text>Backup file: </Text>
           <TextField
             value={draft}
             onChange={setDraft}
@@ -92,7 +100,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
             }
           />
         </Box>
-        <Text dimColor>  Tab completes paths · leave blank to cancel.</Text>
+        <Text dimColor>  Tab completes paths · Esc to go back</Text>
       </Box>
     );
   }
@@ -123,11 +131,9 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
     return (
       <Box flexDirection="column">
         <Text color="green" bold>
-          ✓ Settings restored from {info}
+          ✓ Settings restored.
         </Text>
-        <Text dimColor>
-          Restored: {CONFIG_FILES.join(', ')} (whatever the zip contained).
-        </Text>
+        <Text dimColor>From {info}</Text>
         <SelectInput
           items={[{ label: 'Done', value: 'done' }]}
           onSelect={onDone}

@@ -37,6 +37,9 @@ backend/frontend-dist/
 # Native pipeline output (DB, images, thumbnails, sidecars)
 data/
 
+# Staging inbox: photos awaiting ingestion (and the _already_processed archive).
+pending-ingestion/
+
 # Local file:// storage buckets — published output (images/thumbnails/sidecars/db),
 # wherever STORAGE_URL points. Generated, never source.
 offline-processing/sds/

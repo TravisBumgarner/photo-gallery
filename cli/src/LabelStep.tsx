@@ -98,6 +98,8 @@ export function LabelStep({ onDone }: { onDone: () => void }) {
     };
   }, []);
 
+  // No Esc here: this sits mid-run between the compute and publish phases, so
+  // backing out would throw away work that just finished. Enter publishes.
   useInput((_input, key) => {
     if (key.return) {
       killTree(server.current);
@@ -121,7 +123,8 @@ export function LabelStep({ onDone }: { onDone: () => void }) {
         </Box>
       )}
       <Text dimColor>
-        Name the clusters in the browser, then press enter here to publish.
+        Label your photos in the browser, then close the window and return here —
+        press enter to publish.
       </Text>
     </Box>
   );
