@@ -28,11 +28,13 @@ function readCliCache(): Record<string, string> {
   return out;
 }
 
-async function tags(host: string): Promise<string[] | null> {
+async function tags(host: string, key?: string): Promise<string[] | null> {
   try {
     const res = await fetch(`${host}/api/tags`, {
+      headers: key ? { Authorization: `Bearer ${key}` } : undefined,
       signal: AbortSignal.timeout(3000),
     });
+    if (!res.ok) return null; // e.g. a remote gateway rejecting a bad/absent token
     const data = (await res.json()) as { models?: { name: string }[] };
     return (data.models ?? []).map((m) => m.name);
   } catch {
@@ -56,12 +58,18 @@ async function main() {
     /\/+$/,
     '',
   );
+  // Remote ./model-server gateway requires this bearer token; local Ollama ignores it.
+  const key = cfg.MODEL_SERVER_API_KEY || undefined;
 
   // 1. Ensure the server is reachable.
-  let installed = await tags(host);
+  let installed = await tags(host, key);
   if (installed === null) {
     if (!isLocal(host)) {
-      die(`Model server unreachable at ${host} (remote — start Ollama there).`);
+      die(
+        `Model server unreachable at ${host} (remote).`,
+        'Check ./model-server is still running there and the gateway token is right',
+        '(re-enter with ./ingest-and-sync --setup).',
+      );
     }
     if (!ollamaInstalled()) {
       die(
@@ -80,7 +88,7 @@ async function main() {
     ollama.unref();
     for (let i = 0; i < 30 && installed === null; i++) {
       await sleep(1000);
-      installed = await tags(host);
+      installed = await tags(host, key);
     }
     if (installed === null) die('Ollama did not come up after 30s.');
     console.log('Ollama is up.');
@@ -116,7 +124,7 @@ async function main() {
         'or browse https://ollama.com/library.',
       );
     }
-    resolved = resolveName((await tags(host)) ?? []);
+    resolved = resolveName((await tags(host, key)) ?? []);
     if (!resolved) die(`"${model}" still not available after pull.`);
   }
 

@@ -4,6 +4,7 @@ import SelectInput from 'ink-select-input';
 import { useEffect, useMemo, useState } from 'react';
 import {
   applicableFields,
+  completeFromList,
   completePath,
   type Field,
   loadExistingValues,
@@ -31,6 +32,7 @@ export function Setup({
   const [warning, setWarning] = useState<string | null>(null);
   const [warnedValue, setWarnedValue] = useState<string | null>(null);
   const [hintText, setHintText] = useState('');
+  const [completions, setCompletions] = useState<string[]>([]);
 
   const fields = applicableFields(values);
   const field = fields[idx];
@@ -76,6 +78,22 @@ export function Setup({
       });
     } else {
       setHintText(h ?? '');
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field?.key]);
+
+  // Resolve Tab-completion candidates (e.g. installed models) when the field opens.
+  useEffect(() => {
+    let cancelled = false;
+    const c = field?.completions;
+    setCompletions([]);
+    if (c) {
+      Promise.resolve(c(values)).then((list) => {
+        if (!cancelled) setCompletions(list);
+      });
     }
     return () => {
       cancelled = true;
@@ -145,7 +163,13 @@ export function Setup({
             onChange={setDraft}
             onSubmit={submit}
             mask={field.secret ? '*' : undefined}
-            onTab={field.path ? completePath : undefined}
+            onTab={
+              field.completions
+                ? (val) => completeFromList(val, completions)
+                : field.path
+                  ? completePath
+                  : undefined
+            }
             placeholder={
               field.secret
                 ? effectiveDefault(field)

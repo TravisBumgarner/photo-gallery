@@ -8,6 +8,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  like,
   sql,
 } from 'drizzle-orm';
 import type { AnySQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
@@ -121,6 +122,7 @@ app.get('/api/:kind/clusters', async (req, res) => {
   if (!k) return;
   try {
     const status = String(req.query.status ?? 'unlabeled');
+    const labelSearch = String(req.query.label ?? '').trim();
     const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 500);
     const offset = Math.max(Number(req.query.offset ?? 0), 0);
     const minCount = Math.max(
@@ -143,6 +145,12 @@ app.get('/api/:kind/clusters', async (req, res) => {
     } else {
       whereParts.push(isNull(k.labelColumn));
       whereParts.push(eq(k.ignoredColumn, false));
+    }
+
+    // Free-text search by name (used by the Merge tab). SQLite LIKE is
+    // case-insensitive for ASCII; only named groups can match.
+    if (labelSearch) {
+      whereParts.push(like(k.labelColumn, `%${labelSearch}%`));
     }
 
     const clusters = await db

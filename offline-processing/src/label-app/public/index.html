@@ -103,6 +103,12 @@
       margin-left: 4px;
     }
 
+    .subhead {
+      margin: 4px 0 0;
+      color: #8b919b;
+      font-size: 13px;
+    }
+
     .tabhelp {
       margin: 14px 20px 0;
       padding: 10px 14px;
@@ -234,10 +240,14 @@
       <h1>Label your photos</h1>
       <span id="status"></span>
     </div>
+    <p class="subhead">When you’re done, close this window, return to the terminal, and press Enter to publish.</p>
     <div id="nav"></div>
   </header>
 
   <p id="tabHelp" class="tabhelp"></p>
+  <div id="searchBar" class="merge-bar" hidden>
+    <input id="searchInput" type="text" placeholder="Search groups by name…" autocomplete="off" />
+  </div>
   <div id="mergeBar" class="merge-bar" hidden></div>
   <main id="grid" class="grid"></main>
   <footer id="foot"></footer>
@@ -261,6 +271,7 @@
     let offset = 0;
     let hasMore = false;
     let loading = false;
+    let search = ''; // Merge-tab name filter (server-side LIKE on the label).
     const selected = new Map(); // id -> cluster (merge selection for current view)
     let counts = { people: {}, dogs: {} };
     const btnRefs = {}; // `${kind}:${status}` -> button element
@@ -270,6 +281,20 @@
     const statusEl = document.getElementById('status');
     const tabHelpEl = document.getElementById('tabHelp');
     const mergeBar = document.getElementById('mergeBar');
+    const searchBar = document.getElementById('searchBar');
+    const searchInput = document.getElementById('searchInput');
+
+    // Debounced: filter the Merge tab by name as you type (server-side).
+    let searchTimer;
+    searchInput.oninput = () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        const next = searchInput.value.trim();
+        if (next === search) return;
+        search = next;
+        load(true);
+      }, 200);
+    };
 
     const itemsWord = () => (kind === 'people' ? 'faces' : 'dogs');
     const who = () => (kind === 'people' ? 'person' : 'dog');
@@ -435,7 +460,7 @@
         const dn = itemsWord();
         foot.innerHTML =
           status === 'ungrouped' ? `<span class="muted">No ungrouped ${dn} — everything detected landed in a group.</span>`
-            : status === 'merge' ? '<span class="muted">No groups yet.</span>'
+            : status === 'merge' ? (search ? `<span class="muted">No groups match “${search}”.</span>` : '<span class="muted">No groups yet.</span>')
               : '<span class="muted">Nothing here.</span>';
       }
     }
@@ -451,7 +476,8 @@
           for (const it of data.items) grid.appendChild(tile(it));
           hasMore = data.hasMore; offset += data.items.length;
         } else if (status === 'merge') {
-          const data = await (await fetch(`/api/${kind}/clusters?status=all&limit=50&offset=${offset}`)).json();
+          const q = search ? `&label=${encodeURIComponent(search)}` : '';
+          const data = await (await fetch(`/api/${kind}/clusters?status=all&limit=50&offset=${offset}${q}`)).json();
           for (const c of data.clusters) grid.appendChild(mergeCard(c));
           hasMore = data.hasMore; offset += data.clusters.length;
         } else {
@@ -502,6 +528,10 @@
       kind = k;
       status = stat;
       selected.clear();
+      // The name search only applies to the Merge tab; reset it on every switch.
+      search = '';
+      searchInput.value = '';
+      searchBar.hidden = stat !== 'merge';
       renderNav();
       tabHelpEl.textContent = tabHelpText();
       load(true);

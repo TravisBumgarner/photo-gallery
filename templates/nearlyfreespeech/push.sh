@@ -49,8 +49,16 @@ fi
 echo "📁 Ensuring remote data dir…"
 ssh $KEYOPT "$REMOTE" "mkdir -p '$REMOTE_DIR/data/out'"
 
-echo "🖼️  Publishing $LOCAL_OUT → $REMOTE:$REMOTE_DIR/data/out …"
-rsync -azPh -e "$RSH" --delete --timeout=300 "$LOCAL_OUT/" "$REMOTE:$REMOTE_DIR/data/out/"
+# PUSH_REPLACE=1 mirrors local exactly (--delete removes server files that aren't
+# local). Default (unset) only adds new + updates changed files, leaving anything
+# already on the server in place. rsync transfers deltas either way.
+if [ "${PUSH_REPLACE:-}" = "1" ]; then
+  echo "🖼️  Publishing (replace everything) $LOCAL_OUT → $REMOTE:$REMOTE_DIR/data/out …"
+  rsync -azPh --delete -e "$RSH" --timeout=300 "$LOCAL_OUT/" "$REMOTE:$REMOTE_DIR/data/out/"
+else
+  echo "🖼️  Publishing (add new + update) $LOCAL_OUT → $REMOTE:$REMOTE_DIR/data/out …"
+  rsync -azPh -e "$RSH" --timeout=300 "$LOCAL_OUT/" "$REMOTE:$REMOTE_DIR/data/out/"
+fi
 
 echo "🗄️  Loading the read-only DB on the host…"
 ssh $KEYOPT "$REMOTE" "cd '$REMOTE_DIR' && node dist/boot.js"

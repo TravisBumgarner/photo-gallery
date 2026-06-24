@@ -1,13 +1,28 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { markVisionServer } from './cleanup.js';
 
-// Only runs on the faces/dogs path: starts Docker (the one Docker dependency),
-// then brings up the Python detection sidecar.
+// Only runs on the faces/dogs path. For a LOCAL vision-server it starts Docker
+// (the one Docker dependency) + the Python sidecar; for a REMOTE one (a
+// ./model-server gateway) it just confirms it's reachable — no local Docker.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OP_DIR = path.join(ROOT, 'offline-processing');
+const CLI_CACHE = path.join(OP_DIR, '.cli-cache');
 const INSTALL_URL = 'https://www.docker.com/products/docker-desktop/';
+
+function visionHost(): string {
+  try {
+    for (const line of readFileSync(CLI_CACHE, 'utf8').split('\n')) {
+      const m = line.match(/^VISION_SERVER_HOST=(.*)$/);
+      if (m) return m[1].trim().replace(/\/+$/, '');
+    }
+  } catch {
+    // no config yet
+  }
+  return 'http://localhost:8090';
+}
 
 const dockerInstalled = () =>
   spawnSync('docker', ['--version'], { stdio: 'ignore' }).status === 0;
@@ -34,6 +49,29 @@ function tryStartDocker(): void {
 }
 
 async function main() {
+  const host = visionHost();
+  const local = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
+
+  // Remote vision-server (via a ./model-server gateway): nothing to start here —
+  // just confirm it's up. /health is open on the gateway, so no token needed.
+  if (!local) {
+    console.log(`Detection service is remote (${host}) — checking it's reachable…`);
+    try {
+      const res = await fetch(`${host}/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        console.log('Detection service reachable.');
+        process.exit(0);
+      }
+      console.error(`Detection service at ${host} returned ${res.status}.`);
+    } catch {
+      console.error(`Detection service unreachable at ${host}.`);
+      console.error('Make sure ./model-server is running on that machine.');
+    }
+    process.exit(1);
+  }
+
   if (!dockerUp()) {
     if (!dockerInstalled()) {
       console.error('Faces/dogs detection needs Docker, and it isn’t installed.');
@@ -69,7 +107,7 @@ async function main() {
   console.log('Waiting for detection service to be ready…');
   for (let i = 0; i < 90; i++) {
     try {
-      const res = await fetch('http://localhost:8090/health', {
+      const res = await fetch(`${host}/health`, {
         signal: AbortSignal.timeout(2000),
       });
       if (res.ok) {

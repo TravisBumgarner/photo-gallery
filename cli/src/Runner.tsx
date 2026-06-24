@@ -1,11 +1,11 @@
 import React from 'react';
-import { Box, Text, useApp } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import { useEffect, useRef, useState } from 'react';
-import { runStep } from './exec.js';
+import { killAll, runStep } from './exec.js';
 import type { Step } from './steps.js';
 
-type Status = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+type Status = 'pending' | 'running' | 'done' | 'failed' | 'skipped' | 'stopped';
 
 // Mirror offline-processing/src/progress.ts — tasks emit these sentinel lines.
 const STATUS_PREFIX = '@@PG_STATUS@@';
@@ -15,15 +15,18 @@ const SUMMARY_PREFIX = '@@PG_SUMMARY@@';
  * a live status while running and a one-line summary once done (both emitted by
  * the task via progress.ts). Stops on the first failure.
  *
- * No Esc/back here on purpose: the steps spawn subprocesses (ingest, detection,
- * publish) that shouldn't be interrupted mid-flight. A failure stops the run and
- * surfaces its output to the scrollback on its own. */
+ * Press q to stop: the current step is killed and the rest skipped. The pipeline
+ * is resumable (work is tracked per photo), so re-running Process picks up where
+ * it left off. A failure stops the run and surfaces its output to the scrollback. */
 export function Runner({
   steps,
   onDone,
+  onStop,
 }: {
   steps: Step[];
   onDone: () => void;
+  /** Called after the user presses q to stop the run (returns to the menu). */
+  onStop?: () => void;
 }) {
   const { exit } = useApp();
   const [statuses, setStatuses] = useState<Status[]>(
@@ -37,6 +40,19 @@ export function Runner({
     steps.map(() => null),
   );
   const started = useRef(false);
+  const stopping = useRef(false);
+  const [stopped, setStopped] = useState(false);
+
+  // Press q to stop: kill the running step; the loop below skips the rest. Safe
+  // because the pipeline is resumable (per-photo), so Process can pick it back up.
+  useInput((input) => {
+    if (stopping.current) return;
+    if (input === 'q' || input === 'Q') {
+      stopping.current = true;
+      setStopped(true);
+      killAll();
+    }
+  });
 
   useEffect(() => {
     if (started.current) return;
@@ -71,6 +87,13 @@ export function Runner({
           if (tail.length > 30) tail.shift();
           setTailLines(tail.slice(-8));
         });
+        // User pressed q (killAll ended the step) → stop gracefully, skip the rest.
+        if (stopping.current) {
+          setStatus(i, 'stopped');
+          for (let j = i + 1; j < steps.length; j++) setStatus(j, 'skipped');
+          setTimeout(() => (onStop ? onStop() : exit()), 50);
+          return;
+        }
         if (code === 0) {
           setStatus(i, 'done');
         } else {
@@ -86,26 +109,30 @@ export function Runner({
       }
       setTimeout(() => onDone(), 50);
     })();
-  }, [steps, exit, onDone]);
+  }, [steps, exit, onDone, onStop]);
 
   const glyph = (s: Status) =>
     s === 'done'
       ? '✔'
       : s === 'failed'
         ? '✖'
-        : s === 'skipped'
-          ? '–'
-          : s === 'pending'
-            ? '○'
-            : null;
+        : s === 'stopped'
+          ? '⏸'
+          : s === 'skipped'
+            ? '–'
+            : s === 'pending'
+              ? '○'
+              : null;
   const color = (s: Status) =>
     s === 'done'
       ? 'green'
       : s === 'failed'
         ? 'red'
-        : s === 'skipped'
-          ? 'gray'
-          : undefined;
+        : s === 'stopped'
+          ? 'yellow'
+          : s === 'skipped'
+            ? 'gray'
+            : undefined;
 
   return (
     <Box flexDirection="column">
@@ -138,6 +165,13 @@ export function Runner({
             ))}
         </Box>
       ))}
+      {stopped ? (
+        <Text color="yellow">
+          ⏸ Stopping… resume anytime with Process (it picks up where it left off).
+        </Text>
+      ) : (
+        <Text dimColor>Press q to stop — safe to resume later.</Text>
+      )}
     </Box>
   );
 }

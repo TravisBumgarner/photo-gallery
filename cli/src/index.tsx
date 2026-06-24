@@ -76,9 +76,9 @@ function shutdown(code: number, headline: string): void {
 app = render(<App forceSetup={forceSetup} />);
 
 // Register AFTER render: Ink clears existing signal listeners while it mounts, so
-// handlers added before render() get silently wiped. During a Runner step no
-// input component is mounted (Ink isn't in raw mode), so Ctrl-C lands here as a
-// real SIGINT; the waitUntilExit path covers Ink's own (raw-mode) exit.
+// handlers added before render() get silently wiped. A safety net for signals
+// outside Ink's own handling — when it's in raw mode (any menu, or the Runner's
+// q-to-stop input) it intercepts Ctrl-C and exits via the waitUntilExit path.
 process.once('SIGINT', () => shutdown(130, '\n⏹  Cancelled (Ctrl-C) — cleaning up…'));
 process.once('SIGTERM', () => shutdown(143, '\n⏹  Terminated — cleaning up…'));
 process.once('SIGHUP', () => shutdown(129, '\n⏹  Hang-up — cleaning up…'));

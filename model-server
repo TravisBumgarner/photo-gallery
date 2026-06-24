@@ -253,6 +253,13 @@ if ! curl -fsS -H "Authorization: Bearer $GATEWAY_TOKEN" \
 fi
 
 ip="$(lan_ip)"; ip="${ip:-<this-machine-LAN-IP>}"
+
+# Ctrl-C (or closing the terminal) stops the servers.
+trap 'echo; dim "Stopping model server..."; docker compose --profile server stop vision-server gateway >/dev/null 2>&1 || true; exit 0' INT TERM HUP
+
+echo
+dim "Watch live requests in another terminal with:"
+dim "  docker compose --profile server logs -f vision-server gateway"
 echo
 bold "Model server running. On your MAIN machine run ./ingest-and-sync and enter:"
 echo "  Tagging model host : http://$ip:${GATEWAY_PORT}"
@@ -261,11 +268,9 @@ echo
 dim "Only port ${GATEWAY_PORT} is exposed, and it requires the token. The token"
 dim "crosses the LAN in cleartext — fine on a trusted home network; tunnel it"
 dim "(VPN/SSH) on anything less."
-
-# Stay attached and stream logs so you can watch requests come in. Ctrl-C (or
-# closing the terminal) stops the servers. Native Ollama isn't a compose service,
-# so its logs show in its own app/terminal — these are the gateway + vision-server.
 echo
-bold "Streaming request logs — Ctrl-C to stop the server."
-trap 'echo; dim "Stopping model server..."; docker compose --profile server stop vision-server gateway >/dev/null 2>&1 || true; exit 0' INT TERM HUP
-docker compose --profile server logs -f vision-server gateway || true
+bold "Leave this running. Press Ctrl-C to stop the server."
+
+# Block quietly so the address + token stay on screen (don't stream logs here —
+# that scrolls them off). The trap stops the containers on Ctrl-C.
+while true; do sleep 3600; done

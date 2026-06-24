@@ -48,6 +48,7 @@ type Screen =
   | 'run-pre'
   | 'label'
   | 'run-post'
+  | 'backup-prompt'
   | 'done'
   | 'serve'
   | 'deployRun'
@@ -95,12 +96,20 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   // Where setup/config return when launched from more than one place (first-run
   // vs the Settings screen).
   const [returnTo, setReturnTo] = useState<Screen>('start');
+  // How ConfigStep opens: 'restore' (first run), 'backup' (end-of-run prompt),
+  // or undefined for the full backup/restore menu (Settings).
+  const [configInitial, setConfigInitial] = useState<
+    'backup' | 'restore' | undefined
+  >(undefined);
   const [blast, setBlast] = useState<{ photos: number; hasDb: boolean } | null>(
     null,
   );
   const [deployTarget, setDeployTarget] = useState<string>(prefs.deployTarget);
   // Which half of a remote deploy DeployStep runs: 'app' (code) or 'data' (photos+DB).
   const [deployAction, setDeployAction] = useState<'app' | 'data'>('data');
+  // Live count of photos waiting in staging — polled while on the manual screen
+  // so it updates as you drag files in (no need to leave + re-enter).
+  const [stagedCount, setStagedCount] = useState(0);
 
   // Persist selections once we commit to running.
   useEffect(() => {
@@ -108,6 +117,14 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       savePrefs({ importDir, deployTarget });
     }
   }, [screen, importDir, deployTarget]);
+
+  // Poll the staging folder while the manual-add screen is open.
+  useEffect(() => {
+    if (screen !== 'manual') return;
+    setStagedCount(countStagingPhotos());
+    const id = setInterval(() => setStagedCount(countStagingPhotos()), 1500);
+    return () => clearInterval(id);
+  }, [screen]);
 
   // Esc = go back one level. Delegated screens (setup/config/deploy-run/pull
   // manage their own Esc; run/label/serve are live processes that intentionally
@@ -125,6 +142,8 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       setScreen('addPhotos');
     } else if (screen === 'create-confirm') {
       setScreen('settings');
+    } else if (screen === 'backup-prompt') {
+      setScreen('done'); // Esc = skip the backup, on to serve/deploy
     } else if (
       screen === 'start' ||
       screen === 'firstRun' ||
@@ -173,6 +192,13 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   // Process: confirm first (it's the long step), then run the pipeline.
   const startProcess = () => setScreen('process-confirm');
 
+  // Export settings (backup zip) — offered as a last step after a run.
+  const backUpSettings = () => {
+    setConfigInitial('backup');
+    setReturnTo('done');
+    setScreen('config');
+  };
+
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="magenta" bold>
@@ -195,6 +221,9 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               }
               // First run lands on the home menu once done, either way.
               setReturnTo('start');
+              // "Restore from a backup" → straight to the restore prompt, not
+              // the full backup/restore menu.
+              if (item.value === 'config') setConfigInitial('restore');
               setScreen(item.value as Screen);
             }}
           />
@@ -269,7 +298,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           </Text>
           <Text dimColor>
             {'  '}
-            {countStagingPhotos()} photo(s) in the folder right now.
+            {stagedCount} photo(s) in the folder right now.
           </Text>
           <SelectInput
             items={[
@@ -315,7 +344,11 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       )}
 
       {screen === 'run-import' && (
-        <Runner steps={importSteps} onDone={() => setScreen('process-confirm')} />
+        <Runner
+          steps={importSteps}
+          onDone={() => setScreen('process-confirm')}
+          onStop={() => setScreen('start')}
+        />
       )}
 
       {screen === 'process-confirm' && (
@@ -417,7 +450,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           <SelectInput
             items={[
               { label: 'Edit settings (host, model, password)', value: 'edit' },
-              { label: 'Back up / restore settings', value: 'config' },
+              { label: 'Back up / restore (settings + gallery)', value: 'config' },
               // Only meaningful with a remote host to pull from.
               ...((cfg.DEPLOY_TARGET ?? 'localhost') !== 'localhost'
                 ? [
@@ -435,6 +468,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
                 setReturnTo('settings');
                 setScreen('setup');
               } else if (item.value === 'config') {
+                setConfigInitial(undefined); // full backup/restore menu
                 setReturnTo('settings');
                 setScreen('config');
               } else if (item.value === 'pull') {
@@ -451,20 +485,43 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       )}
 
       {screen === 'run-pre' && (
-        <Runner steps={pre} onDone={() => setScreen('label')} />
+        <Runner
+          steps={pre}
+          onDone={() => setScreen('label')}
+          onStop={() => setScreen('start')}
+        />
       )}
 
       {screen === 'label' && <LabelStep onDone={() => setScreen('run-post')} />}
 
       {screen === 'run-post' && (
-        <Runner steps={post} onDone={() => setScreen('done')} />
+        <Runner
+          steps={post}
+          onDone={() => setScreen('backup-prompt')}
+          onStop={() => setScreen('start')}
+        />
+      )}
+
+      {screen === 'backup-prompt' && (
+        <Box flexDirection="column">
+          <Text color="green" bold>
+            ✓ All done — your gallery is built and published.
+          </Text>
+          <Text>Back it up now? (your settings + the processed gallery)</Text>
+          <SelectInput
+            items={[
+              { label: 'Back up everything', value: 'backup' },
+              { label: 'Skip', value: 'skip' },
+            ]}
+            onSelect={(item) =>
+              item.value === 'backup' ? backUpSettings() : setScreen('done')
+            }
+          />
+        </Box>
       )}
 
       {screen === 'done' && (
         <Box flexDirection="column">
-          <Text color="green" bold>
-            ✓ All done — your gallery data is built and published.
-          </Text>
           {(cfg.DEPLOY_TARGET || 'localhost') === 'localhost' ? (
             <Box flexDirection="column">
               <Text>Bring it up on this computer?</Text>
@@ -521,7 +578,10 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
       {screen === 'pull' && <PullStep onDone={() => setScreen('settings')} />}
 
       {screen === 'config' && (
-        <ConfigStep onDone={() => setScreen(needsSetup() ? 'firstRun' : returnTo)} />
+        <ConfigStep
+          initial={configInitial}
+          onDone={() => setScreen(needsSetup() ? 'firstRun' : returnTo)}
+        />
       )}
     </Box>
   );

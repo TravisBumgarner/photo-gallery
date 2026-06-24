@@ -123,8 +123,8 @@ export function LabelStep({ onDone }: { onDone: () => void }) {
         </Box>
       )}
       <Text dimColor>
-        Label your photos in the browser, then close the window and return here —
-        press enter to publish.
+        Label your photos, close the window, return here, and press enter to
+        publish.
       </Text>
     </Box>
   );

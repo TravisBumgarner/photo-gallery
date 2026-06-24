@@ -22,27 +22,59 @@ export function expandHome(p: string): string {
   return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
-/** Case-insensitive tab completion for a partial directory path. Expands ~,
- * completes against subdirectories of the deepest existing parent. A single
- * match is filled and gets a trailing slash; multiple matches fill the common
- * prefix; no match leaves the input unchanged. */
-export function completePath(input: string): string {
+/** Case-insensitive tab completion for a partial path. Expands ~, completes
+ * against entries of the deepest existing parent. Directories only by default
+ * (set `includeFiles` for fields that take a file, e.g. a backup zip). A single
+ * dir match gets a trailing slash, a single file match doesn't; multiple matches
+ * fill the common prefix; no match leaves the input unchanged. */
+export function completePath(
+  input: string,
+  opts?: { includeFiles?: boolean },
+): string {
   const expanded = expandHome(input);
   const slash = expanded.lastIndexOf('/');
   const dir = slash >= 0 ? expanded.slice(0, slash + 1) : './';
   const partial = (slash >= 0 ? expanded.slice(slash + 1) : expanded).toLowerCase();
-  let names: string[];
+  let entries: { name: string; isDir: boolean }[];
   try {
-    names = readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    entries = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() || (opts?.includeFiles && e.isFile()))
+      .map((e) => ({ name: e.name, isDir: e.isDirectory() }));
   } catch {
     return input;
   }
-  const matches = names.filter((n) => n.toLowerCase().startsWith(partial));
+  const matches = entries.filter((e) =>
+    e.name.toLowerCase().startsWith(partial),
+  );
   if (matches.length === 0) return input;
-  if (matches.length === 1) return `${dir}${matches[0]}/`;
+  if (matches.length === 1) {
+    const m = matches[0];
+    return `${dir}${m.name}${m.isDir ? '/' : ''}`;
+  }
   // Longest common prefix (case-insensitive), keeping the first match's casing.
+  let common = matches[0].name;
+  for (const m of matches.slice(1)) {
+    let i = 0;
+    while (
+      i < common.length &&
+      i < m.name.length &&
+      common[i].toLowerCase() === m.name[i].toLowerCase()
+    ) {
+      i++;
+    }
+    common = common.slice(0, i);
+  }
+  return `${dir}${common}`;
+}
+
+/** Case-insensitive tab completion of `input` against a fixed candidate list
+ * (e.g. installed model names). Single match fills fully; multiple fills the
+ * longest common prefix; no match leaves the input unchanged. */
+export function completeFromList(input: string, candidates: string[]): string {
+  const lower = input.toLowerCase();
+  const matches = candidates.filter((c) => c.toLowerCase().startsWith(lower));
+  if (matches.length === 0) return input;
+  if (matches.length === 1) return matches[0];
   let common = matches[0];
   for (const m of matches.slice(1)) {
     let i = 0;
@@ -55,7 +87,7 @@ export function completePath(input: string): string {
     }
     common = common.slice(0, i);
   }
-  return `${dir}${common}`;
+  return common;
 }
 
 function listDir(dir: string) {
@@ -251,6 +283,9 @@ export interface Field {
   options?: { label: string; value: string }[];
   /** A filesystem path — enables case-insensitive Tab completion. */
   path?: boolean;
+  /** Candidate values for Tab completion (e.g. installed model names). Resolved
+   * when the field opens; Tab then completes against the returned list. */
+  completions?: (v: Record<string, string>) => string[] | Promise<string[]>;
   when?: (v: Record<string, string>) => boolean;
   /** Return an error message to block advancing, or null when valid. May be
    * async (e.g. to check a model server). Receives values answered so far. */
@@ -286,12 +321,41 @@ export const FIELDS: Field[] = [
       if (/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host)) return null; // local: started for you
       const h = host.replace(/\/+$/, '');
       try {
-        const res = await fetch(`${h}/api/tags`, {
-          signal: AbortSignal.timeout(4000),
-        });
-        return res.ok ? null : `${h} returned ${res.status}.`;
+        // Any HTTP reply means it's reachable. A ./model-server gateway rejects
+        // unauthenticated probes with 401/403 — that still means it's up; the
+        // token is entered in the next step and used at run time.
+        await fetch(`${h}/api/tags`, { signal: AbortSignal.timeout(4000) });
+        return null;
       } catch {
-        return `Can't reach ${h} yet — start Ollama there, then press enter to retry.`;
+        return `Can't reach ${h}. Use the http:// address ./model-server printed (the gateway is plain HTTP on :8443), and make sure it's still running.`;
+      }
+    },
+  },
+  {
+    // Asked BEFORE the model so the model step can poll the (token-protected)
+    // server for what's installed. Only a remote ./model-server gateway needs a
+    // token; local Ollama doesn't.
+    key: 'MODEL_SERVER_API_KEY',
+    label: 'Gateway token',
+    secret: true,
+    default: '',
+    when: (v) =>
+      !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(v.MODEL_SERVER_HOST ?? 'localhost'),
+    hint: 'The token ./model-server printed on the other machine.',
+    validate: async (key, values) => {
+      if (!key) return 'Required — the token ./model-server printed.';
+      const host = (values.MODEL_SERVER_HOST ?? '').replace(/\/+$/, '');
+      try {
+        const res = await fetch(`${host}/api/tags`, {
+          headers: { Authorization: `Bearer ${key}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return 'Token rejected — check it against what ./model-server printed.';
+        }
+        return null; // accepted — the next step lists the installed models
+      } catch {
+        return null; // can't reach now — the host step already checked; don't block
       }
     },
   },
@@ -299,13 +363,32 @@ export const FIELDS: Field[] = [
     key: 'MODEL_SERVER_MODEL',
     label: 'Tagging model',
     default: '',
+    completions: async (v) => {
+      const host = (v.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
+        /\/+$/,
+        '',
+      );
+      const key = v.MODEL_SERVER_API_KEY;
+      try {
+        const res = await fetch(`${host}/api/tags`, {
+          headers: key ? { Authorization: `Bearer ${key}` } : undefined,
+          signal: AbortSignal.timeout(4000),
+        });
+        const data = (await res.json()) as { models?: { name: string }[] };
+        return (data.models ?? []).map((m) => m.name);
+      } catch {
+        return [];
+      }
+    },
     hint: async (v) => {
       const host = (v.MODEL_SERVER_HOST || 'http://localhost:11434').replace(
         /\/+$/,
         '',
       );
+      const key = v.MODEL_SERVER_API_KEY;
       try {
         const res = await fetch(`${host}/api/tags`, {
+          headers: key ? { Authorization: `Bearer ${key}` } : undefined,
           signal: AbortSignal.timeout(4000),
         });
         const data = (await res.json()) as { models?: { name: string }[] };
@@ -322,6 +405,7 @@ export const FIELDS: Field[] = [
         /\/+$/,
         '',
       );
+      const key = values.MODEL_SERVER_API_KEY;
       const local = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
       const base = (s: string) => s.split(':')[0];
 
@@ -329,6 +413,7 @@ export const FIELDS: Field[] = [
       let names: string[] | null = null;
       try {
         const res = await fetch(`${host}/api/tags`, {
+          headers: key ? { Authorization: `Bearer ${key}` } : undefined,
           signal: AbortSignal.timeout(5000),
         });
         if (res.ok) {
@@ -345,8 +430,9 @@ export const FIELDS: Field[] = [
       if (names?.some((n) => n === model || base(n) === base(model))) return null;
 
       if (!local) {
-        if (names === null) return `Can't reach ${host}.`;
-        return `"${model}" not on ${host}.${installed}`;
+        // Reachable + token good but model not in the list → real "not installed".
+        if (names) return `"${model}" not on ${host}.${installed}`;
+        return null; // couldn't list (unreachable) — accept; runtime verifies
       }
 
       // Local + not installed: confirm it's a real model before the preflight
@@ -370,8 +456,10 @@ export const FIELDS: Field[] = [
         /\/+$/,
         '',
       );
+      const key = values.MODEL_SERVER_API_KEY;
       try {
         const res = await fetch(`${host}/api/tags`, {
+          headers: key ? { Authorization: `Bearer ${key}` } : undefined,
           signal: AbortSignal.timeout(5000),
         });
         const data = (await res.json()) as {
@@ -395,14 +483,6 @@ export const FIELDS: Field[] = [
     },
   },
   {
-    key: 'MODEL_SERVER_API_KEY',
-    label: 'Tagging model API key',
-    secret: true,
-    default: '',
-    // Only a remote/authenticated host needs a key; local Ollama doesn't.
-    when: (v) => !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(v.MODEL_SERVER_HOST ?? 'localhost'),
-  },
-  {
     key: 'APP_PASSWORD',
     label: 'Gallery password',
     secret: true,
@@ -420,11 +500,22 @@ export function writeConfigFiles(v: Record<string, string>): {
   cliCache: string;
   backendEnv: string;
 } {
+  // A remote ./model-server gateway fronts BOTH the tagging LLM and the
+  // vision-server (faces/dogs) on one token-protected URL, so point the vision
+  // server at the same host+token. Local keeps the Docker vision-server on :8090.
+  const remote = !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(
+    v.MODEL_SERVER_HOST ?? 'localhost',
+  );
+  const visionHost = remote ? v.MODEL_SERVER_HOST : 'http://localhost:8090';
+
   const cliCache = `${[
     `DEPLOY_TARGET=${v.DEPLOY_TARGET || 'localhost'}`,
     `DESTINATION_DIRECTORY=${DEST_DIR}`,
     `DATABASE_URL=${INGEST_DB}`,
-    VISION_SERVER_HOST_LINE,
+    `VISION_SERVER_HOST=${visionHost}`,
+    remote && v.MODEL_SERVER_API_KEY
+      ? `VISION_SERVER_API_KEY=${v.MODEL_SERVER_API_KEY}`
+      : '',
     `MODEL_SERVER_HOST=${v.MODEL_SERVER_HOST}`,
     `MODEL_SERVER_MODEL=${v.MODEL_SERVER_MODEL ?? ''}`,
     v.MODEL_SERVER_API_KEY ? `MODEL_SERVER_API_KEY=${v.MODEL_SERVER_API_KEY}` : '',

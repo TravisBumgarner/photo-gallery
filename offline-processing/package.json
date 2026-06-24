@@ -12,6 +12,7 @@
     "detect-dogs": "tsx src/detect-dogs.ts",
     "cluster-dogs": "tsx src/cluster-dogs.ts",
     "migrate": "tsx src/migrate.ts",
+    "check-migrations": "tsx src/check-migrations.ts",
     "check-storage": "tsx src/check-storage.ts",
     "clear-local-db": "tsx src/clear-local-db.ts",
     "restore": "tsx src/restore.ts",
