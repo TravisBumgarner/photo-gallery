@@ -1,10 +1,33 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { readGeneration } from 'shared/db/generation';
 import { createStorage, KEYS } from 'shared/storage';
 import { loadConfig, storageUrl } from './config.js';
 import { summary } from './progress.js';
 import { expandHome } from './util.js';
+
+// A local DB only counts as "present" for seeding if it actually holds photos.
+// A missing file — but also a zero-byte/corrupt/zero-row `ingest.sqlite` left by
+// an aborted earlier run — must NOT short-circuit the restore, or re-ingest
+// reprocesses every photo through the vision models (the exact cost restore
+// exists to avoid). Defensive like readGeneration: any open/query failure → not
+// usable.
+function hasUsablePhotos(dbPath: string): boolean {
+  if (!existsSync(dbPath)) return false;
+  let sqlite: Database.Database | undefined;
+  try {
+    sqlite = new Database(dbPath, { readonly: true });
+    const row = sqlite.prepare('SELECT count(*) AS n FROM photos').get() as {
+      n: number;
+    };
+    return row.n > 0;
+  } catch {
+    return false;
+  } finally {
+    sqlite?.close();
+  }
+}
 
 // Seed the working ingestion DB from the published fat DB when it's missing —
 // i.e. a fresh or wiped machine that just pulled data/out. With the fat DB in
@@ -32,7 +55,7 @@ async function main() {
     return Number.isFinite(value) ? value : null;
   }
 
-  if (existsSync(dbPath)) {
+  if (hasUsablePhotos(dbPath)) {
     const remoteGen = await remoteGeneration();
     const localGen = readGeneration(dbPath);
     if (remoteGen != null && remoteGen > localGen) {

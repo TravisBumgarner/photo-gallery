@@ -193,6 +193,20 @@ async function cleanupStaleLocalRows(
   try {
     await fs.mkdir(outputDir, { recursive: true });
     const filesOnDisk = await fs.readdir(outputDir);
+
+    // Never prune when the images dir is empty. The far likelier cause is media
+    // that hasn't landed locally yet (a DB-only restore from the bucket, before
+    // sync-media runs) than a library the user genuinely emptied. Pruning here
+    // would delete every just-restored row, cascade-orphan faces/dogs, and make
+    // the next publish abort on verifySlim "zero photos" — destroying the exact
+    // compute the restore existed to preserve.
+    if (filesOnDisk.length === 0) {
+      console.log(
+        '  Skipping prune: no images on disk yet (DB-only restore, or media not synced).',
+      );
+      return;
+    }
+
     const uuidsOnDisk = new Set(
       filesOnDisk.map((f) => path.basename(f, path.extname(f))),
     );

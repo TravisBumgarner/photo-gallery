@@ -13,28 +13,53 @@ export interface SyncMediaResult {
  * are skipped — re-syncs only upload new photos. Use after `publish` (which
  * handles the derived artifacts) to complete a sync-to-bucket.
  */
+/** Parallel uploads in flight. Bounded so a 50k-photo first sync doesn't open
+ * tens of thousands of file handles at once. */
+const UPLOAD_CONCURRENCY = 8;
+
 export async function syncMediaToStorage(
   storage: StorageBackend,
   mediaDir: string,
   onProgress?: (done: number, total: number) => void,
 ): Promise<SyncMediaResult> {
+  // One recursive list() per prefix to learn what's already in the backend,
+  // instead of a blocking exists() per file (~100k sequential stats at 50k
+  // photos, even when nothing is new). Files are immutable + content-addressed,
+  // so set membership is a sufficient skip test.
   const files: string[] = [];
+  const present = new Set<string>();
   for (const sub of ['images', 'thumbnails']) {
     files.push(...(await walk(path.join(mediaDir, sub))));
+    for (const key of await storage.list(sub)) present.add(key);
   }
 
-  const result: SyncMediaResult = { uploaded: 0, skipped: 0 };
-  let done = 0;
+  const toUpload: Array<{ key: string; abs: string }> = [];
+  let skipped = 0;
   for (const abs of files) {
     const key = path.relative(mediaDir, abs); // e.g. images/uuid.jpg
-    if (await storage.exists(key)) {
-      result.skipped++;
-    } else {
+    if (present.has(key)) skipped++;
+    else toUpload.push({ key, abs });
+  }
+
+  const result: SyncMediaResult = { uploaded: 0, skipped };
+  const total = files.length;
+  let done = skipped;
+  onProgress?.(done, total);
+
+  // Bounded worker pool over the new files. Single-threaded JS makes the shared
+  // counter/cursor increments safe across the awaiting workers.
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < toUpload.length) {
+      const { key, abs } = toUpload[cursor++];
       await storage.putFile(key, abs);
       result.uploaded++;
+      onProgress?.(++done, total);
     }
-    onProgress?.(++done, files.length);
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(UPLOAD_CONCURRENCY, toUpload.length) }, worker),
+  );
   return result;
 }
 

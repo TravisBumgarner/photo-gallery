@@ -57,8 +57,12 @@ export async function publishToStorage(
 
   // Generation guard: never overwrite a bucket fat DB that's newer than ours.
   // (A machine that restored an old backup, or a second writer, would otherwise
-  // silently clobber newer published work.) Bump only after the check passes so
-  // the new fat + slim both carry the advanced generation.
+  // silently clobber newer published work.) We only READ here; the bump is
+  // deferred to the very end (after cutover) so a failure mid-publish never
+  // leaves the local fat DB advanced past the bucket — which would break the
+  // monotonic counter the guard depends on. The serving slim DB doesn't carry
+  // the generation (nothing reads it there), so building it at the old gen is
+  // fine.
   const localGen = readGeneration(opts.dbPath);
   if (await opts.storage.exists(KEYS.dbFatGeneration())) {
     const remoteGen = Number(
@@ -71,7 +75,6 @@ export async function publishToStorage(
       );
     }
   }
-  const generation = bumpGeneration(opts.dbPath);
 
   const db = createDb(opts.dbPath);
 
@@ -141,9 +144,15 @@ export async function publishToStorage(
       await opts.storage.delete(key);
     }
   }
+  // Bump the local fat DB's generation only now — after verifySlim, the slim
+  // upload, and the cutover have all succeeded — so an earlier failure leaves
+  // local at the same generation as the bucket (no skipped/desynced counter).
+  // The fat DB must carry the new generation in its `meta` before it's copied
+  // up, so the bumped local file is the artifact we upload.
+  const generation = bumpGeneration(opts.dbPath);
   await opts.storage.putFile(KEYS.dbFat(), opts.dbPath);
-  // Advance the bucket's generation only after the fat DB it describes is up,
-  // so the mirror never claims a generation the bucket fat doesn't have.
+  // Advance the bucket's generation mirror only after the fat DB it describes is
+  // up, so the mirror never claims a generation the bucket fat doesn't have.
   await opts.storage.put(KEYS.dbFatGeneration(), Buffer.from(String(generation)));
 
   return {
@@ -167,6 +176,12 @@ function buildLabelEntries(
     (d) => d.clusterId as number,
   );
   const entries: LabelEntry[] = [];
+  // Labels we'd lose because every member detection's photo has no content_hash
+  // (rows ingested before migration 0006, never backfilled). Anchors pin to the
+  // hash, so without one a human label can't be reattached after re-clustering —
+  // "the one irreplaceable bit of ingestion state". Collect and warn loudly
+  // rather than dropping silently.
+  const droppedForMissingHash: string[] = [];
   for (const cluster of clusters) {
     const label = (cluster[labelCol] as string | null) ?? null;
     const ignored = Boolean(cluster.ignored);
@@ -191,8 +206,25 @@ function buildLabelEntries(
         ],
       });
     }
-    if (anchors.length === 0) continue; // can't reattach without anchors
+    if (anchors.length === 0) {
+      // A labeled cluster with members but no anchors lost them all to missing
+      // hashes — that's a label about to be dropped. (A cluster with no members
+      // at all is just empty, not a hash problem.)
+      if (label != null && members.length > 0) droppedForMissingHash.push(label);
+      continue; // can't reattach without anchors
+    }
     entries.push({ label, ignored, anchors });
+  }
+  if (droppedForMissingHash.length > 0) {
+    const kind = labelCol === 'personLabel' ? 'people' : 'dog';
+    console.warn(
+      `\n⚠️  WARNING: dropping ${droppedForMissingHash.length} ${kind} label(s) — ` +
+        `their photos have no content_hash, so the labels can't be anchored and ` +
+        `will be LOST on publish: ${droppedForMissingHash.join(', ')}.\n` +
+        `   These are pre-migration photos (content_hash added in 0006, not ` +
+        `backfilled). Re-ingest the affected photos to recompute hashes before ` +
+        `publishing to preserve these labels.\n`,
+    );
   }
   return entries;
 }

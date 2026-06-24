@@ -3,7 +3,9 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { loadConfig } from './config.js';
+import { setGeneration } from 'shared/db/generation';
+import { createStorage, KEYS } from 'shared/storage';
+import { loadConfig, storageUrl } from './config.js';
 import { summary } from './progress.js';
 import { confirmTyped } from './prompt.js';
 import { expandHome } from './util.js';
@@ -63,6 +65,23 @@ async function main() {
     sqlite.close();
   }
   console.log(`  Applied migrations from ${migrationsFolder}`);
+
+  // Seed the fresh DB's generation up to the bucket's published generation.
+  // The wipe reset local generation to 0, but the bucket still holds db/fat-generation
+  // from prior publishes; without this, the next publish's monotonic guard would
+  // refuse to overwrite the older-but-higher-generation bucket fat DB — telling
+  // the operator to restore the very data they deliberately discarded. The old
+  // fat DB stays recoverable in db/backups/.
+  const storage = await createStorage(storageUrl(config));
+  if (await storage.exists(KEYS.dbFatGeneration())) {
+    const remoteGen = Number(
+      (await storage.get(KEYS.dbFatGeneration())).toString().trim(),
+    );
+    if (Number.isFinite(remoteGen)) {
+      setGeneration(dbFile, remoteGen);
+      console.log(`  Seeded local generation to bucket generation ${remoteGen}.`);
+    }
+  }
 
   console.log(
     '\nDone. Restart the backend if it was running so its in-memory caches reset.',

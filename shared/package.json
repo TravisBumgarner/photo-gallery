@@ -10,6 +10,7 @@
     "./schemas": "./src/schemas.ts",
     "./embed": "./src/embed.ts",
     "./storage": "./src/storage/index.ts",
+    "./path": "./src/path.ts",
     "./labels": "./src/labels.ts",
     "./publish": "./src/publish.ts",
     "./rebuild": "./src/rebuild.ts",

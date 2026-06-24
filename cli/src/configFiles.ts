@@ -10,6 +10,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expandHome } from 'shared/path';
 
 const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
 /** Human-readable list of the formats the pipeline ingests (mirrors
@@ -18,9 +19,11 @@ export const SUPPORTED_IMAGE_FORMATS = 'JPG, PNG, GIF, BMP, TIFF, WebP';
 // The "To Mobile Photo Gallery" preset renames every export to this suffix.
 const VIEWING_RE = /_exported_for_viewing_locally\.[^.]+$/i;
 
-export function expandHome(p: string): string {
-  return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
-}
+// Single shared implementation (see shared/src/path.ts); re-exported so existing
+// `import { expandHome } from './configFiles.js'` call sites keep working. The
+// old local copy expanded `~user/foo` to `<home>/user/foo` — diverging from the
+// pipeline's helper on the very same config paths.
+export { expandHome };
 
 /** Case-insensitive tab completion for a partial path. Expands ~, completes
  * against entries of the deepest existing parent. Directories only by default

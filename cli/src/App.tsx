@@ -31,6 +31,7 @@ import {
   type RunMode,
   type Step,
   storageCheckStep,
+  syncMediaStep,
 } from './steps.js';
 import { TextField } from './TextField.js';
 
@@ -157,7 +158,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   const { pre, post } = useMemo(
     () => ({
       pre: [storageCheckStep(), ...processSteps(runMode)],
-      post: [publishStep(), archiveStep()],
+      post: [publishStep(), syncMediaStep(), archiveStep()],
     }),
     [runMode],
   );

@@ -140,3 +140,11 @@ export function storageCheckStep(): Step {
 export function publishStep(): Step {
   return task('publish', 'Publishing');
 }
+
+/** Push images + thumbnails to the storage backend. Runs after publish (which
+ * handles the DB + labels). A near no-op when STORAGE_URL is collocated with
+ * DESTINATION_DIRECTORY, but the only thing that gets media to a remote store —
+ * without it, a non-collocated gallery 404s every photo. */
+export function syncMediaStep(): Step {
+  return task('sync-media', 'Syncing media');
+}

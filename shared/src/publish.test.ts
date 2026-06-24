@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readGeneration } from './db/generation.js';
 import { dogClusters, dogs, faceClusters, faces, photos } from './db/schema.js';
 import { parseLabels } from './labels.js';
 import { publishToStorage } from './publish.js';
-import { createStorage, KEYS } from './storage/index.js';
+import { createStorage, KEYS, type StorageBackend } from './storage/index.js';
 
 const MIGRATIONS = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -193,6 +194,57 @@ describe('publishToStorage', () => {
     });
     expect(second.generation).toBe(2);
     expect((await storage.get(KEYS.dbFatGeneration())).toString()).toBe('2');
+  });
+
+  it('does not advance the local generation when a mid-publish step fails', async () => {
+    // Wrap a real backend but blow up at the cutover (the last step before the
+    // generation is bumped). The bump is deferred past all verified uploads, so
+    // the local fat DB must stay at generation 0 and the bucket mirror unwritten
+    // — otherwise the monotonic counter would skip on every failed publish.
+    const real = await createStorage(`file://${path.join(tmp, 'failmid')}`);
+    const storage: StorageBackend = {
+      put: (k, d) =>
+        k === KEYS.dbLatest()
+          ? Promise.reject(new Error('cutover boom'))
+          : real.put(k, d),
+      putFile: (k, p) => real.putFile(k, p),
+      get: (k) => real.get(k),
+      getToFile: (k, p) => real.getToFile(k, p),
+      exists: (k) => real.exists(k),
+      copy: (a, b) => real.copy(a, b),
+      list: (p) => real.list(p),
+      delete: (k) => real.delete(k),
+    };
+
+    await expect(
+      publishToStorage({ dbPath, storage, version: '2026-06-15T00-00-00Z' }),
+    ).rejects.toThrow(/cutover boom/);
+
+    expect(readGeneration(dbPath)).toBe(0);
+    expect(await real.exists(KEYS.dbFatGeneration())).toBe(false);
+    expect(await real.exists(KEYS.dbFat())).toBe(false);
+  });
+
+  it('warns and drops a label whose photos all lack a content_hash', async () => {
+    // Simulate a library migrated in place: pre-migration photos never got a
+    // content_hash backfilled. "Alice" is anchored only to those photos, so she
+    // can't be reattached — must be dropped, but loudly.
+    const sqlite = new Database(dbPath);
+    sqlite.exec('UPDATE photos SET content_hash = NULL');
+    sqlite.close();
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storage = await createStorage(`file://${path.join(tmp, 'nohash')}`);
+    const result = await publishToStorage({
+      dbPath,
+      storage,
+      version: '2026-06-15T00-00-00Z',
+    });
+
+    expect(result.peopleLabels).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Alice/));
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/content_hash/));
+    warn.mockRestore();
   });
 
   it('refuses to publish when the bucket fat DB is a newer generation', async () => {

@@ -49,3 +49,24 @@ export function bumpGeneration(dbPath: string): number {
     sqlite.close();
   }
 }
+
+/** Force the generation to an explicit value. Used after a deliberate local
+ * wipe (clear-local-db) to seed a freshly recreated DB up to the bucket's
+ * generation, so the next publish's monotonic guard passes instead of refusing
+ * to overwrite the older-but-higher-generation bucket fat DB. */
+export function setGeneration(dbPath: string, value: number): void {
+  const sqlite = new Database(dbPath);
+  try {
+    sqlite.exec(
+      'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    );
+    sqlite
+      .prepare(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ' +
+          'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(KEY, String(value));
+  } finally {
+    sqlite.close();
+  }
+}
