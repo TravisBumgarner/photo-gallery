@@ -5,8 +5,9 @@
 # machine (in ./ingest-and-sync's "tagging model" prompt). Nothing is ingested
 # here — run ./ingest-and-sync on the machine that owns the photos.
 #
-#   ./model-server            bring the server up and stream logs
-#   ./model-server --verbose  also stream the full Docker build logs
+#   ./model-server            bring the server up; keep the address + token on screen
+#   ./model-server --verbose  also stream full Docker build logs, then stream live
+#                             request logs (each tag / face / dog as it comes in)
 #
 # Needs only Docker (Compose v2) + bash. The token crosses the LAN in cleartext
 # (plain HTTP) — fine on a trusted network; tunnel it (VPN/SSH) otherwise.
@@ -27,7 +28,10 @@ gateway, and print the address + token to enter on the main machine. Nothing is
 ingested here — run ./ingest-and-sync where the photos are.
 
 Usage:  ./model-server [--verbose]
-  --verbose, -v   Stream the full Docker build logs (quiet by default).
+  --verbose, -v   Stream the full Docker build logs (quiet by default), then
+                  stream live request logs once up — each tagging, face, and dog
+                  request from the main machine as it arrives. Default keeps the
+                  address + token on screen and stays quiet (tail logs yourself).
 EOF
       exit 0 ;;
     *) echo "Unknown option: $a" >&2; exit 1 ;;
@@ -230,7 +234,10 @@ echo
 bold "Starting vision-server + gateway..."
 dim "(building images — first time is slow; --verbose for full logs)"
 compose_build vision-server gateway
-docker compose --profile server up -d --remove-orphans vision-server gateway
+# --force-recreate so a changed (bind-mounted) Caddyfile or rebuilt vision-server
+# image is actually picked up — a plain `up` would leave the old containers (and
+# the old config) running. Cheap; this box is started rarely.
+docker compose --profile server up -d --remove-orphans --force-recreate vision-server gateway
 
 # Gate on the gateway answering, then confirm Ollama is reachable THROUGH it.
 printf "Waiting for gateway on :%s" "$GATEWAY_PORT"
@@ -258,9 +265,6 @@ ip="$(lan_ip)"; ip="${ip:-<this-machine-LAN-IP>}"
 trap 'echo; dim "Stopping model server..."; docker compose --profile server stop vision-server gateway >/dev/null 2>&1 || true; exit 0' INT TERM HUP
 
 echo
-dim "Watch live requests in another terminal with:"
-dim "  docker compose --profile server logs -f vision-server gateway"
-echo
 bold "Model server running. On your MAIN machine run ./ingest-and-sync and enter:"
 echo "  Tagging model host : http://$ip:${GATEWAY_PORT}"
 echo "  Gateway token      : $GATEWAY_TOKEN"
@@ -269,8 +273,22 @@ dim "Only port ${GATEWAY_PORT} is exposed, and it requires the token. The token"
 dim "crosses the LAN in cleartext — fine on a trusted home network; tunnel it"
 dim "(VPN/SSH) on anything less."
 echo
-bold "Leave this running. Press Ctrl-C to stop the server."
 
-# Block quietly so the address + token stay on screen (don't stream logs here —
-# that scrolls them off). The trap stops the containers on Ctrl-C.
-while true; do sleep 3600; done
+if [[ "$VERBOSE" == true ]]; then
+  bold "Streaming live request logs — Ctrl-C to stop the server."
+  dim "Each tag / face / dog request from the main machine shows up below:"
+  dim "  [faces] #N: K face(s) …   [dogs] #N: K dog(s) …   POST /v1/chat/… (tagging)"
+  dim "Clustering runs on the MAIN machine, not here — it won't appear in these logs."
+  echo
+  # --since 0s skips replaying startup; -f blocks and follows until Ctrl-C, which
+  # the trap above catches to stop the containers.
+  docker compose --profile server logs -f --since 0s vision-server gateway
+else
+  dim "Watch live requests anytime with --verbose, or in another terminal:"
+  dim "  docker compose --profile server logs -f vision-server gateway"
+  echo
+  bold "Leave this running. Press Ctrl-C to stop the server."
+  # Block quietly so the address + token stay on screen (streaming would scroll
+  # them off). The trap stops the containers on Ctrl-C.
+  while true; do sleep 3600; done
+fi

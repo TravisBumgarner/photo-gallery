@@ -46,5 +46,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY server.py yolov8n.pt ./
 
 ENV PORT=8090
+# Unbuffered stdout so per-request logs (and uvicorn access lines) show up live
+# in `docker logs` / `./model-server --verbose`, not in delayed buffer flushes.
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8090
 CMD ["python", "server.py"]

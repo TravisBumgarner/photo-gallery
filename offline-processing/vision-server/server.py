@@ -21,6 +21,7 @@ import base64
 import io
 import os
 import socket
+import time
 from typing import List, Optional
 
 import numpy as np
@@ -38,6 +39,12 @@ DOG_DET_CONF = float(os.environ.get("DOG_DET_CONF", 0.5))
 
 app = FastAPI()
 sem = asyncio.Semaphore(int(os.environ.get("CONCURRENCY", 4)))
+
+# Running per-request counters so the server-side logs read like progress while
+# another machine ingests (visible via `./model-server --verbose`). Reset only on
+# restart — they count requests this process has handled, not photos in the lib.
+_faces_handled = 0
+_dogs_handled = 0
 
 # buffalo_l = SCRFD detection + arcface r50 512-d recognition. Auto-downloads
 # on first run to ~/.insightface/models/.
@@ -128,6 +135,7 @@ async def detect(payload: DetectRequest, request: Request) -> DetectResponse:
     width, height = img.size
     arr = np.array(img)[:, :, ::-1]  # PIL is RGB; insightface expects BGR
 
+    t0 = time.monotonic()
     async with sem:
         # face_app.get is sync/CPU-bound; offload to a thread so we don't
         # block the event loop while other requests queue.
@@ -144,6 +152,14 @@ async def detect(payload: DetectRequest, request: Request) -> DetectResponse:
                 embedding=emb.tolist(),
             )
         )
+
+    global _faces_handled
+    _faces_handled += 1
+    print(
+        f"[faces] #{_faces_handled}: {len(out)} face(s) "
+        f"in {time.monotonic() - t0:.2f}s ({width}x{height})",
+        flush=True,
+    )
     return DetectResponse(width=width, height=height, faces=out)
 
 
@@ -207,9 +223,17 @@ async def detect_dogs(payload: DetectRequest, request: Request) -> DetectDogsRes
     img = _decode_image(payload.image)
     width, height = img.size
 
+    t0 = time.monotonic()
     async with sem:
         dogs = await asyncio.to_thread(_detect_dogs_sync, state, img)
 
+    global _dogs_handled
+    _dogs_handled += 1
+    print(
+        f"[dogs]  #{_dogs_handled}: {len(dogs)} dog(s) "
+        f"in {time.monotonic() - t0:.2f}s ({width}x{height})",
+        flush=True,
+    )
     return DetectDogsResponse(width=width, height=height, dogs=dogs)
 
 

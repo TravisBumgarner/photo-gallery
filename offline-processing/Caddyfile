@@ -18,6 +18,14 @@
 }
 
 :8443 {
+	# Access log to stdout so `./model-server --verbose` can show live request
+	# activity — including tagging (POST /v1/chat/completions), which is proxied
+	# to the host's native Ollama and otherwise wouldn't surface on this box.
+	log {
+		output stdout
+		format console
+	}
+
 	# Liveness probe stays open so the cli's tokenless /health check still works.
 	handle /health {
 		reverse_proxy vision-server:8090
