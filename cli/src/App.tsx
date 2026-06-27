@@ -203,7 +203,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="magenta" bold>
-        📷 Photo Gallery
+        📷 Your Own Gallery
       </Text>
 
       {screen === 'firstRun' && (

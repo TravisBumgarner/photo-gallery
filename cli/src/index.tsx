@@ -37,7 +37,7 @@ resetCleanup();
 const args = process.argv.slice(2);
 
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`ingest-and-sync — photo-gallery orchestrator
+  console.log(`ingest-and-sync — Your Own Gallery orchestrator
 
 Usage:
   ./ingest-and-sync            Run the Source → Process → Sync wizard

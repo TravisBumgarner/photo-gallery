@@ -1,5 +1,5 @@
 {
-  "name": "photo-gallery",
+  "name": "your-own-gallery",
   "version": "1.0.0",
   "description": "Full-stack app with React Native (Expo), Express, and Drizzle ORM",
   "workspaces": [

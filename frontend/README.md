@@ -1,6 +1,6 @@
 # frontend
 
-Expo (React Native) client for the photo-gallery app — runs on iOS, Android, and web.
+Expo (React Native) client for the Your Own Gallery app — runs on iOS, Android, and web.
 
 ## Develop
 

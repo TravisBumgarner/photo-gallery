@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { Platform } from 'react-native';
 import { Button, H4, Input, Paragraph, YStack } from 'tamagui';
 
 import { apiFetch } from '../lib/api';
@@ -16,6 +17,9 @@ export default function LoginScreen() {
   const router = useRouter();
   const palette = usePalette();
   const { setAuthenticated } = useAuth();
+  // Web is served by the backend (same origin), so there's no server to enter —
+  // the field and its handling are native-only.
+  const isWeb = Platform.OS === 'web';
   // Prefill with the saved server (returning user) or the dev default.
   const [server, setServer] = useState(getServerUrl());
   const [password, setPassword] = useState('');
@@ -24,15 +28,17 @@ export default function LoginScreen() {
 
   const handleSubmit = async () => {
     setError('');
-    const url = normalizeServerUrl(server);
-    if (!/^https?:\/\/.+/i.test(url)) {
-      setError('Enter a server address like https://photos.example.com');
-      return;
+    if (!isWeb) {
+      const url = normalizeServerUrl(server);
+      if (!/^https?:\/\/.+/i.test(url)) {
+        setError('Enter a server address like https://photos.example.com');
+        return;
+      }
+      // Persist + switch the active server before logging in, so apiFetch
+      // targets the address the user just entered.
+      await setServerUrl(url);
     }
     setLoading(true);
-    // Persist + switch the active server before logging in, so apiFetch targets
-    // the address the user just entered.
-    await setServerUrl(url);
     try {
       const response = await apiFetch('/api/auth/login', {
         method: 'POST',
@@ -46,7 +52,11 @@ export default function LoginScreen() {
         setError(data.error || 'Invalid password');
       }
     } catch {
-      setError(`Couldn't reach ${url}. Check the server address.`);
+      setError(
+        isWeb
+          ? "Couldn't reach the server."
+          : `Couldn't reach ${normalizeServerUrl(server)}. Check the server address.`,
+      );
     } finally {
       setLoading(false);
     }
@@ -76,16 +86,18 @@ export default function LoginScreen() {
           <Paragraph style={{ color: palette.error }}>{error}</Paragraph>
         ) : null}
 
-        <Input
-          placeholder="Server address (https://...)"
-          value={server}
-          onChangeText={setServer}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          inputMode="url"
-          autoFocus={!server}
-        />
+        {isWeb ? null : (
+          <Input
+            placeholder="Server address (https://...)"
+            value={server}
+            onChangeText={setServer}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            inputMode="url"
+            autoFocus={!server}
+          />
+        )}
 
         <Input
           placeholder="Password"
@@ -93,12 +105,12 @@ export default function LoginScreen() {
           type="password"
           onChangeText={setPassword}
           secureTextEntry
-          autoFocus={!!server}
+          autoFocus={isWeb || !!server}
           onSubmitEditing={handleSubmit}
         />
 
         <Button
-          disabled={loading || !server || !password}
+          disabled={loading || !password || (!isWeb && !server)}
           onPress={handleSubmit}
         >
           {loading ? 'Signing in...' : 'Sign In'}

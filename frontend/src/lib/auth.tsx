@@ -7,7 +7,7 @@ import {
 } from 'react';
 
 import { apiFetch } from './api';
-import { getServerUrl, loadServerUrl } from './serverUrl';
+import { isServerConfigured, loadServerUrl } from './serverUrl';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -24,12 +24,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Hydrate the saved server URL before checking auth — apiFetch reads it
-    // synchronously, so it must be in place first. With no server configured
-    // yet (fresh install) there's nothing to check; drop straight to the login
-    // screen, where the user enters the address + password.
+    // synchronously, so it must be in place first. On native with no server
+    // configured yet (fresh install) there's nothing to check; drop straight to
+    // the login screen, where the user enters the address + password. On web the
+    // backend is always the page origin, so we go straight to the auth check.
     loadServerUrl()
       .then(() => {
-        if (!getServerUrl()) {
+        if (!isServerConfigured()) {
           setIsAuthenticated(false);
           return;
         }

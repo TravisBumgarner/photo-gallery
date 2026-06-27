@@ -1,6 +1,6 @@
-# Photo Gallery
+# Your Own Gallery
 
-Self-hosted photo gallery for browsing Lightroom photos quickly.
+Your whole Lightroom library, self-hosted and instant on your phone.
 
 ## Features
 
@@ -15,7 +15,7 @@ Self-hosted photo gallery for browsing Lightroom photos quickly.
 - Password protected
 - Easy Lightroom export workflow
 
-![Photo Gallery Grid](docs/images/grid.png)
+![Your Own Gallery Grid](docs/images/grid.png)
 ![Photo Detail Single Photo](docs/images/photo.png)
 ![Photo Stats](docs/images/stats.png)
 
