@@ -31,11 +31,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "drizzle-orm": "^0.45.2"
-  },
   "devDependencies": {
     "@biomejs/biome": "^2.3.13",
-    "concurrently": "^8.2.2"
+    "concurrently": "^10.0.3"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.85.3"
   }
 }
