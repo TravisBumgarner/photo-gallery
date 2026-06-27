@@ -4,6 +4,11 @@ import { Button, H4, Input, Paragraph, YStack } from 'tamagui';
 
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import {
+  getServerUrl,
+  normalizeServerUrl,
+  setServerUrl,
+} from '../lib/serverUrl';
 import { FORM_MAX_WIDTH, SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
 
@@ -11,13 +16,23 @@ export default function LoginScreen() {
   const router = useRouter();
   const palette = usePalette();
   const { setAuthenticated } = useAuth();
+  // Prefill with the saved server (returning user) or the dev default.
+  const [server, setServer] = useState(getServerUrl());
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     setError('');
+    const url = normalizeServerUrl(server);
+    if (!/^https?:\/\/.+/i.test(url)) {
+      setError('Enter a server address like https://photos.example.com');
+      return;
+    }
     setLoading(true);
+    // Persist + switch the active server before logging in, so apiFetch targets
+    // the address the user just entered.
+    await setServerUrl(url);
     try {
       const response = await apiFetch('/api/auth/login', {
         method: 'POST',
@@ -31,7 +46,7 @@ export default function LoginScreen() {
         setError(data.error || 'Invalid password');
       }
     } catch {
-      setError('Failed to connect to server');
+      setError(`Couldn't reach ${url}. Check the server address.`);
     } finally {
       setLoading(false);
     }
@@ -62,16 +77,30 @@ export default function LoginScreen() {
         ) : null}
 
         <Input
+          placeholder="Server address (https://...)"
+          value={server}
+          onChangeText={setServer}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          inputMode="url"
+          autoFocus={!server}
+        />
+
+        <Input
           placeholder="Password"
           value={password}
           type="password"
           onChangeText={setPassword}
           secureTextEntry
-          autoFocus
+          autoFocus={!!server}
           onSubmitEditing={handleSubmit}
         />
 
-        <Button disabled={loading || !password} onPress={handleSubmit}>
+        <Button
+          disabled={loading || !server || !password}
+          onPress={handleSubmit}
+        >
           {loading ? 'Signing in...' : 'Sign In'}
         </Button>
       </YStack>

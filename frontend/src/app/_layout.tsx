@@ -3,10 +3,10 @@ import { useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Spinner, TamaguiProvider, YStack } from 'tamagui';
-
-import AppMenu from '../components/AppMenu';
-import { AuthProvider, useAuth } from '../lib/auth';
 import { tamaguiConfig } from '../../tamagui.config';
+import BottomBar from '../components/BottomBar';
+import { AuthProvider, useAuth } from '../lib/auth';
+import { BottomBarProvider } from '../lib/bottomBar';
 
 function AuthGate() {
   const { loading } = useAuth();
@@ -20,7 +20,7 @@ function AuthGate() {
   return (
     <View style={{ flex: 1 }}>
       <Slot />
-      <AppMenu />
+      <BottomBar />
     </View>
   );
 }
@@ -35,7 +35,9 @@ export default function RootLayout() {
           defaultTheme={colorScheme === 'dark' ? 'dark' : 'light'}
         >
           <AuthProvider>
-            <AuthGate />
+            <BottomBarProvider>
+              <AuthGate />
+            </BottomBarProvider>
           </AuthProvider>
         </TamaguiProvider>
       </SafeAreaProvider>

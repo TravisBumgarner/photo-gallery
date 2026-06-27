@@ -7,7 +7,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Paragraph, Spinner, YStack } from 'tamagui';
 
 import ActiveFilterChips from '../components/ActiveFilterChips';
@@ -19,11 +19,15 @@ import SearchPanel from '../components/SearchPanel';
 import SettingsPanel from '../components/SettingsPanel';
 import SlidePanel from '../components/SlidePanel';
 import SortModal from '../components/SortModal';
-import Toolbar from '../components/Toolbar';
 import { apiFetch } from '../lib/api';
-import type { Photo, PhotoFilters, PhotosResponse } from '../lib/types';
 import { useAuth } from '../lib/auth';
-import { getAutoColumnCount, setColumnCount, useSettings } from '../lib/settings';
+import { type BottomBarItem, useSetBottomBarItems } from '../lib/bottomBar';
+import {
+  getAutoColumnCount,
+  setColumnCount,
+  useSettings,
+} from '../lib/settings';
+import type { Photo, PhotoFilters, PhotosResponse } from '../lib/types';
 import { SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
 
@@ -65,7 +69,6 @@ export default function HomeScreen() {
   const palette = usePalette();
   const { isAuthenticated } = useAuth();
   const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [page, setPage] = useState(1);
@@ -171,12 +174,9 @@ export default function HomeScreen() {
     [selectedPhoto, photos],
   );
 
-  const handleFilterChange = useCallback(
-    (changed: Partial<PhotoFilters>) => {
-      setFilters((prev) => ({ ...prev, ...changed }));
-    },
-    [],
-  );
+  const handleFilterChange = useCallback((changed: Partial<PhotoFilters>) => {
+    setFilters((prev) => ({ ...prev, ...changed }));
+  }, []);
 
   const handleSearchChange = useCallback((text: string) => {
     setFilters((prev) => ({
@@ -197,6 +197,46 @@ export default function HomeScreen() {
   const handleResetFilters = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
   }, []);
+
+  // Publish this screen's actions into the shared bottom bar (left-justified).
+  const barItems = useMemo<BottomBarItem[]>(
+    () => [
+      {
+        key: 'search',
+        icon: 'search',
+        label: 'Search',
+        active: !!searchValue,
+        onPress: () => togglePanel('search'),
+      },
+      {
+        key: 'filter',
+        icon: 'filter-list-alt',
+        label: 'Filters',
+        onPress: () => togglePanel('filter'),
+      },
+      {
+        key: 'sort',
+        icon: 'swap-vert',
+        label: 'Sort',
+        onPress: () => togglePanel('sort'),
+      },
+      {
+        key: 'folder',
+        icon: 'folder',
+        label: 'Folders',
+        active: !!filters.folder,
+        onPress: () => togglePanel('folder'),
+      },
+      {
+        key: 'settings',
+        icon: 'settings',
+        label: 'Settings',
+        onPress: () => togglePanel('settings'),
+      },
+    ],
+    [searchValue, filters.folder, togglePanel],
+  );
+  useSetBottomBarItems(barItems);
 
   if (!isAuthenticated) return <Redirect href="/login" />;
 
@@ -238,7 +278,10 @@ export default function HomeScreen() {
               onClose={closePanel}
             />
           ) : activePanel === 'filter' ? (
-            <FilterPanel filters={filters} onFilterChange={handleFilterChange} />
+            <FilterPanel
+              filters={filters}
+              onFilterChange={handleFilterChange}
+            />
           ) : activePanel === 'sort' ? (
             <SortModal
               sortBy={filters.sortBy ?? 'dateCaptured'}
@@ -287,7 +330,9 @@ export default function HomeScreen() {
               hasMore={hasMore}
               columnCount={columnCount}
               sortBy={
-                filters.contentSearch ? undefined : filters.sortBy ?? 'dateCaptured'
+                filters.contentSearch
+                  ? undefined
+                  : (filters.sortBy ?? 'dateCaptured')
               }
               onLoadMore={handleLoadMore}
               onPhotoPress={handlePhotoPress}
@@ -304,25 +349,6 @@ export default function HomeScreen() {
         onNavigate={handleViewerNavigate}
         onSelectPhoto={setSelectedPhoto}
       />
-
-      <View
-        style={[
-          styles.floatingBar,
-          { paddingBottom: insets.bottom + SPACING.SMALL },
-        ]}
-      >
-        <View style={styles.floatingBarInner}>
-          <Toolbar
-            searchActive={!!searchValue}
-            folderActive={!!filters.folder}
-            onToggleSearch={() => togglePanel('search')}
-            onToggleFilters={() => togglePanel('filter')}
-            onToggleSort={() => togglePanel('sort')}
-            onToggleFolders={() => togglePanel('folder')}
-            onToggleSettings={() => togglePanel('settings')}
-          />
-        </View>
-      </View>
     </SafeAreaView>
   );
 }
@@ -338,19 +364,5 @@ const styles = StyleSheet.create({
   resetText: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  floatingBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: SPACING.MEDIUM,
-    alignItems: 'center',
-    pointerEvents: 'box-none',
-    zIndex: 100,
-  },
-  floatingBarInner: {
-    width: '100%',
-    maxWidth: 800,
   },
 });
