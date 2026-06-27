@@ -18,7 +18,7 @@ import { ROOT } from './steps.js';
 const PULL_PARAMS = (DEPLOY_PARAMS.nearlyfreespeech ?? []).filter(
   (p) => p.key !== 'DEPLOY_SITE_URL',
 );
-const SCRIPT = path.join(ROOT, 'templates', 'nearlyfreespeech', 'pull.sh');
+const SCRIPT = path.join(ROOT, 'deploy', 'nearlyfreespeech', 'pull.sh');
 
 function openPath(p: string): void {
   const [cmd, args] =

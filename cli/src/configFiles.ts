@@ -109,7 +109,7 @@ export const LIGHTROOM_PRESET = path.join(
   'To Mobile Photo Gallery.lrtemplate',
 );
 /** Per-host deploy guides live here, one folder per target. */
-export const TEMPLATES_DIR = path.join(ROOT, 'templates');
+export const DEPLOY_DIR = path.join(ROOT, 'deploy');
 
 export interface DeployTarget {
   value: string;
@@ -122,7 +122,7 @@ export const DEPLOY_TARGETS: DeployTarget[] = [
 
 /** Absolute path to a target's deploy guide. */
 export function deployGuidePath(target: string): string {
-  return path.join(TEMPLATES_DIR, target, 'deploy.md');
+  return path.join(DEPLOY_DIR, target, 'deploy.md');
 }
 
 const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');

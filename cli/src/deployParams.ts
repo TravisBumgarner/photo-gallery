@@ -172,12 +172,12 @@ export const DEPLOY_PARAMS: Record<string, DeployParam[]> = {
 
 /** Absolute path to a target's runnable app-deploy script. */
 export function deployScriptPath(target: string): string {
-  return path.join(ROOT, 'templates', target, 'deploy.sh');
+  return path.join(ROOT, 'deploy', target, 'deploy.sh');
 }
 
 /** Absolute path to a target's data-publish script (photos + DB). */
 export function pushScriptPath(target: string): string {
-  return path.join(ROOT, 'templates', target, 'push.sh');
+  return path.join(ROOT, 'deploy', target, 'push.sh');
 }
 
 type Store = Record<string, Record<string, string>>;
