@@ -11,11 +11,13 @@ const STORAGE_KEY = 'photoGallery.serverUrl.v1';
 // let each user point it at their own server.
 const IS_WEB = Platform.OS === 'web';
 
-// Build-time default (native only). Useful for local dev (`expo start` with
-// EXPO_PUBLIC_API_BASE_URL set) so you don't retype a URL on every reload.
-// Empty in a store build → the login screen's "Server address" field is the
-// only way in, which is the whole point.
-const DEFAULT_URL = IS_WEB ? '' : (process.env.EXPO_PUBLIC_API_BASE_URL ?? '');
+// Build-time default. Production web is served BY the backend (same origin) → ''.
+// In web dev (`expo start --web`, __DEV__ true) and on native, honor
+// EXPO_PUBLIC_API_BASE_URL so the app reaches a separately-running backend
+// without retyping a URL on every reload. Empty in a native store build → the
+// login screen's "Server address" field is the only way in, which is the point.
+const DEFAULT_URL =
+  IS_WEB && !__DEV__ ? '' : (process.env.EXPO_PUBLIC_API_BASE_URL ?? '');
 
 // apiFetch/imageUrl/thumbnailUrl are synchronous, but AsyncStorage is async.
 // So we hydrate this module-level cache once at startup (loadServerUrl) before
