@@ -22,6 +22,14 @@ export default function LoginScreen() {
   const isWeb = Platform.OS === 'web';
   // Prefill with the saved server (returning user) or the dev default.
   const [server, setServer] = useState(getServerUrl());
+  // The server is device config, not a credential, and it's already persisted
+  // (serverUrl.ts). Hiding it once configured keeps the login form a single
+  // password field, so password managers don't autofill the (first) text field
+  // as a username and clobber the saved server. First run / "Change server"
+  // re-shows it.
+  const [showServerField, setShowServerField] = useState(
+    !isWeb && !getServerUrl(),
+  );
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -86,7 +94,7 @@ export default function LoginScreen() {
           <Paragraph style={{ color: palette.error }}>{error}</Paragraph>
         ) : null}
 
-        {isWeb ? null : (
+        {showServerField ? (
           <Input
             placeholder="Server address (https://...)"
             value={server}
@@ -95,9 +103,13 @@ export default function LoginScreen() {
             autoCorrect={false}
             keyboardType="url"
             inputMode="url"
+            // Tell password managers this is a URL, not a username, so they
+            // don't autofill it and overwrite the server address.
+            textContentType="URL"
+            autoComplete="off"
             autoFocus={!server}
           />
-        )}
+        ) : null}
 
         <Input
           placeholder="Password"
@@ -105,7 +117,10 @@ export default function LoginScreen() {
           type="password"
           onChangeText={setPassword}
           secureTextEntry
-          autoFocus={isWeb || !!server}
+          // Let password managers offer/save the password for this login.
+          textContentType="password"
+          autoComplete="password"
+          autoFocus={isWeb || !showServerField}
           onSubmitEditing={handleSubmit}
         />
 
@@ -115,6 +130,12 @@ export default function LoginScreen() {
         >
           {loading ? 'Signing in...' : 'Sign In'}
         </Button>
+
+        {!isWeb && !showServerField ? (
+          <Button size="$2" chromeless onPress={() => setShowServerField(true)}>
+            Change server
+          </Button>
+        ) : null}
       </YStack>
     </YStack>
   );

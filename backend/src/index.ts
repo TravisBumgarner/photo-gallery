@@ -71,6 +71,12 @@ app.use(
     secret: config.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    // Slide the expiry on every response so an active user is never logged out
+    // mid-use. Safe to keep long here: single user, self-hosted, and the server
+    // is read-only at runtime — a leaked cookie can only view, never mutate.
+    // (Sessions still reset on a backend restart: the default in-memory store is
+    // intentional — a persistent store would write at runtime.)
+    rolling: true,
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
@@ -78,7 +84,7 @@ app.use(
       // https. NODE_ENV=production was wrong: it dropped the cookie when serving
       // the gallery over http://localhost, so login never stuck (401 after login).
       secure: 'auto',
-      maxAge: 30 * 60 * 1000, // 30 minutes
+      maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
     },
   }),
 );
