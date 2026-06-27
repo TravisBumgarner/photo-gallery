@@ -22,6 +22,7 @@ type Stage =
   | 'params'
   | 'checking'
   | 'choose'
+  | 'needsApp'
   | 'running'
   | 'ok'
   | 'failed'
@@ -30,13 +31,18 @@ type Stage =
 const label = (target: string) =>
   DEPLOY_TARGETS.find((t) => t.value === target)?.label ?? target;
 
-/** Does the host already have a published gallery? (key auth, like the deploy.) */
-function serverHasData(vals: Record<string, string>): Promise<boolean> {
+/** What's already on the host: is the app deployed (dist/boot.js) and does it have
+ * a published gallery (data/out/db/latest)? One key-auth SSH round-trip, like the
+ * deploy. On any SSH failure we report both false — the scripts re-check and emit
+ * the precise error, so we never block on a flaky probe. */
+function serverState(
+  vals: Record<string, string>,
+): Promise<{ app: boolean; data: boolean }> {
   return new Promise((resolve) => {
     const host = vals.DEPLOY_SSH_HOST;
     const dir = vals.DEPLOY_REMOTE_DIR || '/home/protected';
     if (!host) {
-      resolve(false);
+      resolve({ app: false, data: false });
       return;
     }
     let key = vals.DEPLOY_SSH_KEY || '';
@@ -51,14 +57,22 @@ function serverHasData(vals: Record<string, string>): Promise<boolean> {
       '-o',
       'StrictHostKeyChecking=accept-new',
       host,
-      `test -f '${dir}/data/out/db/latest'`,
+      `test -f '${dir}/dist/boot.js' && echo APP; test -f '${dir}/data/out/db/latest' && echo DATA`,
     );
     try {
-      const child = spawn('ssh', args, { stdio: 'ignore' });
-      child.on('error', () => resolve(false));
-      child.on('close', (code) => resolve(code === 0));
+      let out = '';
+      const child = spawn('ssh', args, {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      child.stdout?.on('data', (d) => {
+        out += d.toString();
+      });
+      child.on('error', () => resolve({ app: false, data: false }));
+      child.on('close', () =>
+        resolve({ app: /\bAPP\b/.test(out), data: /\bDATA\b/.test(out) }),
+      );
     } catch {
-      resolve(false);
+      resolve({ app: false, data: false });
     }
   });
 }
@@ -125,47 +139,63 @@ export function DeployStep({
   // The params stage is handled by ParamForm; the manual-guide and the
   // add/replace choice back out via Esc. Once it's running, Esc is off — use the
   // end-screen actions instead.
-  useEscapeBack(stage === 'manual' || stage === 'choose' ? onBack : null);
+  useEscapeBack(
+    stage === 'manual' || stage === 'choose' || stage === 'needsApp'
+      ? onBack
+      : null,
+  );
 
-  // Actually run the script (data pushes pass PUSH_REPLACE for add-vs-replace).
-  const launch = (vals: Record<string, string>, replace: boolean) => {
+  // Run one script live, tee'd to the shared log; resolves with its exit code.
+  const runScript = (
+    scriptPath: string,
+    env: Record<string, string>,
+  ): Promise<number> =>
+    runStep({ cmd: 'sh', args: [scriptPath], cwd: ROOT, env }, (line) => {
+      try {
+        appendFileSync(logPath, `${line}\n`);
+      } catch {
+        // logging is best-effort; never break the deploy on a write error
+      }
+      tail.current.push(line);
+      if (tail.current.length > 200) tail.current.shift();
+      setDetail(line);
+    });
+
+  // Run the script(s). data pushes pass PUSH_REPLACE for add-vs-replace; when
+  // deployAppFirst is set (publish chosen with no app on the host), run the app
+  // deploy first and only publish if it succeeds.
+  const launch = (
+    vals: Record<string, string>,
+    replace: boolean,
+    deployAppFirst = false,
+  ) => {
     setStage('running');
     tail.current = [];
     mkdirSync(path.dirname(logPath), { recursive: true });
     writeFileSync(logPath, `# ${title}\n`);
     const env = isData ? { ...vals, PUSH_REPLACE: replace ? '1' : '' } : vals;
-    runStep(
-      {
-        cmd: 'sh',
-        args: [script],
-        cwd: ROOT,
-        env,
-      },
-      (line) => {
-        try {
-          appendFileSync(logPath, `${line}\n`);
-        } catch {
-          // logging is best-effort; never break the deploy on a write error
-        }
-        tail.current.push(line);
-        if (tail.current.length > 200) tail.current.shift();
-        setDetail(line);
-      },
-    ).then((code) => setStage(code === 0 ? 'ok' : 'failed'));
+    const chain = deployAppFirst
+      ? runScript(deployScriptPath(target), vals).then((code) =>
+          code === 0 ? runScript(script, env) : code,
+        )
+      : runScript(script, env);
+    chain.then((code) => setStage(code === 0 ? 'ok' : 'failed'));
   };
 
   const run = (vals: Record<string, string>) => {
     saveDeployParams(target, vals);
-    // App deploy: just go. Data publish: if the site already has a gallery, ask
-    // whether to add to it or replace it; first publish has nothing to replace.
+    // App deploy: just go. Data publish needs the app on the host first; probe
+    // once, then: no app → offer to deploy it first; app + existing gallery →
+    // ask add-vs-replace; app + no gallery → first publish, just go.
     if (!isData) {
       launch(vals, false);
       return;
     }
     pendingVals.current = vals;
     setStage('checking');
-    serverHasData(vals).then((has) => {
-      if (has) setStage('choose');
+    serverState(vals).then(({ app, data }) => {
+      if (!app) setStage('needsApp');
+      else if (data) setStage('choose');
       else launch(vals, false);
     });
   };
@@ -242,6 +272,35 @@ export function DeployStep({
           }
         />
         <Text dimColor>  Esc to go back</Text>
+      </Box>
+    );
+  }
+
+  if (stage === 'needsApp') {
+    return (
+      <Box flexDirection="column">
+        <Text bold>{title}</Text>
+        <Text>
+          The app isn’t deployed on {label(target)} yet — publishing needs it
+          there first to load the database.
+        </Text>
+        <SelectInput
+          items={[
+            {
+              label: 'Deploy the app first, then publish (recommended)',
+              value: 'chain',
+            },
+            { label: '← Back', value: 'back' },
+          ]}
+          onSelect={(item) => {
+            if (item.value === 'chain') launch(pendingVals.current, false, true);
+            else onBack();
+          }}
+        />
+        <Text dimColor>
+          {'  '}Builds + uploads the app, then publishes your photos. Esc to go
+          back.
+        </Text>
       </Box>
     );
   }
