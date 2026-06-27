@@ -41,13 +41,14 @@ app.use(
 );
 
 // Middleware
-const allowedOrigins = config.CORS_ORIGIN.split(',').map((o) => o.trim());
-app.use(
-  cors({
-    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
-    credentials: true,
-  }),
-);
+// CORS is only needed in local dev, where the Expo web dev server (Metro, on a
+// different origin/port) calls this backend. In production the backend serves the
+// web build from its own origin, so requests are same-origin and CORS is omitted.
+// Reflect the request origin (origin: true) rather than '*' so credentialed
+// (cookie) requests are allowed.
+if (config.NODE_ENV !== 'production') {
+  app.use(cors({ origin: true, credentials: true }));
+}
 app.use(express.json());
 app.use(
   compression({
