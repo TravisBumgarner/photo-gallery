@@ -27,10 +27,19 @@
       "autoIncrement": true,
       "ios": {
         "resourceClass": "m-medium"
+      },
+      "env": {
+        "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascApiKeyPath": "./private/asc-api-key.p8",
+        "ascApiKeyId": "Y4J7LL3VAN",
+        "ascApiKeyIssuerId": "2399b798-4024-4423-8dab-254bb827c7aa"
+      }
+    }
   }
 }

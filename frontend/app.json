@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "dev.travisbumgarner.yourowngallery",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "dev.travisbumgarner.yourowngallery",
@@ -35,6 +38,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "00d526d5-a2f1-4bec-aff0-c4da2f85140c"
+      }
+    },
+    "owner": "tbumgarner"
   }
 }

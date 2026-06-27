@@ -16,6 +16,8 @@
     "dev:frontend": "npm run start -w frontend",
     "dev:frontend-web": "npm run web -w frontend",
     "dev:frontend-ios": "npm run ios -w frontend",
+    "ios:device": "npm run ios:device -w frontend",
+    "testflight": "npm run testflight -w frontend",
     "build": "npm run build -w backend",
     "db:generate": "npm run db:generate -w backend",
     "db:migrate": "npm run db:migrate -w backend",
