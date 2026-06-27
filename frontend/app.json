@@ -1,17 +1,18 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Your Own Gallery",
+    "slug": "your-own-gallery",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontendv2",
+    "scheme": "yourowngallery",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.travisbumgarner.photogallery",
+      "bundleIdentifier": "dev.travisbumgarner.yourowngallery",
       "supportsTablet": true
     },
     "android": {
+      "package": "dev.travisbumgarner.yourowngallery",
       "predictiveBackGestureEnabled": false
     },
     "web": {

@@ -1,5 +1,5 @@
 """
-Local vision sidecar for the photo gallery's people and dog search.
+Local vision sidecar for Your Own Gallery's people and dog search.
 
 Endpoints:
     POST /detect       - face detection + 512-d ArcFace embedding (InsightFace)

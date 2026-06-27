@@ -204,7 +204,7 @@ fi
 touch .cli-cache
 
 GATEWAY_PORT="$(env_get GATEWAY_PORT)"; GATEWAY_PORT="${GATEWAY_PORT:-8443}"
-bold "=== Photo Gallery — model server ==="
+bold "=== Your Own Gallery — model server ==="
 dim "Serving the tagging LLM (Ollama) + vision-server (faces/dogs) to other"
 dim "machines on your LAN, behind one token-protected port. Nothing is ingested here."
 
