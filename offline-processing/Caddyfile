@@ -1,0 +1,50 @@
+# Auth gateway for the remote model servers (started by `./oi --server`).
+#
+# One plain-HTTP listener on :8443 fronts BOTH model servers so only this single,
+# token-protected port is exposed on the LAN:
+#   /api/*, /v1/*  -> native Ollama on the host (tagging LLM), via host.docker.internal
+#   /health        -> vision-server liveness (left OPEN — leaks nothing, matches the
+#                     server's own unauthenticated /health)
+#   everything else (/detect, /detect-dogs) -> vision-server (faces/dogs)
+#
+# Auth is a shared bearer token (GATEWAY_TOKEN, injected from the environment by
+# compose). The token crosses the LAN in cleartext — fine for a trusted home
+# network; put it behind a VPN/TLS for anything less. Ollama has no auth of its
+# own and vision-server is published on 127.0.0.1 only, so the gateway is the one
+# authenticated entry point.
+{
+	admin off
+	auto_https off
+}
+
+:8443 {
+	# Access log to stdout so `./model-server --verbose` can show live request
+	# activity — including tagging (POST /v1/chat/completions), which is proxied
+	# to the host's native Ollama and otherwise wouldn't surface on this box.
+	log {
+		output stdout
+		format console
+	}
+
+	# Liveness probe stays open so the cli's tokenless /health check still works.
+	handle /health {
+		reverse_proxy vision-server:8090
+	}
+
+	# Everything else requires the bearer token; anything else gets a flat 401.
+	@unauth not header Authorization "Bearer {$GATEWAY_TOKEN}"
+	handle @unauth {
+		respond "Unauthorized" 401
+	}
+
+	# Ollama (tagging LLM) — native on the host, reached over host.docker.internal.
+	@ollama path /api/* /v1/*
+	handle @ollama {
+		reverse_proxy host.docker.internal:11434
+	}
+
+	# Default: vision-server (faces + dogs).
+	handle {
+		reverse_proxy vision-server:8090
+	}
+}

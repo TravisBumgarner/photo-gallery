@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'photoGallery.settings.v1';
@@ -150,11 +151,9 @@ const DEFAULT_SETTINGS: Settings = {
   statsChartOrder: STATS_CHART_ORDER,
 };
 
-function readFromStorage(): Settings {
-  if (typeof localStorage === 'undefined') return DEFAULT_SETTINGS;
+function parseStored(raw: string | null): Settings {
+  if (!raw) return DEFAULT_SETTINGS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
       visibleFilterSections: {
@@ -192,11 +191,15 @@ function readFromStorage(): Settings {
   }
 }
 
-let cached: Settings | null = null;
+// `cached` is the synchronously-readable snapshot. It starts as defaults and is
+// replaced once hydrateSettings() resolves the AsyncStorage read — AsyncStorage
+// is async but useSyncExternalStore needs a sync getSnapshot, so we hydrate once
+// at startup and keep this updated on every commit.
+let cached: Settings = DEFAULT_SETTINGS;
+let hydrated = false;
 const listeners = new Set<() => void>();
 
 function getSnapshot(): Settings {
-  if (!cached) cached = readFromStorage();
   return cached;
 }
 
@@ -211,17 +214,34 @@ function subscribe(cb: () => void) {
   };
 }
 
+/** Load persisted settings from storage into the sync cache. Fired once at
+ *  module load; safe to await elsewhere if a caller needs them ready. */
+export async function hydrateSettings(): Promise<void> {
+  if (hydrated) return;
+  try {
+    cached = parseStored(await AsyncStorage.getItem(STORAGE_KEY));
+  } catch {
+    cached = DEFAULT_SETTINGS;
+  }
+  hydrated = true;
+  for (const l of listeners) l();
+}
+
 export function useSettings(): Settings {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
 function commit(next: Settings) {
   cached = next;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  }
+  // Fire-and-forget: the in-memory snapshot is already updated, so the UI
+  // reflects the change immediately; persistence catches up asynchronously.
+  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
   for (const l of listeners) l();
 }
+
+// Kick off hydration at import. Components re-render via the subscription when
+// it resolves; nothing blocks on it.
+void hydrateSettings();
 
 export function setSectionVisible(key: FilterSectionKey, visible: boolean) {
   const prev = getSnapshot();

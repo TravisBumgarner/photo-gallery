@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
@@ -45,6 +45,12 @@ export default function SlidePanel({
   const palette = usePalette();
   const { width: windowWidth } = useWindowDimensions();
   const isMobile = windowWidth < MOBILE_BREAKPOINT;
+  // Captured here (inside the app's SafeAreaProvider) rather than via a
+  // <SafeAreaView> inside the <Modal> below — react-native-safe-area-context
+  // reports zero insets inside a RN Modal (separate native hierarchy), which is
+  // why the header used to sit under the status bar/notch. These numbers are
+  // valid in this scope, so we apply them as padding inside the modal instead.
+  const insets = useSafeAreaInsets();
 
   // Desktop inline width animation state.
   const widthAnim = useRef(
@@ -95,17 +101,17 @@ export default function SlidePanel({
   // Mobile: a plain full-screen modal — no left slide.
   if (isMobile) {
     return (
-      <Modal
-        visible={visible}
-        animationType="slide"
-        onRequestClose={onClose}
-      >
-        <SafeAreaView
-          edges={['top', 'bottom']}
-          style={{ flex: 1, backgroundColor: palette.background }}
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: palette.background,
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          }}
         >
           {body}
-        </SafeAreaView>
+        </View>
       </Modal>
     );
   }

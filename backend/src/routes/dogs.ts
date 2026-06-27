@@ -10,10 +10,10 @@ export const router = Router();
 
 // GET /api/dogs/labels — distinct labels in use with dog counts, for the
 // Dogs filter sidebar. If two clusters share a label (after labeling or
-// merging in offline-ingestion), counts are summed.
+// merging in offline-processing), counts are summed.
 //
 // The serving app is read-only: dog detection, clustering, and the labeling /
-// merging of clusters all happen offline in `offline-ingestion` (its label-app),
+// merging of clusters all happen offline in `offline-processing` (its label-app),
 // so this router only exposes the read used to filter the gallery.
 router.get('/dogs/labels', async (_req, res) => {
   try {

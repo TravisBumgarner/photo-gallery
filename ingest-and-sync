@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# One entrypoint for the whole offline side: first-run setup (writes
+# .cli-cache + backend/.env), then the Source → Process → Sync orchestrator.
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+# Native pipeline deps (sharp/sqlite/onnx/exiftool) + the Ink orchestrator.
+# NOT frontend (expo/skia) — that's only needed to build the web UI, which
+# ships prebuilt. Docker is NOT required here; only faces/dogs need it, and
+# the orchestrator brings that container up on demand.
+# Install deps on first run AND whenever they change, so `./ingest-and-sync` is
+# the only command you ever run (clone → run; pull → run). We stamp a hash of
+# package-lock.json after installing; a missing node_modules marker or a changed
+# lock re-triggers install, otherwise we stay quiet (workspace deps like `ink`
+# land in cli/node_modules, so we can't just check for them at the root).
+DEPS_STAMP="node_modules/.pg-deps-stamp"
+WANT_DEPS=""
+[ -f package-lock.json ] && WANT_DEPS="$(shasum package-lock.json | awk '{print $1}')"
+if [ ! -e node_modules/.package-lock.json ] || [ "$WANT_DEPS" != "$(cat "$DEPS_STAMP" 2>/dev/null || true)" ]; then
+  echo "📦 Installing dependencies (this takes a minute)…"
+  npm install -w shared -w backend -w offline-processing -w cli --no-audit --no-fund
+  [ -n "$WANT_DEPS" ] && echo "$WANT_DEPS" > "$DEPS_STAMP"
+fi
+
+exec npx tsx cli/src/index.tsx "$@"

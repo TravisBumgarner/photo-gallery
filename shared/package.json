@@ -5,9 +5,16 @@
   "exports": {
     "./db": "./src/db/index.ts",
     "./db/schema": "./src/db/schema.ts",
+    "./db/generation": "./src/db/generation.ts",
     "./types": "./src/types.ts",
     "./schemas": "./src/schemas.ts",
-    "./embed": "./src/embed.ts"
+    "./embed": "./src/embed.ts",
+    "./storage": "./src/storage/index.ts",
+    "./path": "./src/path.ts",
+    "./labels": "./src/labels.ts",
+    "./publish": "./src/publish.ts",
+    "./rebuild": "./src/rebuild.ts",
+    "./sync": "./src/sync.ts"
   },
   "dependencies": {
     "@huggingface/tokenizers": "^0.1.3",

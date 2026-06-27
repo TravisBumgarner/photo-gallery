@@ -1,4 +1,3 @@
-import { MaterialIcons } from '@expo/vector-icons';
 import { Redirect } from 'expo-router';
 import {
   lazy,
@@ -8,24 +7,15 @@ import {
   useMemo,
   useState,
 } from 'react';
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { StatsFilters, StatsResponse } from 'shared/types';
 
 import SlidePanel from '../components/SlidePanel';
 import StatsFiltersBar from '../components/StatsFilters';
 import StatsSettingsPanel from '../components/StatsSettingsPanel';
 import { useAuth } from '../lib/auth';
+import { type BottomBarItem, useSetBottomBarItems } from '../lib/bottomBar';
 import { fetchStats } from '../lib/stats';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
@@ -45,7 +35,6 @@ const LazyStatsCharts = lazy(async () => {
 
 export default function StatsScreen() {
   const palette = usePalette();
-  const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
 
   const [activePanel, setActivePanel] = useState<'filters' | 'settings' | null>(
@@ -82,8 +71,33 @@ export default function StatsScreen() {
     setFilters((prev) => ({ ...prev, ...changed }));
   }, []);
 
-  const togglePanel = (panel: 'filters' | 'settings') =>
-    setActivePanel((prev) => (prev === panel ? null : panel));
+  const togglePanel = useCallback(
+    (panel: 'filters' | 'settings') =>
+      setActivePanel((prev) => (prev === panel ? null : panel)),
+    [],
+  );
+
+  // Publish this screen's actions into the shared bottom bar (left-justified).
+  const barItems = useMemo<BottomBarItem[]>(
+    () => [
+      {
+        key: 'filters',
+        icon: 'filter-list-alt',
+        label: 'Filters',
+        active: activePanel === 'filters',
+        onPress: () => togglePanel('filters'),
+      },
+      {
+        key: 'settings',
+        icon: 'settings',
+        label: 'Settings',
+        active: activePanel === 'settings',
+        onPress: () => togglePanel('settings'),
+      },
+    ],
+    [activePanel, togglePanel],
+  );
+  useSetBottomBarItems(barItems);
 
   if (!isAuthenticated) return <Redirect href="/login" />;
 
@@ -138,66 +152,7 @@ export default function StatsScreen() {
           )}
         </ScrollView>
       </View>
-
-      <View
-        style={[
-          styles.floatingBar,
-          { paddingBottom: insets.bottom + SPACING.SMALL },
-        ]}
-        pointerEvents="box-none"
-      >
-        <View style={[styles.toolbar, { backgroundColor: palette.surface }]}>
-          <ToolbarButton
-            icon="filter-list-alt"
-            label="Filters"
-            active={activePanel === 'filters'}
-            onPress={() => togglePanel('filters')}
-            palette={palette}
-          />
-          <ToolbarButton
-            icon="settings"
-            label="Settings"
-            active={activePanel === 'settings'}
-            onPress={() => togglePanel('settings')}
-            palette={palette}
-          />
-        </View>
-      </View>
     </SafeAreaView>
-  );
-}
-
-function ToolbarButton({
-  icon,
-  label,
-  active,
-  onPress,
-  palette,
-}: {
-  icon: React.ComponentProps<typeof MaterialIcons>['name'];
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  palette: ReturnType<typeof usePalette>;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.toolbarButton,
-        { opacity: pressed ? 0.6 : 1 },
-      ]}
-    >
-      <MaterialIcons
-        name={icon}
-        size={20}
-        color={active ? palette.primary : palette.textPrimary}
-      />
-      <Text style={[styles.toolbarCaption, { color: palette.textSecondary }]}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -214,36 +169,5 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.SMALL,
     textAlign: 'center',
     paddingVertical: SPACING.LARGE,
-  },
-  floatingBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: SPACING.MEDIUM,
-    alignItems: 'center',
-    pointerEvents: 'box-none',
-    zIndex: 100,
-  },
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    gap: SPACING.SMALL,
-    paddingHorizontal: SPACING.MEDIUM,
-    paddingVertical: SPACING.SMALL,
-    borderRadius: 999,
-    boxShadow: '0px 6px 16px rgba(0, 0, 0, 0.18)',
-    elevation: 10,
-  },
-  toolbarButton: {
-    minWidth: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    paddingHorizontal: SPACING.TINY,
-  },
-  toolbarCaption: {
-    fontSize: FONT_SIZES.TINY,
   },
 });

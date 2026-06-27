@@ -1,6 +1,13 @@
-import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 
 import { apiFetch } from './api';
+import { getServerUrl, loadServerUrl } from './serverUrl';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -16,10 +23,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch('/api/auth/check')
-      .then((res) => res.json())
-      .then((data) => setIsAuthenticated(data.authenticated === true))
-      .catch(() => setIsAuthenticated(false))
+    // Hydrate the saved server URL before checking auth — apiFetch reads it
+    // synchronously, so it must be in place first. With no server configured
+    // yet (fresh install) there's nothing to check; drop straight to the login
+    // screen, where the user enters the address + password.
+    loadServerUrl()
+      .then(() => {
+        if (!getServerUrl()) {
+          setIsAuthenticated(false);
+          return;
+        }
+        return apiFetch('/api/auth/check')
+          .then((res) => res.json())
+          .then((data) => setIsAuthenticated(data.authenticated === true))
+          .catch(() => setIsAuthenticated(false));
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -34,7 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, loading, setAuthenticated: setIsAuthenticated, logout }}
+      value={{
+        isAuthenticated,
+        loading,
+        setAuthenticated: setIsAuthenticated,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

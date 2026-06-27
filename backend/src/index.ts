@@ -21,8 +21,24 @@ const PORT = config.PORT;
 // Trust reverse proxy (NearlyFreeSpeech runs Node behind a proxy)
 app.set('trust proxy', 1);
 
-// Security headers
-app.use(helmet());
+// Security headers. Relax the CSP enough to serve the bundled Expo web build:
+// it ships an inline bootstrap <script> and inline styles, loads fonts/images
+// as data: URIs, and media may be redirected to an https CDN/bucket. Drop
+// upgrade-insecure-requests so serving over http://localhost isn't broken.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        fontSrc: ["'self'", 'data:'],
+        upgradeInsecureRequests: null,
+      },
+    },
+  }),
+);
 
 // Middleware
 const allowedOrigins = config.CORS_ORIGIN.split(',').map((o) => o.trim());
@@ -57,7 +73,10 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: config.NODE_ENV === 'production',
+      // 'auto' (with trust proxy) = secure only when actually served over
+      // https. NODE_ENV=production was wrong: it dropped the cookie when serving
+      // the gallery over http://localhost, so login never stuck (401 after login).
+      secure: 'auto',
       maxAge: 30 * 60 * 1000, // 30 minutes
     },
   }),
@@ -106,19 +125,20 @@ const allowCrossOriginEmbed = (
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 };
-app.use(
-  '/images',
-  allowCrossOriginEmbed,
-  express.static(path.join(__dirname, '../public/images'), staticCacheOptions),
-);
-app.use(
-  '/thumbnails',
-  allowCrossOriginEmbed,
-  express.static(
-    path.join(__dirname, '../public/thumbnails'),
-    staticCacheOptions,
-  ),
-);
+
+// Media — served straight from the file:// storage dir. The frontend always
+// loads `${api}/images/<file>` and `${api}/thumbnails/<file>`.
+const mediaRoot = config.STORAGE_URL?.startsWith('file://')
+  ? config.STORAGE_URL.slice('file://'.length)
+  : path.join(__dirname, '../public'); // legacy local layout
+
+for (const dir of ['images', 'thumbnails']) {
+  app.use(
+    `/${dir}`,
+    allowCrossOriginEmbed,
+    express.static(path.join(mediaRoot, dir), staticCacheOptions),
+  );
+}
 
 // Routes (protected)
 app.use('/api', photosRouter);

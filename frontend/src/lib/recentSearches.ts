@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'photoGallery.recentSearches.v1';
@@ -10,11 +11,9 @@ export interface RecentSearch {
   kind: RecentKind;
 }
 
-function readFromStorage(): RecentSearch[] {
-  if (typeof localStorage === 'undefined') return [];
+function parseStored(raw: string | null): RecentSearch[] {
+  if (!raw) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -34,11 +33,13 @@ function readFromStorage(): RecentSearch[] {
   }
 }
 
-let cached: RecentSearch[] | null = null;
+// Synchronously-readable cache, hydrated once from AsyncStorage at startup (see
+// settings.ts for the same pattern and why the read can't be synchronous).
+let cached: RecentSearch[] = [];
+let hydrated = false;
 const listeners = new Set<() => void>();
 
 function getSnapshot(): RecentSearch[] {
-  if (!cached) cached = readFromStorage();
   return cached;
 }
 
@@ -53,17 +54,26 @@ function subscribe(cb: () => void) {
   };
 }
 
-function persist(next: RecentSearch[]) {
-  cached = next;
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // ignore quota / serialization errors
-    }
+/** Load persisted recents into the sync cache. Fired once at module load. */
+export async function hydrateRecentSearches(): Promise<void> {
+  if (hydrated) return;
+  try {
+    cached = parseStored(await AsyncStorage.getItem(STORAGE_KEY));
+  } catch {
+    cached = [];
   }
+  hydrated = true;
   for (const l of listeners) l();
 }
+
+function persist(next: RecentSearch[]) {
+  cached = next;
+  // Fire-and-forget; the in-memory list is the source of truth for this session.
+  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+  for (const l of listeners) l();
+}
+
+void hydrateRecentSearches();
 
 export function useRecentSearches(): RecentSearch[] {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

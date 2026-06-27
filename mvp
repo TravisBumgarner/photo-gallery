@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Zero-infrastructure MVP: ingest → publish → serve a browsable gallery on the
+# host. No Docker, no model servers, no cloud — just Node. Tags/faces/dogs need
+# the model servers (use ./ingest-and-sync for the full pipeline); this proves
+# the ingest + publish + serve loop with EXIF-based browsing/filtering/stats.
+#
+#   ./mvp                 # generates sample photos, serves at :8099
+#   ./mvp /path/to/photos # use your own folder
+set -euo pipefail
+
+cd "$(dirname "$0")"
+ROOT="$(pwd)"
+MVP="$ROOT/.mvp"
+PHOTOS="${1:-$MVP/photos}"
+OUT="$MVP/out"
+DB="$OUT/ingest.sqlite"
+SERVED="$MVP/served.sqlite"
+PORT="${PORT:-8099}"
+PASS="${APP_PASSWORD:-mvp}"
+
+mkdir -p "$MVP" "$OUT"
+
+# 0. Dependencies (first run).
+if [ ! -e node_modules/sharp ]; then
+  echo "📦 Installing dependencies (first run, slow)..."
+  npm install
+fi
+
+# 1. Sample photos when no folder was provided.
+if [ "$PHOTOS" = "$MVP/photos" ] && [ ! -d "$PHOTOS" ]; then
+  echo "🖼  Generating sample photos..."
+  mkdir -p "$PHOTOS/2024/Italy" "$PHOTOS/2023/Beach"
+  ( cd offline-processing && TARGET="$PHOTOS" node -e '
+    const sharp = require("sharp");
+    const c=[[200,80,80],[80,200,120],[80,120,200],[220,200,80],[160,80,200],[80,200,200]];
+    const p=["2024/Italy/rome","2024/Italy/venice","2024/Italy/florence","2023/Beach/sunset","2023/Beach/waves","2023/Beach/sand"];
+    (async()=>{for(let i=0;i<p.length;i++){const[r,g,b]=c[i];await sharp({create:{width:800+i*40,height:600+i*20,channels:3,background:{r,g,b}}}).jpeg().toFile(`${process.env.TARGET}/${p[i]}.jpg`)}})();
+  ' )
+fi
+
+# 2. Fresh DB + migrations.
+echo "🗄  Migrating database..."
+( cd backend && DATABASE_URL="$DB" npx tsx src/db/migrate.ts >/dev/null )
+
+# 3. Ingest (auto-confirm).
+echo "📥 Ingesting photos..."
+printf 'y\n' | env DATABASE_URL="$DB" SOURCE_DIR="$PHOTOS" DESTINATION_DIRECTORY="$OUT" \
+  FILE_TRANSFER_MODE=copy DRY_RUN=false npm run ingest -w offline-processing
+
+# 4. Publish the read-only release (sidecars + labels.json + slim DB) locally.
+echo "📦 Publishing read-only release..."
+env DATABASE_URL="$DB" SOURCE_DIR="$PHOTOS" DESTINATION_DIRECTORY="$OUT" \
+  npm run publish -w offline-processing
+
+# 5. Build the web frontend once (cached afterward).
+if [ ! -f backend/frontend-dist/index.html ]; then
+  echo "🎨 Building web frontend (first run, ~1 min)..."
+  ( cd frontend && EXPO_PUBLIC_API_BASE_URL="" npx expo export --platform web --output-dir dist ) || true
+  [ -f frontend/dist/index.html ] || { echo "❌ frontend export failed"; exit 1; }
+  rm -rf backend/frontend-dist && cp -R frontend/dist backend/frontend-dist
+fi
+
+# 6. Pull the read-only DB to the serving location (the real boot path).
+echo "⬇️  Pulling read-only DB..."
+( cd backend && STORAGE_URL="file://$OUT" DATABASE_URL="$SERVED" npx tsx src/boot.ts )
+
+# 7. Serve.
+echo
+echo "✅ Gallery: http://localhost:$PORT    (password: $PASS)"
+echo "   Ctrl-C to stop."
+echo
+cd backend && exec env \
+  PORT="$PORT" NODE_ENV=production SESSION_SECRET=mvp-dev-secret \
+  APP_PASSWORD="$PASS" CORS_ORIGIN='*' \
+  DATABASE_URL="$SERVED" STORAGE_URL="file://$OUT" \
+  npx tsx src/index.ts

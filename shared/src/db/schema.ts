@@ -7,11 +7,22 @@ import {
   text,
 } from 'drizzle-orm/sqlite-core';
 
+// Small key/value table for DB-level metadata. Currently holds `generation`,
+// a monotonic counter bumped on every publish (see db/generation.ts).
+export const meta = sqliteTable('meta', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
+
 export const photos = sqliteTable(
   'photos',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     uuid: text('uuid').notNull().unique(),
+    // SHA256 of the source file bytes. The stable per-detection anchor for
+    // reattaching labels (labels.json) across re-clustering. Nullable for rows
+    // written before this column existed.
+    contentHash: text('content_hash'),
     filename: text('filename').notNull(),
     originalPath: text('original_path').notNull(),
     thumbnailPath: text('thumbnail_path').notNull(),
@@ -70,6 +81,7 @@ export const photos = sqliteTable(
     aspectRatioIdx: index('idx_photos_aspect_ratio').on(table.aspectRatio),
     createdAtIdx: index('idx_photos_created_at').on(table.createdAt),
     filenameIdx: index('idx_photos_filename').on(table.filename),
+    contentHashIdx: index('idx_photos_content_hash').on(table.contentHash),
     facesProcessedAtIdx: index('idx_photos_faces_processed_at').on(
       table.facesProcessedAt,
     ),

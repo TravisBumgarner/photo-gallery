@@ -5,11 +5,13 @@
   "workspaces": [
     "shared",
     "backend",
-    "offline-ingestion",
-    "frontend"
+    "offline-processing",
+    "frontend",
+    "cli"
   ],
   "scripts": {
     "setup": "bash bootstrap.sh",
+    "orchestrator": "npm run start -w cli",
     "dev:backend": "npm run dev -w backend",
     "dev:frontend": "npm run start -w frontend",
     "dev:frontend-web": "npm run web -w frontend",
@@ -22,8 +24,7 @@
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "check": "biome check .",
-    "check:fix": "biome check --write .",
-    "deploy": "./deploy.sh"
+    "check:fix": "biome check --write ."
   },
   "keywords": [],
   "author": "",

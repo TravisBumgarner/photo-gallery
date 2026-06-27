@@ -1,5 +1,4 @@
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8084';
+import { getServerUrl } from './serverUrl';
 
 /**
  * Backend URL for a photo thumbnail. `thumbnailPath` already includes the
@@ -10,7 +9,7 @@ export function thumbnailUrl(thumbnailPath: string): string {
   const normalized = thumbnailPath.startsWith('/')
     ? thumbnailPath
     : `/${thumbnailPath}`;
-  return `${API_BASE_URL}${normalized}`;
+  return `${getServerUrl()}${normalized}`;
 }
 
 /**
@@ -21,11 +20,11 @@ export function imageUrl(originalPath: string): string {
   const normalized = originalPath.startsWith('/')
     ? originalPath.slice(1)
     : originalPath;
-  return `${API_BASE_URL}/images/${normalized}`;
+  return `${getServerUrl()}/images/${normalized}`;
 }
 
 export async function apiFetch(path: string, init?: RequestInit) {
-  return fetch(`${API_BASE_URL}${path}`, {
+  return fetch(`${getServerUrl()}${path}`, {
     ...init,
     credentials: 'include',
     headers: {

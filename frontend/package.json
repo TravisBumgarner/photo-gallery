@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@shopify/react-native-skia": "2.6.2",
     "@tamagui/config": "^2.0.0",
     "expo": "~56.0.4",
@@ -36,7 +37,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "ios:device:prod": "EXPO_PUBLIC_API_BASE_URL=https://photo-gallery.nfshost.com expo run:ios --device --configuration Release",
+    "ios:device:release": "expo run:ios --device --configuration Release",
     "web": "expo start --web",
     "lint": "expo lint",
     "postinstall": "setup-skia-web public"
