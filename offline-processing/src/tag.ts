@@ -39,6 +39,32 @@ async function serverReachable(
   }
 }
 
+/** How many requests the model server tags at once — its launch-time
+ * OLLAMA_NUM_PARALLEL. Local: from .cli-cache (preflight launched Ollama with
+ * it). Remote: the ./model-server gateway reports the value it launched Ollama
+ * with on /parallel. null = unknown (older gateway / not configured). */
+async function serverParallelism(
+  host: string,
+  apiKey: string | undefined,
+  cfgValue: string | undefined,
+): Promise<number | null> {
+  if (isLocalHost(host)) {
+    const n = Number.parseInt(cfgValue ?? '', 10);
+    return n >= 1 ? n : null;
+  }
+  try {
+    const res = await fetch(`${host.replace(/\/+$/, '')}/parallel`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const n = Number.parseInt((await res.text()).trim(), 10);
+    return n >= 1 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 // A vision model spends most of its time encoding the image, and that cost grows
 // with resolution — full-size photos can take minutes per image on CPU (and blow
 // past the fetch timeout). ~1024px is plenty for tag-level understanding and cuts
@@ -198,6 +224,20 @@ async function main() {
   const modelHost = rawModelHost;
   const model = await resolveModel(modelHost, configuredModel);
 
+  // Size the request window from the server's parallelism: 2×N keeps every
+  // server slot fed while this side resizes/embeds/writes between requests,
+  // without flooding Ollama's request queue (overflow 503s would read as an
+  // outage). Unknown N (older ./model-server gateway) → a modest fixed window.
+  const serverN = await serverParallelism(
+    modelHost,
+    apiKey,
+    config.OLLAMA_NUM_PARALLEL,
+  );
+  const concurrency = Math.min(
+    settings.tagging.concurrency,
+    serverN ? serverN * 2 : 4,
+  );
+
   const localDbPath = config.DATABASE_URL;
   if (!localDbPath) {
     console.error('DATABASE_URL must be set (path to local sqlite).');
@@ -226,6 +266,9 @@ async function main() {
   console.log(`--- Tagging ---`);
   console.log(
     `  Model server: ${modelHost} (${model})${apiKey ? ' [auth]' : ''}`,
+  );
+  console.log(
+    `  Parallel:     ${concurrency} in flight (server tags ${serverN ?? '?'} at once)`,
   );
   console.log(`  Local DB:     ${localDbPath}`);
   console.log(`  Images dir:   ${localImagesDir}`);
@@ -379,9 +422,8 @@ async function main() {
     }
 
     await Promise.all(
-      Array.from(
-        { length: Math.min(settings.tagging.concurrency, untagged.length) },
-        () => worker(),
+      Array.from({ length: Math.min(concurrency, untagged.length) }, () =>
+        worker(),
       ),
     );
 

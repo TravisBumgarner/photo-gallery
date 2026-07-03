@@ -37,6 +37,13 @@
 		respond "Unauthorized" 401
 	}
 
+	# How many requests the native Ollama serves at once (the OLLAMA_NUM_PARALLEL
+	# it was launched with — ./model-server injects it via compose). The client
+	# reads this to size its tagging request window to match the server.
+	handle /parallel {
+		respond "{$OLLAMA_NUM_PARALLEL}" 200
+	}
+
 	# Ollama (tagging LLM) — native on the host, reached over host.docker.internal.
 	@ollama path /api/* /v1/*
 	handle @ollama {

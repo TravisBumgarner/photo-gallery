@@ -358,6 +358,9 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           const current = loadExistingValues();
           const host = current.MODEL_SERVER_HOST || '(not set)';
           const model = current.MODEL_SERVER_MODEL || '(not set)';
+          // Only in the cache for a local Ollama; a remote server owns its own
+          // value (prompted by ./model-server on that box).
+          const par = current.OLLAMA_NUM_PARALLEL;
           return (
             <Box flexDirection="column">
               <Text bold>Process photos</Text>
@@ -371,6 +374,7 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               <Text>
                 Tagging server: <Text color="cyan">{host}</Text> · model{' '}
                 <Text color="cyan">{model}</Text>
+                {par ? ` · ${par} in parallel` : ''}
               </Text>
               <Text color="yellow">
                 ⚠ This can take a while — minutes to hours to days on a large

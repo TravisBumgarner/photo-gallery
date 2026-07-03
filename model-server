@@ -97,9 +97,9 @@ ollama_loopback_only() { # listening on :11434 but only on loopback?
   [[ -n "$l" ]] && ! grep -qE '(\*|0\.0\.0\.0):11434' <<<"$l"
 }
 ollama_serve_bound() {
-  # OLLAMA_NUM_PARALLEL: how many tagging requests Ollama serves at once. Honour
-  # an already-set value (fallback to 1) — the client's setting doesn't reach
-  # this box, so it's tuned here in the environment that launches Ollama.
+  # OLLAMA_NUM_PARALLEL: how many tagging requests Ollama serves at once — only
+  # applies at launch, in Ollama's environment, so it's prompted + cached on THIS
+  # box (the client machine can't set it). The gateway reports it on /parallel.
   OLLAMA_HOST=0.0.0.0:11434 OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}" \
     nohup ollama serve >/dev/null 2>&1 &
   disown 2>/dev/null || true
@@ -228,6 +228,25 @@ dmodel="$(env_get MODEL_SERVER_MODEL)"; dmodel="${dmodel:-qwen3-vl:8b}"
 dim "Vision model to serve — Ollama 'name:tag' (browse: https://ollama.com/search?c=vision)."
 export MODEL_SERVER_MODEL="$(ask "Vision model [$dmodel]: " "$dmodel")"
 env_set MODEL_SERVER_MODEL "$MODEL_SERVER_MODEL"
+
+# Parallel taggings: how many images Ollama tags at once (OLLAMA_NUM_PARALLEL).
+# It only applies when Ollama launches, on this box — so it's asked and cached
+# HERE, not on the client. The gateway exposes it on /parallel so the client
+# sizes its request window to match; a changed value restarts Ollama to apply.
+prev_par="$(env_get OLLAMA_NUM_PARALLEL)"; prev_par="${prev_par:-1}"
+dim "How many images to tag at once. Raise it while watching img/s on the main"
+dim "machine to find the sweet spot; lower it if Ollama runs out of memory."
+while :; do
+  OLLAMA_NUM_PARALLEL="$(ask "Parallel taggings [$prev_par]: " "$prev_par")"
+  [[ "$OLLAMA_NUM_PARALLEL" =~ ^[1-9][0-9]*$ ]] && break
+  err "Enter a whole number ≥ 1."
+done
+export OLLAMA_NUM_PARALLEL
+env_set OLLAMA_NUM_PARALLEL "$OLLAMA_NUM_PARALLEL"
+if [[ "$OLLAMA_NUM_PARALLEL" != "$prev_par" ]] && native_ollama_up; then
+  bold "Parallelism changed ($prev_par → $OLLAMA_NUM_PARALLEL) — restarting Ollama to apply it..."
+  ollama_restart_bound
+fi
 
 # Native, GPU-backed Ollama: ensure it's up and the model is pulled (up front).
 echo

@@ -57,7 +57,9 @@ const settingsSchema = z
       .default({}),
     tagging: z
       .object({
-        // Sliding-window concurrency of in-flight vision-LLM requests.
+        // CAP on in-flight vision-LLM requests. The actual window is derived
+        // from the server's parallelism (2× its OLLAMA_NUM_PARALLEL — see
+        // tag.ts); this only clamps it, so the default is effectively "no cap".
         concurrency: z.number().int().positive().default(2000),
         prompt: z.string().min(1).default(DEFAULT_TAG_PROMPT),
       })

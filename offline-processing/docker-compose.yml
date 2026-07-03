@@ -47,6 +47,9 @@ services:
       # this service even for unrelated commands (e.g. a plain `up vision-server`),
       # which would then error out on a token they never needed.
       GATEWAY_TOKEN: "${GATEWAY_TOKEN:-}"
+      # The parallelism ./model-server launched the native Ollama with; served
+      # verbatim on /parallel so tagging clients can match their request window.
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     # Reach the host's native Ollama (GPU) from inside the container. Automatic on
