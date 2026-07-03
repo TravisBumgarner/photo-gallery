@@ -7,13 +7,14 @@ import {
   unlinkSync,
 } from 'node:fs';
 import path from 'node:path';
-import { expandHome, STAGING_DIR } from './configFiles.js';
+import { expandHome, STAGING_DIR, VIEWING_RE } from './configFiles.js';
 
-// Move every image OUT of an import-from folder (argv[2]) and INTO the staging
-// inbox (STAGING_DIR), preserving nested structure. The wizard collects the
-// import folder, so this runs non-interactively. Lightroom = export with the
-// preset, then point the import folder here.
-const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
+// Move Lightroom preset exports OUT of an import-from folder (argv[2]) and INTO
+// the staging inbox (STAGING_DIR), preserving nested structure. The wizard
+// collects the import folder, so this runs non-interactively. Lightroom = export
+// with the "To Mobile Photo Gallery" preset, then point the import folder here.
+// Only files carrying the preset's `_exported_for_viewing_locally.*` suffix are
+// moved, so unrelated originals/sidecars sharing the folder are left alone.
 const ARCHIVE_DIR_NAME = '_already_processed';
 
 function listDir(dir: string) {
@@ -31,7 +32,7 @@ function findImages(dir: string): string[] {
     if (e.isDirectory()) {
       if (e.name === ARCHIVE_DIR_NAME) continue; // never pull from the archive
       out.push(...findImages(full));
-    } else if (e.isFile() && IMAGE_RE.test(e.name)) {
+    } else if (e.isFile() && VIEWING_RE.test(e.name)) {
       out.push(full);
     }
   }
@@ -66,9 +67,13 @@ function main() {
   }
 
   const files = findImages(src);
-  console.log(`Found ${files.length} image(s) under ${src}`);
+  console.log(`Found ${files.length} preset export(s) under ${src}`);
   if (files.length === 0) {
-    console.log('Nothing to import.');
+    console.log(
+      'Nothing to import — no files with the "_exported_for_viewing_locally" ' +
+        'suffix here. Re-export with the "To Mobile Photo Gallery" preset, or ' +
+        'point at the folder you exported to.',
+    );
     return;
   }
   console.log(`Moving into staging ${dest} (folder structure preserved)…`);

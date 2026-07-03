@@ -10,6 +10,11 @@ import { markOllama } from './cleanup.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI_CACHE = path.join(ROOT, 'offline-processing', '.cli-cache');
 
+// Runner (Runner.tsx) turns a line with this prefix into the step's persistent
+// one-line summary (the "— …" suffix). Plain logs only show while the step runs.
+const SUMMARY_PREFIX = '@@PG_SUMMARY@@';
+const summary = (msg: string) => console.log(`${SUMMARY_PREFIX} ${msg}`);
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isLocal = (host: string) => /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
 const ollamaInstalled = () =>
@@ -60,9 +65,19 @@ async function main() {
   );
   // Remote ./model-server gateway requires this bearer token; local Ollama ignores it.
   const key = cfg.MODEL_SERVER_API_KEY || undefined;
+  // How many tagging requests Ollama serves at once (local only). Applied when
+  // WE start Ollama below; a passthrough for an already-running one.
+  const numParallel = cfg.OLLAMA_NUM_PARALLEL;
 
   // 1. Ensure the server is reachable.
   let installed = await tags(host, key);
+  if (installed !== null && isLocal(host) && numParallel) {
+    // Env only takes effect at launch, and this Ollama is already up — so its
+    // parallelism is whatever it was started with, not necessarily this value.
+    console.log(
+      `Ollama is already running — OLLAMA_NUM_PARALLEL=${numParallel} only applies when it's (re)started. Quit Ollama and re-run to apply it.`,
+    );
+  }
   if (installed === null) {
     if (!isLocal(host)) {
       die(
@@ -77,12 +92,17 @@ async function main() {
         'then re-run. (It only needs installing once.)',
       );
     }
-    console.log('Starting Ollama…');
+    console.log(
+      `Starting Ollama…${numParallel ? ` (OLLAMA_NUM_PARALLEL=${numParallel})` : ''}`,
+    );
     // We started it (it wasn't already up) — record the pid so shutdown stops
     // our Ollama, and only ours.
     const ollama = spawn('ollama', ['serve'], {
       detached: true,
       stdio: 'ignore',
+      env: numParallel
+        ? { ...process.env, OLLAMA_NUM_PARALLEL: numParallel }
+        : process.env,
     });
     if (ollama.pid) markOllama(ollama.pid);
     ollama.unref();
@@ -129,7 +149,8 @@ async function main() {
   }
 
   // The tag task resolves the exact tag at call time — config stays as typed.
-  console.log(`Model "${resolved}" ready on ${host}.`);
+  // Emit as the step summary so the host/IP stays visible in the checklist.
+  summary(`${resolved} online at ${host}`);
 }
 
 main();

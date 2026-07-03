@@ -10,6 +10,35 @@ import { settings } from '@/settings.js';
 
 const RETRY_DELAYS_MS = [500, 1500, 3500];
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const isLocalHost = (host: string) =>
+  /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
+
+/** Connection-level failure (server unreachable / reset / gateway down), as
+ * opposed to a per-image error. For a REMOTE host this means "server went away"
+ * → pause and wait for it, rather than counting every remaining image failed. */
+function isConnLevel(err: unknown): boolean {
+  if (err instanceof TypeError) return true; // undici "fetch failed"
+  const status = (err as { status?: number })?.status;
+  return status === 502 || status === 503 || status === 504;
+}
+
+/** Is the model server answering right now? Used to poll for its return. */
+async function serverReachable(
+  host: string,
+  apiKey: string | undefined,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${host.replace(/\/+$/, '')}/api/tags`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      signal: AbortSignal.timeout(4000),
+    });
+    return res.ok || res.status === 401 || res.status === 403; // up (maybe auth)
+  } catch {
+    return false;
+  }
+}
+
 // A vision model spends most of its time encoding the image, and that cost grows
 // with resolution — full-size photos can take minutes per image on CPU (and blow
 // past the fetch timeout). ~1024px is plenty for tag-level understanding and cuts
@@ -223,16 +252,68 @@ async function main() {
     let processed = 0;
     let consecutiveFailures = 0;
     let nextIndex = 0;
+    let inFlight = 0;
+    const isRemote = !isLocalHost(modelHost);
+    // Rows that hit the server mid-outage go here to be retried once it's back,
+    // so a transient drop doesn't permanently "fail" them.
+    const retryQueue: (typeof untagged)[number][] = [];
+    // While set, the server is down and every worker awaits it before taking
+    // more work — the "pause". One worker runs the poll; the rest just wait.
+    let recovery: Promise<void> | null = null;
     const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+
+    // Remote server dropped out: pause all workers, poll until it answers, then
+    // resume. Only the first caller runs the loop; concurrent callers share it.
+    function pauseUntilServerBack(triggerErr: unknown): Promise<void> {
+      if (!recovery) {
+        recovery = (async () => {
+          console.error(
+            `\n⚠ Model server ${modelHost} stopped responding (${triggerErr}).`,
+          );
+          console.error(
+            '  Pausing — will resume automatically when it’s reachable again. Press q to stop.',
+          );
+          let waited = 0;
+          while (!(await serverReachable(modelHost, apiKey))) {
+            status(
+              `⚠ Model server unreachable — paused, waiting for it to come back (${waited}s)… press q to stop`,
+            );
+            await sleep(5000);
+            waited += 5;
+          }
+          console.log(`  Model server back after ~${waited}s — resuming.`);
+          status('resuming…');
+          consecutiveFailures = 0; // fresh streak after the outage
+        })().finally(() => {
+          recovery = null;
+        });
+      }
+      return recovery;
+    }
+
+    // Next unit of work: retries first, then the untagged list; null when both
+    // are drained. Kept in one place so the worker stays simple.
+    function nextRow(): (typeof untagged)[number] | null {
+      if (retryQueue.length) return retryQueue.shift() ?? null;
+      if (nextIndex < untagged.length) return untagged[nextIndex++];
+      return null;
+    }
 
     // Sliding-window concurrency: PARALLEL workers pull the next row as soon
     // as they're free, so a slow request doesn't stall faster ones in its batch.
     async function worker() {
       while (true) {
         if (aborted) return; // a systemic failure was detected — stop taking work
-        const i = nextIndex++;
-        if (i >= untagged.length) return;
-        const row = untagged[i];
+        if (recovery) await recovery; // server is down — hold until it's back
+        const row = nextRow();
+        if (!row) {
+          // No queued work, but an in-flight request could still requeue on an
+          // outage — only truly done once nothing is left and nothing's running.
+          if (inFlight === 0 && retryQueue.length === 0) return;
+          await sleep(100);
+          continue;
+        }
+        inFlight++;
         try {
           const t0 = Date.now();
           const filePath = path.join(localImagesDir, row.originalPath);
@@ -248,11 +329,8 @@ async function main() {
               .jpeg({ quality: 85 })
               .toBuffer()
           ).toString('base64');
-          const tRead = Date.now();
           const tags = await callGenerate(modelHost, model, apiKey, b64);
-          const tUpload = Date.now();
           const vec = await embedder.embed(tags);
-          const tEmbed = Date.now();
           await db
             .update(photos)
             .set({
@@ -264,28 +342,38 @@ async function main() {
           const tDone = Date.now();
           processed++;
           consecutiveFailures = 0; // a success clears the systemic-failure streak
-          const firstFiveTags = tags
-            .split(',')
-            .slice(0, 5)
-            .map((s) => s.trim())
-            .join(', ');
           const elapsed = (tDone - startTime) / 1000;
           const rate = processed / elapsed || 0;
+          // Per-image line: progress, filename, time, rate. No tags.
           console.log(
-            `  [${processed + failed}/${untagged.length}] ${row.filename}  read ${fmt(tRead - t0)}  upload ${fmt(tUpload - tRead)}  embed ${fmt(tEmbed - tUpload)}  db ${fmt(tDone - tEmbed)}  total ${fmt(tDone - t0)}  | ${rate.toFixed(2)} img/s | ${firstFiveTags}`,
+            `  [${processed + failed}/${untagged.length}] ${row.filename}  ${fmt(tDone - t0)}  ${rate.toFixed(2)} img/s`,
           );
           status(
             `${processed + failed} / ${untagged.length} photos · ${(elapsed / processed).toFixed(1)} s/img · ETA ${fmtDuration((untagged.length - (processed + failed)) * (elapsed / processed))}`,
           );
         } catch (err) {
-          failed++;
           consecutiveFailures++;
-          console.error(
-            `  [${processed + failed}/${untagged.length}] ${row.filename} FAILED: ${err}`,
-          );
-          if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
-            aborted = err;
+          // Remote server dropped out → don't count these as failed; requeue
+          // the image and (once the streak confirms it's systemic) pause the
+          // whole run until the server returns, then resume.
+          if (isRemote && isConnLevel(err)) {
+            retryQueue.push(row);
+            if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
+              await pauseUntilServerBack(err);
+            }
+          } else {
+            // Per-image error, or a local server that won't recover by waiting
+            // (e.g. OOM-killed) → count it and abort the run if it's systemic.
+            failed++;
+            console.error(
+              `  [${processed + failed}/${untagged.length}] ${row.filename} FAILED: ${err}`,
+            );
+            if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
+              aborted = err;
+            }
           }
+        } finally {
+          inFlight--;
         }
       }
     }
