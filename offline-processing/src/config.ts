@@ -27,6 +27,10 @@ const envSchema = z.object({
   MODEL_SERVER_HOST: z.string().optional(),
   MODEL_SERVER_MODEL: z.string().optional(),
   MODEL_SERVER_API_KEY: z.string().optional(),
+  // Local Ollama only: how many requests it serves at once (set at launch by
+  // the cli's preflight). A remote server's value lives on that box instead,
+  // reported by its gateway on /parallel.
+  OLLAMA_NUM_PARALLEL: z.string().optional(),
   VISION_SERVER_HOST: z.string().optional(),
   VISION_SERVER_API_KEY: z.string().optional(),
   // Optional override for the BGE embedder cache (defaults next to the images).

@@ -352,41 +352,60 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
         />
       )}
 
-      {screen === 'process-confirm' && (
-        <Box flexDirection="column">
-          <Text bold>Process photos</Text>
-          <Text>
-            This ingests new photos, runs tagging + face/dog detection, then
-            publishes the gallery.
-          </Text>
-          <Text dimColor>
-            {countStagingPhotos()} new photo(s) in staging.
-          </Text>
-          <Text color="yellow">
-            ⚠ This can take a while — minutes to hours to days on a large library
-            or without a GPU.
-          </Text>
-          <Text color="yellow">
-            {'  '}Keep your laptop awake and plugged in until it finishes (it
-            won’t run while the machine is asleep). It’s resumable, so you can
-            stop and run it again later.
-          </Text>
-          <SelectInput
-            items={[
-              { label: 'Start processing', value: 'go' },
-              { label: '← Back', value: 'back' },
-            ]}
-            onSelect={(item) => {
-              if (item.value === 'go') {
-                setRunMode('process');
-                setScreen('run-pre');
-              } else {
-                setScreen('start');
-              }
-            }}
-          />
-        </Box>
-      )}
+      {screen === 'process-confirm' &&
+        (() => {
+          // Read fresh (not the mount-time cfg) so a just-changed server shows.
+          const current = loadExistingValues();
+          const host = current.MODEL_SERVER_HOST || '(not set)';
+          const model = current.MODEL_SERVER_MODEL || '(not set)';
+          // Only in the cache for a local Ollama; a remote server owns its own
+          // value (prompted by ./model-server on that box).
+          const par = current.OLLAMA_NUM_PARALLEL;
+          return (
+            <Box flexDirection="column">
+              <Text bold>Process photos</Text>
+              <Text>
+                This ingests new photos, runs tagging + face/dog detection, then
+                publishes the gallery.
+              </Text>
+              <Text dimColor>
+                {countStagingPhotos()} new photo(s) in staging.
+              </Text>
+              <Text>
+                Tagging server: <Text color="cyan">{host}</Text> · model{' '}
+                <Text color="cyan">{model}</Text>
+                {par ? ` · ${par} in parallel` : ''}
+              </Text>
+              <Text color="yellow">
+                ⚠ This can take a while — minutes to hours to days on a large
+                library or without a GPU.
+              </Text>
+              <Text color="yellow">
+                {'  '}Keep your laptop awake and plugged in until it finishes (it
+                won’t run while the machine is asleep). It’s resumable, so you
+                can stop and run it again later.
+              </Text>
+              <SelectInput
+                items={[
+                  { label: 'Start processing', value: 'go' },
+                  { label: 'Change tagging server', value: 'server' },
+                  { label: '← Back', value: 'back' },
+                ]}
+                onSelect={(item) => {
+                  if (item.value === 'go') {
+                    setRunMode('process');
+                    setScreen('run-pre');
+                  } else if (item.value === 'server') {
+                    setReturnTo('process-confirm');
+                    setScreen('setup');
+                  } else {
+                    setScreen('start');
+                  }
+                }}
+              />
+            </Box>
+          );
+        })()}
 
       {screen === 'create-confirm' && (
         <Box flexDirection="column">

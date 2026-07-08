@@ -17,7 +17,9 @@ const IMAGE_RE = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
  * offline-processing/src/scan.ts VALID_IMAGE_EXTENSIONS). HEIC/RAW are skipped. */
 export const SUPPORTED_IMAGE_FORMATS = 'JPG, PNG, GIF, BMP, TIFF, WebP';
 // The "To Mobile Photo Gallery" preset renames every export to this suffix.
-const VIEWING_RE = /_exported_for_viewing_locally\.[^.]+$/i;
+// Exported so the Lightroom import step moves ONLY preset exports (not any
+// stray originals/sidecars that happen to share the folder).
+export const VIEWING_RE = /_exported_for_viewing_locally\.[^.]+$/i;
 
 // Single shared implementation (see shared/src/path.ts); re-exported so existing
 // `import { expandHome } from './configFiles.js'` call sites keep working. The
@@ -486,6 +488,21 @@ export const FIELDS: Field[] = [
     },
   },
   {
+    // Local Ollama only — a remote model server sets its own parallelism when
+    // ./model-server launches it on the other machine. Ollama serves this many
+    // tagging requests at once; higher is faster if the GPU/VRAM can take it,
+    // too high OOMs. Only applies when the CLI starts Ollama (an already-running
+    // Ollama keeps whatever it was launched with).
+    key: 'OLLAMA_NUM_PARALLEL',
+    label: 'Parallel tagging requests',
+    default: '1',
+    when: (v) =>
+      /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(v.MODEL_SERVER_HOST ?? 'localhost'),
+    hint: 'How many images Ollama tags at once. Raise it if tagging is slow and the GPU has headroom; lower it if Ollama runs out of memory.',
+    validate: (val) =>
+      /^[1-9]\d*$/.test(val.trim()) ? null : 'Enter a whole number ≥ 1.',
+  },
+  {
     key: 'APP_PASSWORD',
     label: 'Gallery password',
     secret: true,
@@ -522,6 +539,9 @@ export function writeConfigFiles(v: Record<string, string>): {
     `MODEL_SERVER_HOST=${v.MODEL_SERVER_HOST}`,
     `MODEL_SERVER_MODEL=${v.MODEL_SERVER_MODEL ?? ''}`,
     v.MODEL_SERVER_API_KEY ? `MODEL_SERVER_API_KEY=${v.MODEL_SERVER_API_KEY}` : '',
+    // Local Ollama parallelism (preflight passes it when it starts Ollama);
+    // omitted for a remote host, which manages its own.
+    v.OLLAMA_NUM_PARALLEL ? `OLLAMA_NUM_PARALLEL=${v.OLLAMA_NUM_PARALLEL}` : '',
   ]
     .filter(Boolean)
     .join('\n')}\n`;
