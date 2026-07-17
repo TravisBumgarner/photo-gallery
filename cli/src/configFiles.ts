@@ -330,9 +330,14 @@ export const FIELDS: Field[] = [
     key: 'MODEL_SERVER_HOST',
     label: 'Where’s the tagging model running?',
     default: 'http://localhost:11434',
-    hint: 'This computer — I’ll start it for you. Another machine — run `./model-server` there first, then enter the address it prints (see offline-processing/README.md → “Run the models on another machine”).',
+    hint: 'Enter a URL. This computer: http://localhost:11434 (the default — I’ll start it for you). Another machine: run `./model-server` there first and paste the http:// address it prints (see offline-processing/README.md → “Run the models on another machine”).',
     validate: async (host) => {
       if (!host) return 'Required.';
+      // Catch a non-URL (e.g. someone typing a phrase from the hint) before the
+      // fetch below, which would otherwise fail as an unhelpful "can't reach".
+      if (!/^https?:\/\//i.test(host)) {
+        return `This needs a URL, not a name. For this computer use http://localhost:11434; for another machine paste the http:// address ./model-server printed there.`;
+      }
       if (/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host)) return null; // local: started for you
       const h = host.replace(/\/+$/, '');
       try {
