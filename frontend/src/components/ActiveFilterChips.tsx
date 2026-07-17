@@ -1,11 +1,13 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import type React from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import { useTheme } from '../styles/useTheme';
+import Collapsible from './Collapsible';
 
 interface ActiveFilterChipsProps {
   filters: PhotoFilters;
@@ -242,33 +244,43 @@ export default function ActiveFilterChips({
   const palette = theme.colors;
   const chips = describeFilters(filters);
 
-  if (chips.length === 0) return null;
+  // Keep the last non-empty set so the bar has content to show while its
+  // collapse animation runs after the final filter is cleared. Render-phase
+  // state adjustment, keyed by content so it settles in one extra pass.
+  const chipsKey = chips.map((c) => c.label).join('|');
+  const [lastChips, setLastChips] = useState({ key: chipsKey, chips });
+  if (chips.length > 0 && lastChips.key !== chipsKey) {
+    setLastChips({ key: chipsKey, chips });
+  }
+  const shownChips = chips.length > 0 ? chips : lastChips.chips;
 
   return (
-    <View
-      style={[
-        styles.bar,
-        {
-          backgroundColor: palette.surface,
-          borderBottomWidth: theme.hairline,
-          borderBottomColor: palette.divider,
-        },
-      ]}
-    >
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.row}
+    <Collapsible expanded={chips.length > 0} duration={theme.motion.base}>
+      <View
+        style={[
+          styles.bar,
+          {
+            backgroundColor: palette.surface,
+            borderBottomWidth: theme.hairline,
+            borderBottomColor: palette.divider,
+          },
+        ]}
       >
-        {chips.map((chip, index) => (
-          <FilterChip
-            key={`${chip.label}-${index}`}
-            chip={chip}
-            onClear={onClear}
-          />
-        ))}
-      </ScrollView>
-    </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.row}
+        >
+          {shownChips.map((chip, index) => (
+            <FilterChip
+              key={`${chip.label}-${index}`}
+              chip={chip}
+              onClear={onClear}
+            />
+          ))}
+        </ScrollView>
+      </View>
+    </Collapsible>
   );
 }
 

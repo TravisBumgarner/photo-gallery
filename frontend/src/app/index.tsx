@@ -1,5 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useMountTransition } from '../components/AnimatedDialog';
 import ActiveFilterChips, {
   describeFilters,
   FilterChip,
@@ -78,6 +80,9 @@ export default function HomeScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  // True while replacing the result set (filter/search change) as opposed to
+  // appending a page — drives the grid's refresh veil.
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [filters, setFilters] = useState<PhotoFilters>(DEFAULT_FILTERS);
@@ -117,6 +122,16 @@ export default function HomeScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const seqRef = useRef(0);
 
+  // Grouping mode for the photos CURRENTLY displayed. Derived from the
+  // filters that produced them (set when results land), not the in-flight
+  // request — otherwise submitting an AI search flat-regroups the old photos
+  // for a frame before the results arrive.
+  const groupingFor = (f: PhotoFilters) =>
+    f.contentSearch ? undefined : (f.sortBy ?? 'dateCaptured');
+  const [displayedSortBy, setDisplayedSortBy] = useState<string | undefined>(
+    () => groupingFor(DEFAULT_FILTERS),
+  );
+
   const fetchPhotos = useCallback(
     async (pageNum: number, currentFilters: PhotoFilters, append: boolean) => {
       if (append && loadingRef.current) return;
@@ -127,6 +142,7 @@ export default function HomeScreen() {
 
       loadingRef.current = true;
       setLoading(true);
+      if (!append) setRefreshing(true);
       setError(null);
       try {
         const qs = buildQueryString(currentFilters, pageNum, PAGE_SIZE);
@@ -136,6 +152,7 @@ export default function HomeScreen() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data: PhotosResponse = await response.json();
         if (seq !== seqRef.current) return;
+        if (!append) setDisplayedSortBy(groupingFor(currentFilters));
         setPhotos((prev) => {
           if (!append) return data.photos;
           const seen = new Set(prev.map((p) => p.id));
@@ -149,6 +166,7 @@ export default function HomeScreen() {
       } finally {
         if (seq === seqRef.current) {
           setLoading(false);
+          setRefreshing(false);
           loadingRef.current = false;
         }
       }
@@ -234,6 +252,21 @@ export default function HomeScreen() {
   const emptyStateChips = useMemo(() => describeFilters(filters), [filters]);
 
   const isMobile = width < MOBILE_BREAKPOINT;
+
+  // Refresh veil: while a filter/search change replaces the result set, fade
+  // a translucent layer + spinner over the stale grid. The old photos hold
+  // still underneath (no layout shift) and the tile swap happens covered,
+  // instead of reading as a flicker. Only when photos are already on screen —
+  // the initial empty load has its own centered spinner.
+  const refreshVeil = useMountTransition(
+    refreshing && photos.length > 0,
+    theme.motion.fast,
+    theme.motion.base,
+  );
+  const refreshVeilProgress = refreshVeil.progress;
+  const refreshVeilStyle = useAnimatedStyle(() => ({
+    opacity: refreshVeilProgress.value * 0.75,
+  }));
 
   // Committing a search leaves the panel open on desktop, where it's a sidebar
   // beside the grid and filters are meant to be stacked. On mobile the panel is
@@ -353,9 +386,22 @@ export default function HomeScreen() {
         <View style={styles.content}>
           <ActiveFilterChips filters={filters} onClear={handleFilterChange} />
 
-          {/* Wraps only the grid region, so the overlay below can't cover the
-              chip bar and swallow taps meant to clear a filter. */}
-          <View style={styles.gridRegion}>
+          {/* Wraps only the grid region (not the chip bar). While the sidebar
+              is open, a capture-phase responder hook closes it on any press in
+              here — and by returning false it declines the touch, so the same
+              click still reaches the photo/button underneath. One click to
+              close AND interact, no swallowing overlay. */}
+          <View
+            style={styles.gridRegion}
+            onStartShouldSetResponderCapture={
+              panelState.open && !isMobile
+                ? () => {
+                    closePanel();
+                    return false;
+                  }
+                : undefined
+            }
+          >
             {photos.length === 0 && loading ? (
               <View style={styles.centered}>
                 <ActivityIndicator size="large" color={palette.primary} />
@@ -413,27 +459,26 @@ export default function HomeScreen() {
                 loading={loading}
                 hasMore={hasMore}
                 columnCount={columnCount}
-                sortBy={
-                  filters.contentSearch
-                    ? undefined
-                    : (filters.sortBy ?? 'dateCaptured')
-                }
+                sortBy={displayedSortBy}
                 onLoadMore={handleLoadMore}
                 onPhotoPress={handlePhotoPress}
                 onColumnCountChange={setColumnCount}
               />
             )}
 
-            {/* Clicking the photos dismisses the sidebar. Rendered last so it
-                sits above the grid, and transparent so nothing is obscured.
-                On mobile the panel is a modal covering this anyway. */}
-            {panelState.open && !isMobile ? (
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                onPress={closePanel}
-                accessibilityLabel="Close panel"
-              />
-            ) : null}
+            {refreshVeil.mounted && (
+              <Animated.View
+                style={[
+                  StyleSheet.absoluteFill,
+                  styles.refreshVeil,
+                  { backgroundColor: palette.background },
+                  refreshVeilStyle,
+                ]}
+              >
+                <ActivityIndicator size="large" color={palette.primary} />
+              </Animated.View>
+            )}
+
           </View>
         </View>
       </View>
@@ -462,6 +507,10 @@ const styles = StyleSheet.create({
   centeredPadded: {
     padding: SPACING.MEDIUM,
     gap: SPACING.MEDIUM,
+  },
+  refreshVeil: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   resetButton: {
     paddingHorizontal: SPACING.SMALL,
