@@ -37,9 +37,13 @@ export default function StatsScreen() {
   const palette = usePalette();
   const { isAuthenticated } = useAuth();
 
-  const [activePanel, setActivePanel] = useState<'filters' | 'settings' | null>(
-    null,
-  );
+  // `panel` keeps its last value while the sidebar animates closed, so the
+  // exit doesn't flash the other panel's content; only `open` flips on close.
+  const [panelState, setPanelState] = useState<{
+    panel: 'filters' | 'settings';
+    open: boolean;
+  }>({ panel: 'filters', open: false });
+  const activePanel = panelState.open ? panelState.panel : null;
   const [filters, setFilters] = useState<StatsFilters>({});
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -72,8 +76,12 @@ export default function StatsScreen() {
   }, []);
 
   const togglePanel = useCallback(
-    (panel: 'filters' | 'settings') =>
-      setActivePanel((prev) => (prev === panel ? null : panel)),
+    (next: 'filters' | 'settings') =>
+      setPanelState((s) =>
+        s.open && s.panel === next
+          ? { ...s, open: false }
+          : { panel: next, open: true },
+      ),
     [],
   );
 
@@ -108,11 +116,11 @@ export default function StatsScreen() {
     >
       <View style={styles.body}>
         <SlidePanel
-          visible={activePanel !== null}
-          onClose={() => setActivePanel(null)}
-          title={activePanel === 'settings' ? 'Stats settings' : 'Filters'}
+          visible={panelState.open}
+          onClose={() => setPanelState((s) => ({ ...s, open: false }))}
+          title={panelState.panel === 'settings' ? 'Stats settings' : 'Filters'}
         >
-          {activePanel === 'settings' ? (
+          {panelState.panel === 'settings' ? (
             <StatsSettingsPanel />
           ) : (
             <ScrollView style={{ flex: 1 }}>

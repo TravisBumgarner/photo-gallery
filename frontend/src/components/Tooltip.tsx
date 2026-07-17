@@ -10,6 +10,8 @@ import {
 import { createPortal } from 'react-dom';
 import { Platform } from 'react-native';
 
+import { useTheme } from '../styles/useTheme';
+
 interface TooltipProps {
   title: string;
   children: ReactNode;
@@ -106,17 +108,32 @@ function TooltipWeb({
 }
 
 function TooltipPopup({ title, coords }: { title: string; coords: Coords }) {
+  const theme = useTheme();
+  // Mount at opacity 0, then flip on the next frame so the CSS transition runs.
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const lift = coords.placement === 'above' ? 3 : -3;
   const style: CSSProperties = {
     position: 'fixed',
     top: coords.top,
     left: coords.left,
     transform:
       coords.placement === 'above'
-        ? 'translate(-50%, -100%)'
-        : 'translate(-50%, 0)',
+        ? `translate(-50%, -100%) translateY(${shown ? 0 : lift}px)`
+        : `translate(-50%, 0) translateY(${shown ? 0 : lift}px)`,
+    opacity: shown ? 1 : 0,
+    transition: 'opacity 120ms ease-out, transform 120ms ease-out',
     padding: '4px 8px',
-    background: 'rgba(0, 0, 0, 0.85)',
-    color: 'white',
+    // Inverted colors: the strongest text tone as the surface guarantees the
+    // tip stands out against any theme, light or dark, without extra chrome.
+    background: theme.colors.textPrimary,
+    color: theme.colors.background,
+    borderRadius: Math.min(theme.radius.control, 8),
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.3)',
     fontSize: 11,
     lineHeight: '14px',
     whiteSpace: 'nowrap',

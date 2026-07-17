@@ -1,6 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
+import {
+  DEFAULT_THEME_KEY,
+  isThemeKey,
+  type ThemeKey,
+} from '../styles/theme';
+
 const STORAGE_KEY = 'photoGallery.settings.v1';
 
 export type FilterSectionKey =
@@ -79,6 +85,8 @@ export const STATS_CHARTS: { key: StatsChartKey; label: string }[] = [
 ];
 
 export interface Settings {
+  /** Visual theme family; light/dark still follows the system scheme. */
+  themeKey: ThemeKey;
   visibleFilterSections: Record<FilterSectionKey, boolean>;
   filterSectionMode: FilterSectionMode;
   expandedFilterSections: Record<FilterSectionKey, boolean>;
@@ -140,6 +148,7 @@ const allVisible = <T extends string>(keys: readonly T[]) =>
   Object.fromEntries(keys.map((k) => [k, true])) as Record<T, boolean>;
 
 const DEFAULT_SETTINGS: Settings = {
+  themeKey: DEFAULT_THEME_KEY,
   visibleFilterSections: allTrue(),
   filterSectionMode: 'multiple',
   expandedFilterSections: allTrue(),
@@ -156,6 +165,9 @@ function parseStored(raw: string | null): Settings {
   try {
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
+      themeKey: isThemeKey(parsed.themeKey)
+        ? parsed.themeKey
+        : DEFAULT_THEME_KEY,
       visibleFilterSections: {
         ...DEFAULT_SETTINGS.visibleFilterSections,
         ...(parsed.visibleFilterSections ?? {}),
@@ -231,6 +243,23 @@ export function useSettings(): Settings {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
+/**
+ * Subscribe to one slice of settings. Re-renders only when the selected value
+ * changes (Object.is) — unlike useSettings(), which re-renders on EVERY
+ * commit. Anything broadly mounted (useTheme, screens) must use this:
+ * settings writes happen on hot paths like expanding a filter section, and a
+ * whole-store subscription there re-renders the entire app per toggle.
+ * The selector must be pure and cheap; returning a nested settings object is
+ * fine (untouched slices keep their identity across commits).
+ */
+export function useSetting<T>(selector: (s: Settings) => T): T {
+  return useSyncExternalStore(
+    subscribe,
+    () => selector(cached),
+    () => selector(DEFAULT_SETTINGS),
+  );
+}
+
 function commit(next: Settings) {
   cached = next;
   // Fire-and-forget: the in-memory snapshot is already updated, so the UI
@@ -242,6 +271,11 @@ function commit(next: Settings) {
 // Kick off hydration at import. Components re-render via the subscription when
 // it resolves; nothing blocks on it.
 void hydrateSettings();
+
+export function setThemeKey(key: ThemeKey) {
+  const prev = getSnapshot();
+  commit({ ...prev, themeKey: key });
+}
 
 export function setSectionVisible(key: FilterSectionKey, visible: boolean) {
   const prev = getSnapshot();

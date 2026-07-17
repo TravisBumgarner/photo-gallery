@@ -1,8 +1,9 @@
-import { useColorScheme } from 'react-native';
+import type { ThemeColors } from './theme';
+import { useTheme } from './useTheme';
 
-import { DARK_PALETTE, LIGHT_PALETTE, type Palette } from './styleConsts';
+export type Palette = ThemeColors;
 
+/** Compat shim: the active theme's colors. Prefer useTheme() in new code. */
 export function usePalette(): Palette {
-  const scheme = useColorScheme();
-  return scheme === 'dark' ? DARK_PALETTE : LIGHT_PALETTE;
+  return useTheme().colors;
 }

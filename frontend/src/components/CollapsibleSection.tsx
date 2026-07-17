@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 import Collapsible from './Collapsible';
 
 interface CollapsibleSectionProps {
@@ -37,14 +37,16 @@ export default function CollapsibleSection({
   action,
   leading,
 }: CollapsibleSectionProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   return (
     <View
       style={[
         styles.container,
-        {
-          backgroundColor: palette.surface,
-          borderColor: active ? palette.primary : palette.divider,
+        theme.surfaces.card,
+        active && {
+          borderWidth: Math.max(theme.hairline, 1),
+          borderColor: palette.primary,
         },
       ]}
     >
@@ -53,6 +55,7 @@ export default function CollapsibleSection({
           styles.headerRow,
           {
             backgroundColor: palette.surfaceElevated,
+            borderBottomWidth: theme.hairline,
             borderBottomColor: expanded ? palette.divider : 'transparent',
           },
         ]}
@@ -91,7 +94,6 @@ export default function CollapsibleSection({
 
 const styles = StyleSheet.create({
   container: {
-    borderWidth: 1,
     overflow: 'hidden',
   },
   headerRow: {
@@ -100,7 +102,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
     gap: SPACING.TINY,
-    borderBottomWidth: 1,
   },
   headerToggle: {
     flex: 1,

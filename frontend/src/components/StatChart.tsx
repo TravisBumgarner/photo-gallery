@@ -2,7 +2,7 @@ import { Bar, CartesianChart, Line } from 'victory-native';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 
 interface BarChartProps {
   title: string;
@@ -17,17 +17,21 @@ export function StatBarChart({
   data,
   height = DEFAULT_HEIGHT,
 }: BarChartProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
 
   if (data.length === 0) {
-    return <EmptyCard title={title} palette={palette} />;
+    return <EmptyCard title={title} theme={theme} />;
   }
 
   // Map to victory-native data format with numeric x for spacing
   const chartData = data.map((d, i) => ({ x: i, y: d.value }));
 
+  // Bars follow the theme's corner language, clamped so wide bars stay bars.
+  const barRadius = Math.min(theme.radius.control, 4);
+
   return (
-    <Card title={title} palette={palette}>
+    <Card title={title} theme={theme}>
       <View style={{ height }}>
         <CartesianChart data={chartData} xKey="x" yKeys={['y']}>
           {({ points, chartBounds }) => (
@@ -35,7 +39,7 @@ export function StatBarChart({
               points={points.y}
               chartBounds={chartBounds}
               color={palette.primary}
-              roundedCorners={{ topLeft: 2, topRight: 2 }}
+              roundedCorners={{ topLeft: barRadius, topRight: barRadius }}
             />
           )}
         </CartesianChart>
@@ -75,16 +79,17 @@ export function StatLineChart({
   data,
   height = DEFAULT_HEIGHT,
 }: LineChartProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
 
   if (data.length === 0) {
-    return <EmptyCard title={title} palette={palette} />;
+    return <EmptyCard title={title} theme={theme} />;
   }
 
   const chartData = data.map((d, i) => ({ x: i, y: d.value }));
 
   return (
-    <Card title={title} palette={palette}>
+    <Card title={title} theme={theme}>
       <View style={{ height }}>
         <CartesianChart data={chartData} xKey="x" yKeys={['y']}>
           {({ points }) => (
@@ -115,9 +120,10 @@ interface KpiProps {
 }
 
 export function StatKpi({ title, value }: KpiProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   return (
-    <Card title={title} palette={palette}>
+    <Card title={title} theme={theme}>
       <Text style={[styles.kpi, { color: palette.textPrimary }]}>
         {typeof value === 'number' ? value.toLocaleString() : value}
       </Text>
@@ -128,22 +134,15 @@ export function StatKpi({ title, value }: KpiProps) {
 function Card({
   title,
   children,
-  palette,
+  theme,
 }: {
   title: string;
   children: React.ReactNode;
-  palette: ReturnType<typeof usePalette>;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const palette = theme.colors;
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: palette.surface,
-          borderColor: palette.divider,
-        },
-      ]}
-    >
+    <View style={[styles.card, theme.surfaces.card]}>
       <Text style={[styles.cardTitle, { color: palette.textPrimary }]}>
         {title}
       </Text>
@@ -154,13 +153,14 @@ function Card({
 
 function EmptyCard({
   title,
-  palette,
+  theme,
 }: {
   title: string;
-  palette: ReturnType<typeof usePalette>;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const palette = theme.colors;
   return (
-    <Card title={title} palette={palette}>
+    <Card title={title} theme={theme}>
       <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
         No data
       </Text>
@@ -170,9 +170,9 @@ function EmptyCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: 1,
     padding: SPACING.MEDIUM,
     gap: SPACING.SMALL,
+    overflow: 'hidden',
   },
   cardTitle: {
     fontSize: FONT_SIZES.SMALL,

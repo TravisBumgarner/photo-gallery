@@ -16,6 +16,8 @@ const PhotoCard = memo(function PhotoCard({ photo, size, onPress }: PhotoCardPro
   return (
     <Pressable
       onPress={() => onPress(photo)}
+      // Thumbnails stay square-cornered in every theme — the photos are the
+      // content, not chrome.
       style={[styles.card, { width: size, height: size }]}
     >
       <Image

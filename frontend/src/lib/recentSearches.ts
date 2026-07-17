@@ -4,7 +4,22 @@ import { useSyncExternalStore } from 'react';
 const STORAGE_KEY = 'photoGallery.recentSearches.v1';
 const MAX_RECENTS = 8;
 
-export type RecentKind = 'search' | 'ai' | 'person' | 'dog';
+export type RecentKind =
+  | 'search'
+  | 'ai'
+  | 'person'
+  | 'dog'
+  | 'keyword'
+  | 'camera';
+
+const RECENT_KINDS: readonly RecentKind[] = [
+  'search',
+  'ai',
+  'person',
+  'dog',
+  'keyword',
+  'camera',
+];
 
 export interface RecentSearch {
   value: string;
@@ -22,10 +37,7 @@ function parseStored(raw: string | null): RecentSearch[] {
           e &&
           typeof e === 'object' &&
           typeof e.value === 'string' &&
-          (e.kind === 'search' ||
-            e.kind === 'ai' ||
-            e.kind === 'person' ||
-            e.kind === 'dog'),
+          RECENT_KINDS.includes(e.kind),
       )
       .slice(0, MAX_RECENTS);
   } catch {

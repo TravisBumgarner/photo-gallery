@@ -1,10 +1,13 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import type React from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import Collapsible from './Collapsible';
 
 interface ActiveFilterChipsProps {
   filters: PhotoFilters;
@@ -13,13 +16,18 @@ interface ActiveFilterChipsProps {
 
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
-interface ChipDescriptor {
+export interface ChipDescriptor {
   label: string;
   icon?: IconName;
   clear: Partial<PhotoFilters>;
 }
 
-function describeFilters(filters: PhotoFilters): ChipDescriptor[] {
+/**
+ * Flattens the filter object into one dismissible chip per active constraint.
+ * Exported so the empty state can offer the same per-filter escape hatches
+ * without re-deriving what's active.
+ */
+export function describeFilters(filters: PhotoFilters): ChipDescriptor[] {
   const chips: ChipDescriptor[] = [];
 
   if (filters.search) {
@@ -54,78 +62,99 @@ function describeFilters(filters: PhotoFilters): ChipDescriptor[] {
     });
   }
   if (filters.camera) {
-    filters.camera.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        icon: 'camera-alt',
-        clear: {
-          camera: removeFromList(filters.camera, value),
-        },
+    filters.camera
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          icon: 'camera-alt',
+          clear: {
+            camera: removeFromList(filters.camera, value),
+          },
+        });
       });
-    });
   }
   if (filters.lens) {
-    filters.lens.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        clear: {
-          lens: removeFromList(filters.lens, value),
-        },
+    filters.lens
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          clear: {
+            lens: removeFromList(filters.lens, value),
+          },
+        });
       });
-    });
   }
   if (filters.people) {
-    filters.people.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        icon: 'person',
-        clear: {
-          people: removeFromList(filters.people, value),
-        },
+    filters.people
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          icon: 'person',
+          clear: {
+            people: removeFromList(filters.people, value),
+          },
+        });
       });
-    });
   }
   if (filters.dogs) {
-    filters.dogs.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        icon: 'pets',
-        clear: {
-          dogs: removeFromList(filters.dogs, value),
-        },
+    filters.dogs
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          icon: 'pets',
+          clear: {
+            dogs: removeFromList(filters.dogs, value),
+          },
+        });
       });
-    });
   }
   if (filters.keyword) {
-    filters.keyword.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        icon: 'label',
-        clear: {
-          keyword: removeFromList(filters.keyword, value),
-        },
+    filters.keyword
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          icon: 'label',
+          clear: {
+            keyword: removeFromList(filters.keyword, value),
+          },
+        });
       });
-    });
   }
   if (filters.aspectRatio) {
-    filters.aspectRatio.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: `Ratio ${value}`,
-        clear: {
-          aspectRatio: removeFromList(filters.aspectRatio, value),
-        },
+    filters.aspectRatio
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: `Ratio ${value}`,
+          clear: {
+            aspectRatio: removeFromList(filters.aspectRatio, value),
+          },
+        });
       });
-    });
   }
   if (filters.orientation) {
-    filters.orientation.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        clear: {
-          orientation: removeFromList(filters.orientation, value),
-        },
+    filters.orientation
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          clear: {
+            orientation: removeFromList(filters.orientation, value),
+          },
+        });
       });
-    });
   }
   if (filters.minIso != null || filters.maxIso != null) {
     const min = filters.minIso != null ? Math.round(filters.minIso) : '…';
@@ -136,8 +165,10 @@ function describeFilters(filters: PhotoFilters): ChipDescriptor[] {
     });
   }
   if (filters.minAperture != null || filters.maxAperture != null) {
-    const min = filters.minAperture != null ? formatAperture(filters.minAperture) : '…';
-    const max = filters.maxAperture != null ? formatAperture(filters.maxAperture) : '…';
+    const min =
+      filters.minAperture != null ? formatAperture(filters.minAperture) : '…';
+    const max =
+      filters.maxAperture != null ? formatAperture(filters.maxAperture) : '…';
     chips.push({
       label: `f/${min}–f/${max}`,
       clear: { minAperture: undefined, maxAperture: undefined },
@@ -152,24 +183,30 @@ function describeFilters(filters: PhotoFilters): ChipDescriptor[] {
     });
   }
   if (filters.selectedMonths) {
-    filters.selectedMonths.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        clear: {
-          selectedMonths: removeFromList(filters.selectedMonths, value),
-        },
+    filters.selectedMonths
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          clear: {
+            selectedMonths: removeFromList(filters.selectedMonths, value),
+          },
+        });
       });
-    });
   }
   if (filters.selectedDates) {
-    filters.selectedDates.split(',').filter(Boolean).forEach((value) => {
-      chips.push({
-        label: value,
-        clear: {
-          selectedDates: removeFromList(filters.selectedDates, value),
-        },
+    filters.selectedDates
+      .split(',')
+      .filter(Boolean)
+      .forEach((value) => {
+        chips.push({
+          label: value,
+          clear: {
+            selectedDates: removeFromList(filters.selectedDates, value),
+          },
+        });
       });
-    });
   }
 
   return chips;
@@ -203,61 +240,90 @@ export default function ActiveFilterChips({
   filters,
   onClear,
 }: ActiveFilterChipsProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const chips = describeFilters(filters);
 
-  if (chips.length === 0) return null;
+  // Keep the last non-empty set so the bar has content to show while its
+  // collapse animation runs after the final filter is cleared. Render-phase
+  // state adjustment, keyed by content so it settles in one extra pass.
+  const chipsKey = chips.map((c) => c.label).join('|');
+  const [lastChips, setLastChips] = useState({ key: chipsKey, chips });
+  if (chips.length > 0 && lastChips.key !== chipsKey) {
+    setLastChips({ key: chipsKey, chips });
+  }
+  const shownChips = chips.length > 0 ? chips : lastChips.chips;
 
   return (
-    <View
-      style={[
-        styles.bar,
-        {
-          backgroundColor: palette.surface,
-          borderBottomColor: palette.divider,
-        },
-      ]}
-    >
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.row}
+    <Collapsible expanded={chips.length > 0} duration={theme.motion.base}>
+      <View
+        style={[
+          styles.bar,
+          {
+            backgroundColor: palette.surface,
+            borderBottomWidth: theme.hairline,
+            borderBottomColor: palette.divider,
+          },
+        ]}
       >
-        {chips.map((chip, index) => (
-          <Pressable
-            key={`${chip.label}-${index}`}
-            onPress={() => onClear(chip.clear)}
-            style={({ pressed }) => [
-              styles.chip,
-              {
-                backgroundColor: palette.surfaceElevated,
-                borderColor: palette.divider,
-                opacity: pressed ? 0.6 : 1,
-              },
-            ]}
-          >
-            {chip.icon && (
-              <MaterialIcons
-                name={chip.icon}
-                size={12}
-                color={palette.textSecondary}
-              />
-            )}
-            <Text
-              numberOfLines={1}
-              style={[styles.chipText, { color: palette.textPrimary }]}
-            >
-              {chip.label}
-            </Text>
-            <MaterialIcons
-              name="close"
-              size={12}
-              color={palette.textSecondary}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.row}
+        >
+          {shownChips.map((chip, index) => (
+            <FilterChip
+              key={`${chip.label}-${index}`}
+              chip={chip}
+              onClear={onClear}
             />
-          </Pressable>
-        ))}
-      </ScrollView>
-    </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Collapsible>
+  );
+}
+
+/** One dismissible filter chip. Tapping it clears just that constraint. */
+export function FilterChip({
+  chip,
+  onClear,
+}: {
+  chip: ChipDescriptor;
+  onClear: (changed: Partial<PhotoFilters>) => void;
+}) {
+  const theme = useTheme();
+  const palette = theme.colors;
+  return (
+    <Animated.View
+      entering={FadeIn.duration(theme.motion.fast)}
+      exiting={FadeOut.duration(theme.motion.fast)}
+    >
+      <Pressable
+        onPress={() => onClear(chip.clear)}
+        accessibilityLabel={`Clear filter ${chip.label}`}
+        style={({ pressed }) => [
+          styles.chip,
+          theme.surfaces.chip,
+          { opacity: pressed ? 0.6 : 1 },
+        ]}
+      >
+        {chip.icon && (
+          <MaterialIcons
+            name={chip.icon}
+            size={12}
+            color={palette.textSecondary}
+          />
+        )}
+        <Text
+          numberOfLines={1}
+          style={[styles.chipText, { color: palette.textPrimary }]}
+        >
+          {chip.label}
+        </Text>
+        <MaterialIcons name="close" size={12} color={palette.textSecondary} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -265,7 +331,6 @@ const styles = StyleSheet.create({
   bar: {
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
-    borderBottomWidth: 1,
   },
   row: {
     flexDirection: 'row',
@@ -279,7 +344,6 @@ const styles = StyleSheet.create({
     gap: SPACING.TINY,
     paddingVertical: SPACING.TINY,
     paddingHorizontal: SPACING.SMALL,
-    borderWidth: 1,
   },
   chipText: {
     fontSize: FONT_SIZES.SMALL,

@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 import Collapsible from './Collapsible';
 
 interface TreeNode {
@@ -45,7 +46,8 @@ export default function FolderTree({
   selected,
   onSelect,
 }: FolderTreeProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const set = new Set<string>();
     if (selected) {
@@ -94,7 +96,7 @@ export default function FolderTree({
           expanded={expanded}
           onToggleExpand={toggleExpand}
           onSelect={onSelect}
-          palette={palette}
+          theme={theme}
         />
       ))}
     </View>
@@ -108,7 +110,7 @@ function FolderBranch({
   expanded,
   onToggleExpand,
   onSelect,
-  palette,
+  theme,
 }: {
   node: TreeNode;
   depth: number;
@@ -116,8 +118,9 @@ function FolderBranch({
   expanded: Set<string>;
   onToggleExpand: (path: string) => void;
   onSelect: (folder: string) => void;
-  palette: ReturnType<typeof usePalette>;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const palette = theme.colors;
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.path);
   return (
@@ -133,7 +136,7 @@ function FolderBranch({
         palette={palette}
       />
       {hasChildren ? (
-        <Collapsible expanded={isExpanded}>
+        <Collapsible expanded={isExpanded} duration={theme.motion.base}>
           {node.children.map((child) => (
             <FolderBranch
               key={child.path}
@@ -143,7 +146,7 @@ function FolderBranch({
               expanded={expanded}
               onToggleExpand={onToggleExpand}
               onSelect={onSelect}
-              palette={palette}
+              theme={theme}
             />
           ))}
         </Collapsible>
@@ -169,7 +172,7 @@ function FolderRow({
   isExpanded: boolean;
   onToggleExpand: () => void;
   onSelect: () => void;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
 }) {
   return (
     <View

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 
 interface SortModalProps {
   sortBy: string;
@@ -25,10 +25,14 @@ export default function SortModal({
   sortOrder,
   onChange,
 }: SortModalProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
 
   return (
     <>
+      <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+        SORT BY
+      </Text>
       <View style={styles.section}>
         {SORT_OPTIONS.map((option) => {
           const selected = sortBy === option.value;
@@ -39,6 +43,7 @@ export default function SortModal({
               style={({ pressed }) => [
                 styles.row,
                 {
+                  borderRadius: theme.radius.control,
                   backgroundColor: selected
                     ? palette.surfaceElevated
                     : 'transparent',
@@ -65,23 +70,26 @@ export default function SortModal({
         })}
       </View>
 
-      <View
-        style={[styles.directionRow, { borderTopColor: palette.divider }]}
-      >
-        <DirectionButton
+      <View style={[styles.footer, { borderTopColor: palette.divider }]}>
+        <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+          DIRECTION
+        </Text>
+        <View style={styles.directionRow}>
+          <DirectionButton
           label="Descending"
           icon="arrow-downward"
           active={sortOrder === 'desc'}
           onPress={() => onChange({ sortOrder: 'desc' })}
-          palette={palette}
+          theme={theme}
         />
         <DirectionButton
-          label="Ascending"
-          icon="arrow-upward"
-          active={sortOrder === 'asc'}
-          onPress={() => onChange({ sortOrder: 'asc' })}
-          palette={palette}
-        />
+            label="Ascending"
+            icon="arrow-upward"
+            active={sortOrder === 'asc'}
+            onPress={() => onChange({ sortOrder: 'asc' })}
+            theme={theme}
+          />
+        </View>
       </View>
     </>
   );
@@ -92,21 +100,23 @@ function DirectionButton({
   icon,
   active,
   onPress,
-  palette,
+  theme,
 }: {
   label: string;
   icon: React.ComponentProps<typeof MaterialIcons>['name'];
   active: boolean;
   onPress: () => void;
-  palette: ReturnType<typeof usePalette>;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const palette = theme.colors;
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.directionButton,
         {
-          backgroundColor: active ? palette.primary : 'transparent',
+          borderRadius: theme.radius.control,
+          backgroundColor: active ? palette.primary : palette.surfaceElevated,
           opacity: pressed ? 0.6 : 1,
         },
       ]}
@@ -132,8 +142,16 @@ function DirectionButton({
 }
 
 const styles = StyleSheet.create({
+  eyebrow: {
+    fontSize: FONT_SIZES.TINY,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    paddingHorizontal: SPACING.MEDIUM,
+    paddingTop: SPACING.SMALL,
+  },
   section: {
     paddingVertical: SPACING.TINY,
+    paddingBottom: SPACING.SMALL,
   },
   row: {
     flexDirection: 'row',
@@ -145,9 +163,15 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: FONT_SIZES.SMALL,
   },
+  footer: {
+    borderTopWidth: 1,
+    paddingBottom: SPACING.MEDIUM,
+  },
   directionRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
+    gap: SPACING.SMALL,
+    paddingHorizontal: SPACING.MEDIUM,
+    paddingTop: SPACING.SMALL,
   },
   directionButton: {
     flex: 1,

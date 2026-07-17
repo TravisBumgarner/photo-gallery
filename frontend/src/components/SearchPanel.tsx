@@ -2,27 +2,46 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  type NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  type TextInputKeyPressEventData,
   View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { apiFetch } from '../lib/api';
 import {
   addRecentSearch,
   clearRecentSearches,
+  type RecentKind,
   type RecentSearch,
   removeRecentSearch,
   useRecentSearches,
 } from '../lib/recentSearches';
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import Collapsible from './Collapsible';
+
+/** Recents shown before the "show more" row takes over. */
+const COLLAPSED_RECENTS = 5;
 
 type SuggestionKind = 'file' | 'camera' | 'keyword' | 'person' | 'dog';
+
+const FILTERABLE_KINDS = ['person', 'dog', 'keyword', 'camera'] as const;
+type FilterableKind = (typeof FILTERABLE_KINDS)[number];
+
+function isFilterable(
+  kind: SuggestionKind | RecentKind,
+): kind is FilterableKind {
+  return (FILTERABLE_KINDS as readonly string[]).includes(kind);
+}
 
 interface Suggestion {
   value: string;
@@ -36,7 +55,13 @@ interface SearchPanelProps {
   onApplyFilter: (changed: Partial<PhotoFilters>) => void;
   peopleFilter?: string;
   dogsFilter?: string;
-  onClose: () => void;
+  keywordFilter?: string;
+  cameraFilter?: string;
+  /**
+   * A search or suggestion was committed. The host decides whether that also
+   * dismisses the panel — on desktop it stays open so filters can be stacked.
+   */
+  onCommit: () => void;
 }
 
 interface GroupedSuggestions {
@@ -72,11 +97,16 @@ const RECENT_KIND_ICON: Record<
   ai: 'auto-awesome',
   person: 'person',
   dog: 'pets',
+  keyword: 'label',
+  camera: 'camera-alt',
 };
 
 function appendToCommaList(current: string | undefined, value: string): string {
   const parts = new Set(
-    (current ?? '').split(',').map((p) => p.trim()).filter(Boolean),
+    (current ?? '')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean),
   );
   parts.add(value);
   return Array.from(parts).join(',');
@@ -89,14 +119,19 @@ export default function SearchPanel({
   onApplyFilter,
   peopleFilter,
   dogsFilter,
-  onClose,
+  keywordFilter,
+  cameraFilter,
+  onCommit,
 }: SearchPanelProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const [inputValue, setInputValue] = useState(value);
   const [options, setOptions] = useState<Suggestion[]>([]);
   const [groupedOptions, setGroupedOptions] = useState<OptionGroup[]>([]);
   const [showGrouped, setShowGrouped] = useState(value.length === 0);
   const [loading, setLoading] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [showAllRecents, setShowAllRecents] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const recents = useRecentSearches();
 
@@ -106,9 +141,14 @@ export default function SearchPanel({
     return () => clearTimeout(t);
   }, []);
 
-  // Prime the grouped (browse-all) suggestions when there's no query yet.
+  // Prime the grouped (browse-all) suggestions whenever the query is empty.
+  // Deliberately not mount-only: the panel can open with a query already in the
+  // box (reopening after a search), which skips the fetch — then clearing the
+  // box would leave nothing to browse but recents. Refetch is guarded on the
+  // list already being populated, so this runs at most once per mount.
   useEffect(() => {
     if (inputValue.length !== 0) return;
+    if (groupedOptions.length > 0) return;
     setLoading(true);
     apiFetch('/api/photos/suggestions')
       .then((r) => (r.ok ? r.json() : null))
@@ -146,9 +186,7 @@ export default function SearchPanel({
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-    // Only on mount — re-priming as the user types is handled below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [inputValue, groupedOptions.length]);
 
   // Debounced autocomplete lookup once input is meaningful.
   useEffect(() => {
@@ -195,31 +233,40 @@ export default function SearchPanel({
     return () => clearTimeout(t);
   }, [inputValue]);
 
+  // Kinds that map onto a real comma-separated filter: picking one stacks it
+  // onto that filter instead of typing it into the search box, so keywords and
+  // cameras behave like people and dogs. 'file' has no filter — it stays a text
+  // search — and 'search'/'ai' are recent-only kinds that are never filters.
+  const filterFor: Record<
+    FilterableKind,
+    { key: keyof PhotoFilters; current?: string }
+  > = {
+    person: { key: 'people', current: peopleFilter },
+    dog: { key: 'dogs', current: dogsFilter },
+    keyword: { key: 'keyword', current: keywordFilter },
+    camera: { key: 'camera', current: cameraFilter },
+  };
+
+  const applyFilterFor = (kind: FilterableKind, value: string) => {
+    const target = filterFor[kind];
+    onApplyFilter({ [target.key]: appendToCommaList(target.current, value) });
+    onChange('');
+  };
+
   const selectSuggestion = (suggestion: Suggestion) => {
-    if (suggestion.kind === 'person') {
-      onApplyFilter({
-        people: appendToCommaList(peopleFilter, suggestion.value),
-      });
-      addRecentSearch({ value: suggestion.value, kind: 'person' });
-      onChange('');
-    } else if (suggestion.kind === 'dog') {
-      onApplyFilter({ dogs: appendToCommaList(dogsFilter, suggestion.value) });
-      addRecentSearch({ value: suggestion.value, kind: 'dog' });
-      onChange('');
+    if (isFilterable(suggestion.kind)) {
+      applyFilterFor(suggestion.kind, suggestion.value);
+      addRecentSearch({ value: suggestion.value, kind: suggestion.kind });
     } else {
       onChange(suggestion.value);
       addRecentSearch({ value: suggestion.value, kind: 'search' });
     }
-    onClose();
+    onCommit();
   };
 
   const selectRecent = (entry: RecentSearch) => {
-    if (entry.kind === 'person') {
-      onApplyFilter({ people: appendToCommaList(peopleFilter, entry.value) });
-      onChange('');
-    } else if (entry.kind === 'dog') {
-      onApplyFilter({ dogs: appendToCommaList(dogsFilter, entry.value) });
-      onChange('');
+    if (isFilterable(entry.kind)) {
+      applyFilterFor(entry.kind, entry.value);
     } else if (entry.kind === 'ai') {
       onContentSearch(entry.value);
     } else {
@@ -227,27 +274,14 @@ export default function SearchPanel({
     }
     // Promote this entry to the top of the list.
     addRecentSearch(entry);
-    onClose();
+    onCommit();
   };
 
   const selectContent = () => {
     if (!inputValue) return;
     onContentSearch(inputValue);
     addRecentSearch({ value: inputValue, kind: 'ai' });
-    onClose();
-  };
-
-  // Hitting Enter mirrors the highlighted dropdown row, which is always the AI
-  // search option when the input has text. With empty input, fall through to a
-  // regular (cleared) search submit.
-  const submit = () => {
-    if (inputValue) {
-      onContentSearch(inputValue);
-      addRecentSearch({ value: inputValue, kind: 'ai' });
-    } else {
-      onChange('');
-    }
-    onClose();
+    onCommit();
   };
 
   const clear = () => {
@@ -258,6 +292,139 @@ export default function SearchPanel({
   const hasGroupedToShow = showGrouped && groupedOptions.length > 0;
   const hasOptionsToShow = !showGrouped && options.length > 0;
   const hasRecentsToShow = showGrouped && recents.length > 0;
+
+  // Recents are collapsed to 5 so they don't crowd out the browse-all groups
+  // below them; the rest are one tap away.
+  const visibleRecents = showAllRecents
+    ? recents
+    : recents.slice(0, COLLAPSED_RECENTS);
+  const hiddenRecentCount = recents.length - visibleRecents.length;
+  const canToggleRecents =
+    hasRecentsToShow && (hiddenRecentCount > 0 || showAllRecents);
+
+  // Rendering splits the recents differently from `visibleRecents`: the first
+  // page always renders, and the overflow stays mounted inside a Collapsible so
+  // toggling "show more" animates open/closed instead of snapping.
+  const pinnedRecents = recents.slice(0, COLLAPSED_RECENTS);
+  const overflowRecents = recents.slice(COLLAPSED_RECENTS);
+
+  // Every selectable row, in the same order they're rendered below, so the
+  // keyboard highlight and the list stay in lockstep. Rows are matched by key
+  // at render time rather than by re-deriving indices in two places.
+  const rows: { key: string; run: () => void }[] = [];
+  if (inputValue.length > 0) rows.push({ key: '__ai', run: selectContent });
+  if (hasRecentsToShow)
+    for (const entry of visibleRecents)
+      rows.push({
+        key: `recent:${entry.kind}:${entry.value}`,
+        run: () => selectRecent(entry),
+      });
+  if (hasGroupedToShow)
+    for (const group of groupedOptions)
+      for (const opt of group.options)
+        rows.push({
+          key: `${group.title}:${opt}`,
+          run: () => selectSuggestion({ value: opt, kind: group.kind }),
+        });
+  if (hasOptionsToShow)
+    for (const opt of options)
+      rows.push({
+        key: `${opt.kind}:${opt.value}`,
+        run: () => selectSuggestion(opt),
+      });
+
+  // Touch devices have no arrow keys and no pointer to follow, so a highlight
+  // there would just be a row that looks pressed for no reason.
+  const canHighlight =
+    Platform.OS === 'web' && inputValue.length > 0 && rows.length > 0;
+  const activeIndex = Math.min(highlightedIndex, rows.length - 1);
+  const isHighlighted = (key: string) =>
+    canHighlight && rows[activeIndex]?.key === key;
+
+  // Retyping re-ranks the list, so send the highlight back to the AI row.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed off the query alone
+  useEffect(() => setHighlightedIndex(0), [inputValue]);
+
+  const onKeyPress = (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+    const { key } = e.nativeEvent;
+    if (key !== 'ArrowDown' && key !== 'ArrowUp') return;
+    // Otherwise the caret jumps to the start/end of the query as you navigate.
+    e.preventDefault();
+    if (!canHighlight) return;
+    // Step from activeIndex, not the raw state: if the list shrank under a
+    // stale index, ArrowUp would otherwise walk back through dead indices.
+    setHighlightedIndex(
+      key === 'ArrowDown'
+        ? Math.min(activeIndex + 1, rows.length - 1)
+        : Math.max(activeIndex - 1, 0),
+    );
+  };
+
+  // Enter runs whatever is highlighted — the AI row unless you've arrowed off
+  // it. With an empty query there's nothing highlighted, so it clears instead.
+  const submit = () => {
+    if (canHighlight) {
+      rows[activeIndex]?.run();
+      return;
+    }
+    if (inputValue) {
+      selectContent();
+      return;
+    }
+    onChange('');
+    onCommit();
+  };
+
+  const renderRecent = (entry: RecentSearch) => (
+    <Animated.View
+      key={`${entry.kind}:${entry.value}`}
+      style={styles.recentRow}
+      entering={FadeIn.duration(theme.motion.base)}
+      exiting={FadeOut.duration(theme.motion.fast)}
+    >
+      <Pressable
+        onPress={() => selectRecent(entry)}
+        style={({ pressed }) => [
+          styles.option,
+          styles.recentOption,
+          {
+            backgroundColor:
+              pressed || isHighlighted(`recent:${entry.kind}:${entry.value}`)
+                ? palette.surfaceElevated
+                : 'transparent',
+            borderLeftColor: isHighlighted(
+              `recent:${entry.kind}:${entry.value}`,
+            )
+              ? palette.primary
+              : 'transparent',
+          },
+        ]}
+      >
+        <MaterialIcons
+          name={RECENT_KIND_ICON[entry.kind]}
+          size={14}
+          color={palette.textSecondary}
+        />
+        <Text
+          style={[styles.optionText, { color: palette.textPrimary }]}
+          numberOfLines={1}
+        >
+          {entry.value}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => removeRecentSearch(entry)}
+        accessibilityLabel={`Remove recent search ${entry.value}`}
+        hitSlop={8}
+        style={({ pressed }) => [
+          styles.removeRecent,
+          { opacity: pressed ? 0.4 : 0.7 },
+        ]}
+      >
+        <MaterialIcons name="close" size={14} color={palette.textSecondary} />
+      </Pressable>
+    </Animated.View>
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -276,6 +443,7 @@ export default function SearchPanel({
           value={inputValue}
           onChangeText={setInputValue}
           onSubmitEditing={submit}
+          onKeyPress={onKeyPress}
           placeholder="Search…"
           placeholderTextColor={palette.textSecondary}
           style={[styles.input, { color: palette.textPrimary }]}
@@ -308,22 +476,26 @@ export default function SearchPanel({
         {inputValue.length > 0 ? (
           <Pressable
             onPress={selectContent}
-            style={[
+            style={({ pressed }) => [
               styles.option,
-              styles.aiOption,
-              { backgroundColor: palette.surfaceElevated },
+              {
+                backgroundColor:
+                  pressed || isHighlighted('__ai')
+                    ? palette.surfaceElevated
+                    : 'transparent',
+                borderLeftColor: isHighlighted('__ai')
+                  ? palette.primary
+                  : 'transparent',
+              },
             ]}
           >
             <MaterialIcons
               name="auto-awesome"
-              size={16}
-              color={palette.primary}
+              size={14}
+              color={palette.textSecondary}
             />
             <Text
-              style={[
-                styles.optionText,
-                { color: palette.primary, fontStyle: 'italic' },
-              ]}
+              style={[styles.optionText, { color: palette.textPrimary }]}
               numberOfLines={1}
             >
               AI search: {inputValue}
@@ -362,49 +534,47 @@ export default function SearchPanel({
                 </Text>
               </Pressable>
             </View>
-            {recents.map((entry) => (
-              <View key={`${entry.kind}:${entry.value}`} style={styles.recentRow}>
-                <Pressable
-                  onPress={() => selectRecent(entry)}
-                  style={({ pressed }) => [
-                    styles.option,
-                    styles.recentOption,
-                    {
-                      backgroundColor: pressed
-                        ? palette.surfaceElevated
-                        : 'transparent',
-                    },
-                  ]}
+            {pinnedRecents.map(renderRecent)}
+            {overflowRecents.length > 0 ? (
+              <Collapsible
+                expanded={showAllRecents}
+                duration={theme.motion.base}
+              >
+                {overflowRecents.map(renderRecent)}
+              </Collapsible>
+            ) : null}
+            {canToggleRecents ? (
+              <Pressable
+                onPress={() => setShowAllRecents((v) => !v)}
+                accessibilityLabel={
+                  showAllRecents
+                    ? 'Show fewer recent searches'
+                    : 'Show more recent searches'
+                }
+                style={({ pressed }) => [
+                  styles.option,
+                  {
+                    backgroundColor: pressed
+                      ? palette.surfaceElevated
+                      : 'transparent',
+                  },
+                ]}
+              >
+                <MaterialIcons
+                  name={showAllRecents ? 'expand-less' : 'expand-more'}
+                  size={14}
+                  color={palette.textSecondary}
+                />
+                <Text
+                  style={[styles.optionText, { color: palette.textSecondary }]}
+                  numberOfLines={1}
                 >
-                  <MaterialIcons
-                    name={RECENT_KIND_ICON[entry.kind]}
-                    size={14}
-                    color={palette.textSecondary}
-                  />
-                  <Text
-                    style={[styles.optionText, { color: palette.textPrimary }]}
-                    numberOfLines={1}
-                  >
-                    {entry.value}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => removeRecentSearch(entry)}
-                  accessibilityLabel={`Remove recent search ${entry.value}`}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.removeRecent,
-                    { opacity: pressed ? 0.4 : 0.7 },
-                  ]}
-                >
-                  <MaterialIcons
-                    name="close"
-                    size={14}
-                    color={palette.textSecondary}
-                  />
-                </Pressable>
-              </View>
-            ))}
+                  {showAllRecents
+                    ? 'Show fewer'
+                    : `Show ${hiddenRecentCount} more`}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -428,6 +598,7 @@ export default function SearchPanel({
                     suggestion={{ value: opt, kind: group.kind }}
                     onPress={selectSuggestion}
                     palette={palette}
+                    highlighted={isHighlighted(`${group.title}:${opt}`)}
                   />
                 ))}
               </View>
@@ -441,6 +612,7 @@ export default function SearchPanel({
                 suggestion={opt}
                 onPress={selectSuggestion}
                 palette={palette}
+                highlighted={isHighlighted(`${opt.kind}:${opt.value}`)}
               />
             ))
           : null}
@@ -453,17 +625,23 @@ function SuggestionRow({
   suggestion,
   onPress,
   palette,
+  highlighted,
 }: {
   suggestion: Suggestion;
   onPress: (s: Suggestion) => void;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
+  highlighted: boolean;
 }) {
   return (
     <Pressable
       onPress={() => onPress(suggestion)}
       style={({ pressed }) => [
         styles.option,
-        { backgroundColor: pressed ? palette.surfaceElevated : 'transparent' },
+        {
+          backgroundColor:
+            pressed || highlighted ? palette.surfaceElevated : 'transparent',
+          borderLeftColor: highlighted ? palette.primary : 'transparent',
+        },
       ]}
     >
       <MaterialIcons
@@ -508,10 +686,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
     minHeight: 28,
-  },
-  aiOption: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.08)',
+    // Always reserve the accent gutter so highlighting a row doesn't shift its
+    // text sideways. The palette is grayscale, so a background tint alone is
+    // too faint to read as "selected" — the bar carries it.
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
   },
   optionText: {
     fontSize: FONT_SIZES.SMALL,

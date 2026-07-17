@@ -1,5 +1,12 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -15,7 +22,7 @@ import { runOnJS } from 'react-native-reanimated';
 
 import type { Photo } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 import { groupPhotosBySort } from '../utils/groupPhotos';
 import PhotoCard from './PhotoCard';
 import { Tooltip } from './Tooltip';
@@ -90,7 +97,15 @@ function buildRows(
   return rows;
 }
 
-export default function PhotoGrid({
+/**
+ * Memoized: the gallery screen re-renders on every viewer navigation
+ * (selectedPhoto lives there), and re-rendering this virtualized list each
+ * step is what made stepping through photos feel sluggish. Its props are all
+ * stable while the viewer is open, so memo skips it entirely.
+ */
+export default memo(PhotoGrid);
+
+function PhotoGrid({
   photos,
   loading,
   hasMore,
@@ -100,7 +115,8 @@ export default function PhotoGrid({
   onPhotoPress,
   onColumnCountChange,
 }: PhotoGridProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const { width } = useWindowDimensions();
   const cellSize = Math.floor(width / columnCount);
   const isMobile = width < 600;
@@ -200,6 +216,7 @@ export default function PhotoGrid({
               styles.sectionHeader,
               {
                 backgroundColor: palette.surface,
+                borderBottomWidth: theme.hairline,
                 borderBottomColor: palette.divider,
                 opacity: pressed ? 0.6 : 1,
               },
@@ -238,7 +255,7 @@ export default function PhotoGrid({
         </View>
       );
     },
-    [cellSize, onPhotoPress, palette, toggleCollapsed],
+    [cellSize, onPhotoPress, palette, theme.hairline, toggleCollapsed],
   );
 
   const keyExtractor = useCallback((r: Row) => r.key, []);
@@ -288,7 +305,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
-    borderBottomWidth: 1,
     gap: SPACING.TINY,
   },
   sectionHeaderText: {
