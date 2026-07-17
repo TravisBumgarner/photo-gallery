@@ -63,6 +63,37 @@ fi
 echo "🗄️  Loading the read-only DB on the host…"
 ssh $KEYOPT "$REMOTE" "cd '$REMOTE_DIR' && node dist/boot.js"
 
+# Prune stale DB artifacts on the host. publish.ts prunes these locally, but the
+# default push is additive (no --delete), so that pruning never propagates and
+# the host grows without bound. Runs AFTER boot.js, so the slim snapshot the
+# server just loaded is already on disk as data/served.sqlite.
+#
+# Kept deliberately: db/ingest.sqlite (the fat DB). pull.sh restores a wiped
+# machine from it, so the host doubles as its offsite copy — never prune it.
+echo "🧹 Pruning stale DB artifacts on the host…"
+ssh $KEYOPT "$REMOTE" "
+  set -eu
+  cd '$REMOTE_DIR/data/out/db' 2>/dev/null || exit 0
+
+  # Old slim snapshots: only the version 'latest' points at is ever served, and
+  # any older one is regenerable from the fat DB sitting next to it.
+  if [ -f latest ]; then
+    keep=\"prod-\$(cat latest | tr -d '\\r\\n').sqlite\"
+    for f in prod-*.sqlite; do
+      [ -e \"\$f\" ] || continue
+      [ \"\$f\" = \"\$keep\" ] || { rm -f \"\$f\" && echo \"   removed \$f\"; }
+    done
+  fi
+
+  # Fat DB archives: keep the newest BACKUPS_TO_KEEP=5, matching publish.ts.
+  # Sort by name, not mtime — the version stamp is ISO-ish so it sorts
+  # chronologically, and rsync mtimes are less trustworthy than the filename.
+  if [ -d backups ]; then
+    ls -1 backups/ingest-*.sqlite 2>/dev/null | sort -r | tail -n +6 |
+      while read -r f; do rm -f \"\$f\" && echo \"   removed \$f\"; done
+  fi
+"
+
 echo "✅ Published to $REMOTE:$REMOTE_DIR"
 echo "   Restart the daemon so it serves the new release:"
 echo "   NFSN panel → Daemons → Send Signals → TERM (it relaunches)."
