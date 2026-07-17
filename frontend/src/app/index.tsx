@@ -10,14 +10,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Paragraph, Spinner, YStack } from 'tamagui';
 
-import ActiveFilterChips from '../components/ActiveFilterChips';
+import ActiveFilterChips, {
+  describeFilters,
+  FilterChip,
+} from '../components/ActiveFilterChips';
 import FilterPanel from '../components/FilterPanel';
 import FolderPanel from '../components/FolderPanel';
 import PhotoGrid from '../components/PhotoGrid';
 import PhotoViewer from '../components/PhotoViewer';
 import SearchPanel from '../components/SearchPanel';
 import SettingsPanel from '../components/SettingsPanel';
-import SlidePanel from '../components/SlidePanel';
+import SlidePanel, { MOBILE_BREAKPOINT } from '../components/SlidePanel';
 import SortModal from '../components/SortModal';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -198,6 +201,17 @@ export default function HomeScreen() {
     setFilters(DEFAULT_FILTERS);
   }, []);
 
+  const emptyStateChips = useMemo(() => describeFilters(filters), [filters]);
+
+  const isMobile = width < MOBILE_BREAKPOINT;
+
+  // Committing a search leaves the panel open on desktop, where it's a sidebar
+  // beside the grid and filters are meant to be stacked. On mobile the panel is
+  // a full-screen modal, so staying open would hide the results just asked for.
+  const handleSearchCommit = useCallback(() => {
+    if (isMobile) closePanel();
+  }, [isMobile, closePanel]);
+
   // Publish this screen's actions into the shared bottom bar (left-justified).
   const barItems = useMemo<BottomBarItem[]>(
     () => [
@@ -275,7 +289,9 @@ export default function HomeScreen() {
               onApplyFilter={handleFilterChange}
               peopleFilter={filters.people}
               dogsFilter={filters.dogs}
-              onClose={closePanel}
+              keywordFilter={filters.keyword}
+              cameraFilter={filters.camera}
+              onCommit={handleSearchCommit}
             />
           ) : activePanel === 'filter' ? (
             <FilterPanel
@@ -304,41 +320,98 @@ export default function HomeScreen() {
         <View style={styles.content}>
           <ActiveFilterChips filters={filters} onClear={handleFilterChange} />
 
-          {photos.length === 0 && loading ? (
-            <YStack items="center" justify="center" style={{ flex: 1 }}>
-              <Spinner size="large" />
-            </YStack>
-          ) : photos.length === 0 && error ? (
-            <YStack
-              items="center"
-              justify="center"
-              p={SPACING.MEDIUM}
-              style={{ flex: 1 }}
-            >
-              <Paragraph style={{ color: palette.error }}>{error}</Paragraph>
-            </YStack>
-          ) : photos.length === 0 ? (
-            <YStack items="center" justify="center" style={{ flex: 1 }}>
-              <Paragraph style={{ color: palette.textSecondary }}>
-                No photos match your filters.
-              </Paragraph>
-            </YStack>
-          ) : (
-            <PhotoGrid
-              photos={photos}
-              loading={loading}
-              hasMore={hasMore}
-              columnCount={columnCount}
-              sortBy={
-                filters.contentSearch
-                  ? undefined
-                  : (filters.sortBy ?? 'dateCaptured')
-              }
-              onLoadMore={handleLoadMore}
-              onPhotoPress={handlePhotoPress}
-              onColumnCountChange={setColumnCount}
-            />
-          )}
+          {/* Wraps only the grid region, so the overlay below can't cover the
+              chip bar and swallow taps meant to clear a filter. */}
+          <View style={styles.gridRegion}>
+            {photos.length === 0 && loading ? (
+              <YStack items="center" justify="center" style={{ flex: 1 }}>
+                <Spinner size="large" />
+              </YStack>
+            ) : photos.length === 0 && error ? (
+              <YStack
+                items="center"
+                justify="center"
+                p={SPACING.MEDIUM}
+                style={{ flex: 1 }}
+              >
+                <Paragraph style={{ color: palette.error }}>{error}</Paragraph>
+              </YStack>
+            ) : photos.length === 0 ? (
+              <YStack
+                items="center"
+                justify="center"
+                p={SPACING.MEDIUM}
+                gap={SPACING.MEDIUM}
+                style={{ flex: 1 }}
+              >
+                <Paragraph style={{ color: palette.textSecondary }}>
+                  No photos match your filters.
+                </Paragraph>
+                {/* Dead end otherwise: the chip bar up top scrolls horizontally
+                  and is easy to miss, so repeat the active filters here where
+                  the user is actually looking. */}
+                {emptyStateChips.length > 0 ? (
+                  <>
+                    <View style={styles.emptyChips}>
+                      {emptyStateChips.map((chip, index) => (
+                        <FilterChip
+                          key={`${chip.label}-${index}`}
+                          chip={chip}
+                          onClear={handleFilterChange}
+                        />
+                      ))}
+                    </View>
+                    <Pressable
+                      onPress={handleResetFilters}
+                      accessibilityLabel="Clear all filters"
+                      style={({ pressed }) => [
+                        styles.clearAllButton,
+                        {
+                          backgroundColor: palette.primary,
+                          opacity: pressed ? 0.6 : 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.clearAllText,
+                          { color: palette.primaryContrast },
+                        ]}
+                      >
+                        Clear all filters
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : null}
+              </YStack>
+            ) : (
+              <PhotoGrid
+                photos={photos}
+                loading={loading}
+                hasMore={hasMore}
+                columnCount={columnCount}
+                sortBy={
+                  filters.contentSearch
+                    ? undefined
+                    : (filters.sortBy ?? 'dateCaptured')
+                }
+                onLoadMore={handleLoadMore}
+                onPhotoPress={handlePhotoPress}
+                onColumnCountChange={setColumnCount}
+              />
+            )}
+
+            {/* Clicking the photos dismisses the sidebar. Rendered last so it
+                sits above the grid, and transparent so nothing is obscured.
+                On mobile the panel is a modal covering this anyway. */}
+            {activePanel !== null && !isMobile ? (
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={closePanel}
+                accessibilityLabel="Close panel"
+              />
+            ) : null}
+          </View>
         </View>
       </View>
 
@@ -357,6 +430,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   body: { flex: 1, flexDirection: 'row' },
   content: { flex: 1, minWidth: 0 },
+  gridRegion: { flex: 1, minWidth: 0 },
   resetButton: {
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
@@ -364,5 +438,21 @@ const styles = StyleSheet.create({
   resetText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  emptyChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: SPACING.TINY,
+    maxWidth: 480,
+  },
+  clearAllButton: {
+    paddingHorizontal: SPACING.MEDIUM,
+    paddingVertical: SPACING.SMALL,
+    borderRadius: 999,
+  },
+  clearAllText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

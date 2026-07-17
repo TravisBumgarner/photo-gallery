@@ -11,7 +11,7 @@ import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
 
 /** Widest the bar grows on large screens; it stretches to fit below that. */
-const MAX_WIDTH = 600;
+const MAX_WIDTH = 350;
 
 interface MenuNavItem {
   icon: React.ComponentProps<typeof MaterialIcons>['name'];

@@ -16,7 +16,11 @@ import { usePalette } from '../styles/usePalette';
 import { Tooltip } from './Tooltip';
 
 const DESKTOP_WIDTH = 350;
-const MOBILE_BREAKPOINT = 600;
+/**
+ * Below this the panel is a full-screen modal rather than an inline sidebar —
+ * a difference callers need, since the modal hides the grid entirely.
+ */
+export const MOBILE_BREAKPOINT = 600;
 
 interface SlidePanelProps {
   visible: boolean;

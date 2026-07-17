@@ -1,6 +1,13 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Modal,
   Platform,
@@ -30,6 +37,12 @@ import type { Photo } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
 import { Tooltip } from './Tooltip';
+
+/**
+ * One slide takes this long. It's a single motion now (the old two-leg
+ * out-then-in slide cost double this), so it can afford to be brisk.
+ */
+const SLIDE_MS = 220;
 
 interface PhotoViewerProps {
   photo: Photo | null;
@@ -134,9 +147,11 @@ export default function PhotoViewer({
     [inResults, neighbors, onNavigate, onSelectPhoto, photo],
   );
 
-  // Slide animation state. translateX is the live offset of the image;
-  // a swipe (or button/keyboard nav) animates it off-screen, jumps it to the
-  // opposite off-screen side, swaps the photo, then slides it back to 0.
+  // Slide animation state. The image area is a three-slot filmstrip —
+  // [prev, current, next] — laid out side by side and translated as one track,
+  // so the outgoing and incoming photos move together with no empty gap
+  // between them. translateX is the track offset; it rests at -areaWidth,
+  // which centres the middle (current) slot.
   const [areaWidth, setAreaWidth] = useState(0);
   const translateX = useSharedValue(0);
   const isAnimatingRef = useRef(false);
@@ -148,6 +163,17 @@ export default function PhotoViewer({
   const animatedSlideStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
+
+  // Re-centre the track whenever the photo changes (or the area is first
+  // measured). Tying this to the photo rather than doing it in the animation
+  // callback is what makes the hand-off seamless: it lands in the same commit
+  // as the shifted slots, so it's a visual no-op. The photo that sat in the
+  // next slot at -2W is now the middle slot at -W — identical pixels — instead
+  // of there being a frame where the track and the slots disagree.
+  useLayoutEffect(() => {
+    translateX.value = -areaWidth;
+    isAnimatingRef.current = false;
+  }, [photo?.id, areaWidth, translateX]);
 
   // Fetch chronological neighbors
   useEffect(() => {
@@ -208,12 +234,17 @@ export default function PhotoViewer({
     });
   }, [photo, photos, currentIndex, inResults, neighbors]);
 
-  const prevDisabled = inResults
-    ? photos.length <= 1
-    : neighbors.before.length === 0;
-  const nextDisabled = inResults
-    ? photos.length <= 1
-    : neighbors.after.length === 0;
+  // The photos flanking the current one — the filmstrip's outer slots, and the
+  // exact photos commitNav will move to. Undefined at either end of the list.
+  const prevPhoto = inResults
+    ? photos[currentIndex - 1]
+    : neighbors.before[neighbors.before.length - 1];
+  const nextPhoto = inResults ? photos[currentIndex + 1] : neighbors.after[0];
+
+  // Derived from the neighbours themselves, so navigation is disabled exactly
+  // when there's no slot to slide to.
+  const prevDisabled = !prevPhoto;
+  const nextDisabled = !nextPhoto;
 
   const slideTo = useCallback(
     (direction: 'prev' | 'next') => {
@@ -226,21 +257,21 @@ export default function PhotoViewer({
       }
       if (isAnimatingRef.current) return;
       isAnimatingRef.current = true;
-      const target = direction === 'next' ? -areaWidth : areaWidth;
-      translateX.value = withTiming(target, { duration: 220 }, (finished) => {
-        'worklet';
-        if (finished) {
-          // Jump off-screen to the opposite side, swap photo, slide back in.
-          translateX.value = -target;
-          runOnJS(commitNav)(direction);
-          translateX.value = withTiming(0, { duration: 220 }, (done) => {
-            'worklet';
-            if (done) runOnJS(releaseAnimating)();
-          });
-        } else {
-          runOnJS(releaseAnimating)();
-        }
-      });
+      // One motion: slide the whole track by a slot. The neighbour is already
+      // mounted alongside, so it arrives as the current photo leaves.
+      const target = direction === 'next' ? -areaWidth * 2 : 0;
+      translateX.value = withTiming(
+        target,
+        { duration: SLIDE_MS },
+        (finished) => {
+          'worklet';
+          if (finished) {
+            runOnJS(commitNav)(direction);
+          } else {
+            runOnJS(releaseAnimating)();
+          }
+        },
+      );
     },
     [
       areaWidth,
@@ -273,12 +304,14 @@ export default function PhotoViewer({
         .onUpdate((e) => {
           'worklet';
           if (isAnimatingRef.current) return;
-          translateX.value = e.translationX;
+          // The track rests at -areaWidth, so drag from there rather than 0.
+          translateX.value = -areaWidth + e.translationX;
         })
         .onEnd((e) => {
           'worklet';
+          const rest = -areaWidth;
           if (areaWidth === 0) {
-            translateX.value = withSpring(0);
+            translateX.value = withSpring(rest);
             return;
           }
           const threshold = areaWidth * 0.22;
@@ -288,28 +321,22 @@ export default function PhotoViewer({
           const goPrev =
             (e.translationX > threshold || velocity > 800) && !prevDisabled;
           if (!goNext && !goPrev) {
-            translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
+            translateX.value = withSpring(rest, {
+              damping: 18,
+              stiffness: 220,
+            });
             return;
           }
           const direction: 'prev' | 'next' = goNext ? 'next' : 'prev';
-          const target = goNext ? -areaWidth : areaWidth;
+          const target = goNext ? -areaWidth * 2 : 0;
           isAnimatingRef.current = true;
           translateX.value = withTiming(
             target,
-            { duration: 200 },
+            { duration: SLIDE_MS },
             (finished) => {
               'worklet';
               if (finished) {
-                translateX.value = -target;
                 runOnJS(commitNav)(direction);
-                translateX.value = withTiming(
-                  0,
-                  { duration: 220 },
-                  (done) => {
-                    'worklet';
-                    if (done) runOnJS(releaseAnimating)();
-                  },
-                );
               } else {
                 runOnJS(releaseAnimating)();
               }
@@ -328,9 +355,15 @@ export default function PhotoViewer({
 
   if (!photo) return null;
 
-  const uri = imageUrl(photo.originalPath);
   const hasNeighbors =
     neighbors.before.length > 0 || neighbors.after.length > 0;
+
+  // onLayout only reports after the first paint, so before it lands the middle
+  // slot falls back to the full area — with the flanking slots at zero width it
+  // is still correctly centred at translateX 0, and the first frame shows the
+  // photo rather than a blank track.
+  const slotWidth = (slot: number) =>
+    slot === 1 ? areaWidth || '100%' : areaWidth;
 
   return (
     <Modal
@@ -341,129 +374,146 @@ export default function PhotoViewer({
       statusBarTranslucent
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView
-        edges={['top', 'bottom']}
-        style={[styles.root, { backgroundColor: palette.background }]}
-      >
-        <View
-          style={[
-            styles.layout,
-            { flexDirection: isMobile ? 'column' : 'row' },
-          ]}
+        <SafeAreaView
+          edges={['top', 'bottom']}
+          style={[styles.root, { backgroundColor: palette.background }]}
         >
-          {/* Image area */}
           <View
             style={[
-              styles.imageArea,
-              { backgroundColor: palette.background },
+              styles.layout,
+              { flexDirection: isMobile ? 'column' : 'row' },
             ]}
-            onLayout={(e) => {
-              const w = e.nativeEvent.layout.width;
-              if (w && w !== areaWidth) setAreaWidth(w);
-            }}
           >
-            <GestureDetector gesture={panGesture}>
-              <Animated.View
-                style={[StyleSheet.absoluteFill, animatedSlideStyle]}
-              >
-                <Image
-                  source={{ uri }}
-                  placeholder={
-                    photo.blurhash
-                      ? {
-                          blurhash: photo.blurhash,
-                          width: photo.width ?? undefined,
-                          height: photo.height ?? undefined,
-                        }
-                      : undefined
-                  }
-                  placeholderContentFit="contain"
-                  contentFit="contain"
-                  transition={200}
-                  style={StyleSheet.absoluteFill}
-                  recyclingKey={String(photo.id)}
-                />
-              </Animated.View>
-            </GestureDetector>
+            {/* Image area */}
+            <View
+              style={[
+                styles.imageArea,
+                { backgroundColor: palette.background },
+              ]}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                if (w && w !== areaWidth) setAreaWidth(w);
+              }}
+            >
+              <GestureDetector gesture={panGesture}>
+                <Animated.View style={[styles.track, animatedSlideStyle]}>
+                  {/* Keyed by photo id, not slot position: when the strip shifts,
+                    React moves these nodes rather than remounting them, so the
+                    incoming photo keeps the pixels it already decoded and
+                    never flashes back to a placeholder. */}
+                  {[prevPhoto, photo, nextPhoto].map((p, slot) =>
+                    p ? (
+                      <View
+                        key={p.id}
+                        style={[styles.slot, { width: slotWidth(slot) }]}
+                      >
+                        <Image
+                          source={{ uri: imageUrl(p.originalPath) }}
+                          placeholder={
+                            p.blurhash
+                              ? {
+                                  blurhash: p.blurhash,
+                                  width: p.width ?? undefined,
+                                  height: p.height ?? undefined,
+                                }
+                              : undefined
+                          }
+                          placeholderContentFit="contain"
+                          contentFit="contain"
+                          transition={200}
+                          style={StyleSheet.absoluteFill}
+                          recyclingKey={String(p.id)}
+                        />
+                      </View>
+                    ) : (
+                      // Keeps the middle slot centred at either end of the list.
+                      <View
+                        key={`empty-${slot}`}
+                        style={[styles.slot, { width: slotWidth(slot) }]}
+                      />
+                    ),
+                  )}
+                </Animated.View>
+              </GestureDetector>
+            </View>
+
+            {/* Neighbors strip */}
+            {showNeighbors && hasNeighbors && (
+              <NeighborsStrip
+                photos={[
+                  ...neighbors.before.filter((p) => p.id !== photo.id),
+                  photo,
+                  ...neighbors.after.filter((p) => p.id !== photo.id),
+                ]}
+                activeId={photo.id}
+                isMobile={isMobile}
+                onSelect={(p) => onSelectPhoto(p)}
+              />
+            )}
+
+            {/* Metadata panel */}
+            {showMetadata && (
+              <MetadataPanel photo={photo} isMobile={isMobile} />
+            )}
           </View>
 
-          {/* Neighbors strip */}
-          {showNeighbors && hasNeighbors && (
-            <NeighborsStrip
-              photos={[
-                ...neighbors.before.filter((p) => p.id !== photo.id),
-                photo,
-                ...neighbors.after.filter((p) => p.id !== photo.id),
-              ]}
-              activeId={photo.id}
-              isMobile={isMobile}
-              onSelect={(p) => onSelectPhoto(p)}
-            />
-          )}
-
-          {/* Metadata panel */}
-          {showMetadata && (
-            <MetadataPanel photo={photo} isMobile={isMobile} />
-          )}
-        </View>
-
-        {/* Bottom bar */}
-        <View
-          style={[
-            styles.bottomBar,
-            {
-              backgroundColor: palette.surface,
-              borderTopColor: palette.divider,
-            },
-          ]}
-        >
-          <IconBtn
-            name="close"
-            onPress={onClose}
-            palette={palette}
-            title="Close (Esc)"
-          />
+          {/* Bottom bar */}
           <View
-            style={[styles.divider, { backgroundColor: palette.divider }]}
-          />
-          {!isMobile && (
-            <>
-              <IconBtn
-                name="arrow-back"
-                onPress={() => slideTo('prev')}
-                disabled={prevDisabled}
-                palette={palette}
-                title="Previous photo (←)"
-              />
-              <IconBtn
-                name="arrow-forward"
-                onPress={() => slideTo('next')}
-                disabled={nextDisabled}
-                palette={palette}
-                title="Next photo (→)"
-              />
-              <View
-                style={[styles.divider, { backgroundColor: palette.divider }]}
-              />
-            </>
-          )}
-          <IconBtn
-            name="view-carousel"
-            onPress={() => setShowNeighbors((v) => !v)}
-            disabled={!hasNeighbors}
-            active={showNeighbors}
-            palette={palette}
-            title={showNeighbors ? 'Hide neighbors' : 'Show neighbors'}
-          />
-          <IconBtn
-            name="info-outline"
-            onPress={() => setShowMetadata((v) => !v)}
-            active={showMetadata}
-            palette={palette}
-            title={showMetadata ? 'Hide metadata' : 'Show metadata'}
-          />
-        </View>
-      </SafeAreaView>
+            style={[
+              styles.bottomBar,
+              {
+                backgroundColor: palette.surface,
+                borderTopColor: palette.divider,
+              },
+            ]}
+          >
+            <IconBtn
+              name="close"
+              onPress={onClose}
+              palette={palette}
+              title="Close (Esc)"
+            />
+            <View
+              style={[styles.divider, { backgroundColor: palette.divider }]}
+            />
+            {!isMobile && (
+              <>
+                <IconBtn
+                  name="arrow-back"
+                  onPress={() => slideTo('prev')}
+                  disabled={prevDisabled}
+                  palette={palette}
+                  title="Previous photo (←)"
+                />
+                <IconBtn
+                  name="arrow-forward"
+                  onPress={() => slideTo('next')}
+                  disabled={nextDisabled}
+                  palette={palette}
+                  title="Next photo (→)"
+                />
+                <View
+                  style={[styles.divider, { backgroundColor: palette.divider }]}
+                />
+              </>
+            )}
+            <IconBtn
+              name="view-carousel"
+              onPress={() => setShowNeighbors((v) => !v)}
+              disabled={!hasNeighbors}
+              active={showNeighbors}
+              palette={palette}
+              title={showNeighbors ? 'Hide neighbors' : 'Show neighbors'}
+            />
+            <IconBtn
+              name="info-outline"
+              onPress={() => setShowMetadata((v) => !v)}
+              active={showMetadata}
+              palette={palette}
+              title={showMetadata ? 'Hide metadata' : 'Show metadata'}
+            />
+          </View>
+        </SafeAreaView>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -550,32 +600,32 @@ function NeighborsStrip({
         }
       >
         {photos.map((p) => {
-        const active = p.id === activeId;
-        const size = isMobile ? 56 : 64;
-        return (
-          <Pressable
-            key={p.id}
-            onPress={() => !active && onSelect(p)}
-            style={[
-              styles.neighborItem,
-              {
-                width: size,
-                height: size,
-                opacity: active ? 1 : 0.75,
-                borderColor: active ? palette.primary : 'transparent',
-              },
-            ]}
-          >
-            <Image
-              source={{ uri: thumbnailUrl(p.thumbnailPath) }}
-              placeholder={p.blurhash ? { blurhash: p.blurhash } : undefined}
-              contentFit="cover"
-              style={StyleSheet.absoluteFill}
-              recyclingKey={`neighbor-${p.id}`}
-            />
-          </Pressable>
-        );
-      })}
+          const active = p.id === activeId;
+          const size = isMobile ? 56 : 64;
+          return (
+            <Pressable
+              key={p.id}
+              onPress={() => !active && onSelect(p)}
+              style={[
+                styles.neighborItem,
+                {
+                  width: size,
+                  height: size,
+                  opacity: active ? 1 : 0.75,
+                  borderColor: active ? palette.primary : 'transparent',
+                },
+              ]}
+            >
+              <Image
+                source={{ uri: thumbnailUrl(p.thumbnailPath) }}
+                placeholder={p.blurhash ? { blurhash: p.blurhash } : undefined}
+                contentFit="cover"
+                style={StyleSheet.absoluteFill}
+                recyclingKey={`neighbor-${p.id}`}
+              />
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -626,73 +676,73 @@ function MetadataPanel({
         { backgroundColor: palette.surface },
       ]}
     >
-    <ScrollView
-      contentContainerStyle={{
-        padding: SPACING.MEDIUM,
-        gap: SPACING.SMALL,
-      }}
-    >
-      <Text
-        style={[styles.filename, { color: palette.textPrimary }]}
-        numberOfLines={1}
+      <ScrollView
+        contentContainerStyle={{
+          padding: SPACING.MEDIUM,
+          gap: SPACING.SMALL,
+        }}
       >
-        {photo.filename}
-      </Text>
-
-      {(photo.rating || (photo.label && LABEL_COLORS[photo.label])) && (
-        <View style={styles.inlineRow}>
-          {photo.rating ? (
-            <StarRating rating={photo.rating} palette={palette} />
-          ) : null}
-          {photo.label && LABEL_COLORS[photo.label] ? (
-            <LabelChip label={photo.label} />
-          ) : null}
-        </View>
-      )}
-
-      {photo.camera && (
         <Text
-          style={[styles.value, { color: palette.textPrimary }]}
+          style={[styles.filename, { color: palette.textPrimary }]}
           numberOfLines={1}
         >
-          {photo.camera}
+          {photo.filename}
         </Text>
-      )}
-      {photo.lens && (
-        <Text
-          style={[styles.value, { color: palette.textSecondary }]}
-          numberOfLines={1}
-        >
-          {photo.lens}
-        </Text>
-      )}
 
-      {settingsLine.length > 0 && (
-        <Text style={[styles.value, { color: palette.textPrimary }]}>
-          {settingsLine}
-        </Text>
-      )}
+        {(photo.rating || (photo.label && LABEL_COLORS[photo.label])) && (
+          <View style={styles.inlineRow}>
+            {photo.rating ? (
+              <StarRating rating={photo.rating} palette={palette} />
+            ) : null}
+            {photo.label && LABEL_COLORS[photo.label] ? (
+              <LabelChip label={photo.label} />
+            ) : null}
+          </View>
+        )}
 
-      {detailsLine.length > 0 && (
-        <Text style={[styles.value, { color: palette.textSecondary }]}>
-          {detailsLine}
-        </Text>
-      )}
+        {photo.camera && (
+          <Text
+            style={[styles.value, { color: palette.textPrimary }]}
+            numberOfLines={1}
+          >
+            {photo.camera}
+          </Text>
+        )}
+        {photo.lens && (
+          <Text
+            style={[styles.value, { color: palette.textSecondary }]}
+            numberOfLines={1}
+          >
+            {photo.lens}
+          </Text>
+        )}
 
-      {photo.dateCaptured && (
-        <Text style={[styles.value, { color: palette.textSecondary }]}>
-          {formatDate(photo.dateCaptured)}
-        </Text>
-      )}
+        {settingsLine.length > 0 && (
+          <Text style={[styles.value, { color: palette.textPrimary }]}>
+            {settingsLine}
+          </Text>
+        )}
 
-      {keywords.length > 0 && (
-        <View style={styles.chipRow}>
-          {keywords.map((k, i) => (
-            <KeywordChip key={i} label={k} palette={palette} />
-          ))}
-        </View>
-      )}
-    </ScrollView>
+        {detailsLine.length > 0 && (
+          <Text style={[styles.value, { color: palette.textSecondary }]}>
+            {detailsLine}
+          </Text>
+        )}
+
+        {photo.dateCaptured && (
+          <Text style={[styles.value, { color: palette.textSecondary }]}>
+            {formatDate(photo.dateCaptured)}
+          </Text>
+        )}
+
+        {keywords.length > 0 && (
+          <View style={styles.chipRow}>
+            {keywords.map((k, i) => (
+              <KeywordChip key={i} label={k} palette={palette} />
+            ))}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -776,6 +826,18 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  track: {
+    flexDirection: 'row',
+    height: '100%',
+  },
+  slot: {
+    height: '100%',
+    position: 'relative',
+    // The track is only as wide as the visible area while holding three slots,
+    // so the slots must keep their width and overflow (imageArea clips them)
+    // rather than being squeezed to a third each.
+    flexShrink: 0,
+  },
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -835,6 +897,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
     alignSelf: 'flex-start',
+    // RN defaults flexShrink to 0, so without these a long tag pushes its chip
+    // past the panel edge instead of wrapping. Bounding the chip's width is
+    // what lets the Text inside wrap.
+    flexShrink: 1,
+    maxWidth: '100%',
   },
   chipText: {
     fontSize: FONT_SIZES.TINY,
