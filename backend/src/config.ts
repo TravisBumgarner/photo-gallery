@@ -18,6 +18,12 @@ const base = {
   SESSION_SECRET: z.string().min(1),
   APP_PASSWORD: z.string().min(1),
   CORS_ORIGIN: z.string().min(1),
+  // Where the text-embedding model (bge-small-en-v1.5) is cached on disk. Must
+  // be absolute for the same reason .env is loaded by path above: the daemon
+  // doesn't cd, so a relative path resolves against an arbitrary cwd — and a
+  // miss there means a silent 33MB HuggingFace download at first search, into
+  // a directory that may not even be writable.
+  MODEL_CACHE_DIR: z.string().min(1),
 };
 
 // Both supported targets (this computer, and a box you rsync to like

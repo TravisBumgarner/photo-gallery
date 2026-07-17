@@ -138,6 +138,10 @@ const DATA_DIR = path.join(ROOT, 'data');
 const DEST_DIR = path.join(DATA_DIR, 'out');
 const INGEST_DB = path.join(DATA_DIR, 'ingest.sqlite');
 const SERVED_DB = path.join(DATA_DIR, 'served.sqlite');
+// Text-embedding model cache. Must match offline-processing's modelCacheDir()
+// (<DESTINATION_DIRECTORY>/../models/…) so the prefetch step and the server
+// share one copy instead of each downloading their own.
+const MODEL_CACHE_DIR = path.join(DATA_DIR, 'models', 'bge-small-en-v1.5');
 
 // TEMPORARY (remove after the testing push): wipe ALL local state back to a
 // fresh-checkout state so an end-to-end run can be repeated from zero. Removes
@@ -265,6 +269,12 @@ export function migrateConfig(): boolean {
       // Docker vision-server is published on localhost:8090 for native tasks.
       if (p === CLI_CACHE && !/^VISION_SERVER_HOST=/m.test(txt)) {
         txt = `${txt.replace(/\n?$/, '\n')}${VISION_SERVER_HOST_LINE}\n`;
+      }
+      // Back-fill MODEL_CACHE_DIR for backend configs written before content
+      // search read it from env (it used to resolve against the cwd). The
+      // backend now requires it, so without this an existing .env fails boot.
+      if (p === BACKEND_ENV && !/^MODEL_CACHE_DIR=/m.test(txt)) {
+        txt = `${txt.replace(/\n?$/, '\n')}MODEL_CACHE_DIR=${MODEL_CACHE_DIR}\n`;
       }
       if (txt !== orig) {
         writeFileSync(p, txt);
@@ -555,6 +565,7 @@ export function writeConfigFiles(v: Record<string, string>): {
     `APP_PASSWORD=${v.APP_PASSWORD}`,
     'CORS_ORIGIN=*',
     `STORAGE_URL=file://${DEST_DIR}`,
+    `MODEL_CACHE_DIR=${MODEL_CACHE_DIR}`,
     // Discriminator for the backend's boot-time config validation (per host).
     `BACKEND_SERVER=${v.DEPLOY_TARGET || 'localhost'}`,
   ]

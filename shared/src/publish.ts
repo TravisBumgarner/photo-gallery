@@ -117,6 +117,7 @@ export async function publishToStorage(
       photos: allPhotos.length,
       faces: allFaces.length,
       dogs: allDogs.length,
+      tagsEmbeddings: allPhotos.filter((p) => p.tagsEmbedding != null).length,
     });
 
     // 2. Non-destructive uploads: labels, then the immutable slim snapshot.
@@ -247,11 +248,21 @@ function assertIntegrity(dbPath: string): void {
 }
 
 /** Abort before cutover unless the slim snapshot's row counts match the fat DB
- * exactly — slim is a byte copy with only the embedding columns emptied, so any
- * mismatch (or a zero-photo library) means the copy is bad. */
+ * exactly — slim is a byte copy with only the clustering embeddings emptied, so
+ * any mismatch (or a zero-photo library) means the copy is bad.
+ *
+ * Also asserts the slim DB retains as many tags_embedding rows as the fat one.
+ * Stripping them yields a snapshot that serves photos correctly but silently
+ * returns nothing for every textual search, which is invisible until someone
+ * searches in prod. */
 function verifySlim(
   slimPath: string,
-  expected: { photos: number; faces: number; dogs: number },
+  expected: {
+    photos: number;
+    faces: number;
+    dogs: number;
+    tagsEmbeddings: number;
+  },
 ): void {
   const sqlite = new Database(slimPath, { readonly: true });
   try {
@@ -262,8 +273,13 @@ function verifySlim(
       photos: count('photos'),
       faces: count('faces'),
       dogs: count('dogs'),
+      tagsEmbeddings: (
+        sqlite
+          .prepare('SELECT count(tags_embedding) AS n FROM photos')
+          .get() as { n: number }
+      ).n,
     };
-    for (const key of ['photos', 'faces', 'dogs'] as const) {
+    for (const key of ['photos', 'faces', 'dogs', 'tagsEmbeddings'] as const) {
       if (got[key] !== expected[key]) {
         throw new Error(
           `Refusing to publish: slim DB ${key} count ${got[key]} != fat ${expected[key]}.`,
@@ -278,9 +294,14 @@ function verifySlim(
   }
 }
 
-/** Copy the DB and strip embeddings (the bulk), then VACUUM to reclaim space.
- * Embedding columns are NOT NULL, so they're emptied rather than dropped —
- * the serving schema stays identical, only the heavy bytes go. */
+/** Copy the DB and strip the clustering embeddings (the bulk), then VACUUM to
+ * reclaim space. Those columns are NOT NULL, so they're emptied rather than
+ * dropped — the serving schema stays identical, only the heavy bytes go.
+ *
+ * photos.tags_embedding is deliberately KEPT: the server's textual image search
+ * loads it at runtime to score queries, and there is no other copy in the slim
+ * DB to rebuild it from. faces/dogs embeddings are only consumed offline by
+ * clustering, so they stay stripped. */
 function buildSlimDb(dbPath: string): string {
   const slimPath = path.join(
     os.tmpdir(),
@@ -291,7 +312,6 @@ function buildSlimDb(dbPath: string): string {
   try {
     sqlite.exec("UPDATE faces SET embedding = X''");
     sqlite.exec("UPDATE dogs SET embedding = X''");
-    sqlite.exec('UPDATE photos SET tags_embedding = NULL');
     sqlite.exec('VACUUM');
   } finally {
     sqlite.close();

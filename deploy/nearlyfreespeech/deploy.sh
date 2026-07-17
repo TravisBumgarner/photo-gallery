@@ -105,6 +105,7 @@ NODE_ENV=production
 BACKEND_SERVER=nearlyfreespeech
 DATABASE_URL=$REMOTE_DIR/data/served.sqlite
 STORAGE_URL=file://$REMOTE_DIR/data/out
+MODEL_CACHE_DIR=$REMOTE_DIR/data/models/bge-small-en-v1.5
 APP_PASSWORD=$APP_PASSWORD
 SESSION_SECRET=$SESSION_SECRET
 CORS_ORIGIN=${SITE_URL:-*}
@@ -138,6 +139,21 @@ rsync -azPh -e "$RSH" --delete --timeout=300 backend/dist/ "$REMOTE:$REMOTE_DIR/
 rsync -azPh -e "$RSH" --delete --timeout=300 backend/frontend-dist/ "$REMOTE:$REMOTE_DIR/frontend-dist/"
 if [ -d backend/drizzle ]; then
   rsync -azPh -e "$RSH" --delete --timeout=300 backend/drizzle/ "$REMOTE:$REMOTE_DIR/drizzle/"
+fi
+
+# The text-embedding model (~33MB) that content search runs in-process to embed
+# each query. Ship it rather than letting the host fetch it from HuggingFace on
+# first search: that download is a silent 500 if the box has no outbound HTTPS,
+# and it re-downloads on every deploy. gitignored (**/models/), so it comes from
+# the local prefetch — publish is the only thing that populates it.
+if [ -d data/models/bge-small-en-v1.5 ]; then
+  echo "🧠 Syncing text-embedding model…"
+  ssh $KEYOPT "$REMOTE" "mkdir -p '$REMOTE_DIR/data/models'"
+  rsync -azPh -e "$RSH" --timeout=300 data/models/bge-small-en-v1.5/ \
+    "$REMOTE:$REMOTE_DIR/data/models/bge-small-en-v1.5/"
+else
+  echo "⚠️  data/models/bge-small-en-v1.5 missing — content search will try to"
+  echo "   download it on the host at first query. Run ./ingest-and-sync to prefetch."
 fi
 
 echo "📦 Installing production dependencies on the host…"

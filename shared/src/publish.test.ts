@@ -146,7 +146,8 @@ describe('publishToStorage', () => {
       'hash2',
     ]);
 
-    // latest pointer + slim DB present, embeddings stripped.
+    // latest pointer + slim DB present, clustering embeddings stripped but the
+    // tag embeddings the server searches on kept.
     const version = (await storage.get(KEYS.dbLatest())).toString();
     expect(version).toBe('2026-06-15T00-00-00Z');
 
@@ -160,9 +161,12 @@ describe('publishToStorage', () => {
       .prepare('SELECT tags_embedding AS e, tags FROM photos WHERE uuid = ?')
       .get('u1') as { e: Buffer | null; tags: string };
     slim.close();
-    expect(faceRow.n).toBe(0); // embedding emptied
-    expect(tagRow.e).toBeNull(); // tags_embedding nulled
-    expect(tagRow.tags).toBe('beach, sun'); // but tags (cheap, useful) kept
+    expect(faceRow.n).toBe(0); // clustering embedding emptied (offline-only)
+    // tags_embedding is the server's search index — stripping it made every
+    // content search silently return zero hits in prod.
+    expect(tagRow.e).not.toBeNull();
+    expect(tagRow.e?.byteLength).toBe(f32(0.1, 0.2).byteLength);
+    expect(tagRow.tags).toBe('beach, sun');
 
     // Republishing archives the previous fat DB instead of clobbering it.
     const second = await publishToStorage({
