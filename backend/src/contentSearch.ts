@@ -6,7 +6,9 @@ import { photos } from 'shared/db/schema';
 import { config } from './config.js';
 
 const EMBED_DIM = 384;
-const MODEL_CACHE_DIR = path.resolve('models/bge-small-en-v1.5');
+// Resolved from config, not the cwd — the daemon starts the server without
+// cd'ing into the app dir.
+const MODEL_CACHE_DIR = path.resolve(config.MODEL_CACHE_DIR);
 
 interface MatrixEntry {
   uuid: string;
@@ -62,11 +64,20 @@ let embedderInflight: Promise<WasmEmbedder> | null = null;
 async function getEmbedder(): Promise<WasmEmbedder> {
   if (embedder) return embedder;
   if (embedderInflight) return embedderInflight;
-  embedderInflight = WasmEmbedder.create(MODEL_CACHE_DIR).then((e) => {
-    embedder = e;
-    embedderInflight = null;
-    return e;
-  });
+  // Clear the cached promise on failure too, so a transient model-load error
+  // (e.g. a blipped download) doesn't wedge search for the process lifetime by
+  // handing every later caller the same rejected promise.
+  embedderInflight = WasmEmbedder.create(MODEL_CACHE_DIR).then(
+    (e) => {
+      embedder = e;
+      embedderInflight = null;
+      return e;
+    },
+    (err) => {
+      embedderInflight = null;
+      throw err;
+    },
+  );
   return embedderInflight;
 }
 
