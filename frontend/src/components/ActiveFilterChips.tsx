@@ -1,10 +1,11 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import type React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 
 interface ActiveFilterChipsProps {
   filters: PhotoFilters;
@@ -237,7 +238,8 @@ export default function ActiveFilterChips({
   filters,
   onClear,
 }: ActiveFilterChipsProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const chips = describeFilters(filters);
 
   if (chips.length === 0) return null;
@@ -248,6 +250,7 @@ export default function ActiveFilterChips({
         styles.bar,
         {
           backgroundColor: palette.surface,
+          borderBottomWidth: theme.hairline,
           borderBottomColor: palette.divider,
         },
       ]}
@@ -277,35 +280,38 @@ export function FilterChip({
   chip: ChipDescriptor;
   onClear: (changed: Partial<PhotoFilters>) => void;
 }) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   return (
-    <Pressable
-      onPress={() => onClear(chip.clear)}
-      accessibilityLabel={`Clear filter ${chip.label}`}
-      style={({ pressed }) => [
-        styles.chip,
-        {
-          backgroundColor: palette.surfaceElevated,
-          borderColor: palette.divider,
-          opacity: pressed ? 0.6 : 1,
-        },
-      ]}
+    <Animated.View
+      entering={FadeIn.duration(theme.motion.fast)}
+      exiting={FadeOut.duration(theme.motion.fast)}
     >
-      {chip.icon && (
-        <MaterialIcons
-          name={chip.icon}
-          size={12}
-          color={palette.textSecondary}
-        />
-      )}
-      <Text
-        numberOfLines={1}
-        style={[styles.chipText, { color: palette.textPrimary }]}
+      <Pressable
+        onPress={() => onClear(chip.clear)}
+        accessibilityLabel={`Clear filter ${chip.label}`}
+        style={({ pressed }) => [
+          styles.chip,
+          theme.surfaces.chip,
+          { opacity: pressed ? 0.6 : 1 },
+        ]}
       >
-        {chip.label}
-      </Text>
-      <MaterialIcons name="close" size={12} color={palette.textSecondary} />
-    </Pressable>
+        {chip.icon && (
+          <MaterialIcons
+            name={chip.icon}
+            size={12}
+            color={palette.textSecondary}
+          />
+        )}
+        <Text
+          numberOfLines={1}
+          style={[styles.chipText, { color: palette.textPrimary }]}
+        >
+          {chip.label}
+        </Text>
+        <MaterialIcons name="close" size={12} color={palette.textSecondary} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -313,7 +319,6 @@ const styles = StyleSheet.create({
   bar: {
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
-    borderBottomWidth: 1,
   },
   row: {
     flexDirection: 'row',
@@ -327,7 +332,6 @@ const styles = StyleSheet.create({
     gap: SPACING.TINY,
     paddingVertical: SPACING.TINY,
     paddingHorizontal: SPACING.SMALL,
-    borderWidth: 1,
   },
   chipText: {
     fontSize: FONT_SIZES.SMALL,

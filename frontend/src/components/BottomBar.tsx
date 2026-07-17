@@ -2,13 +2,16 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../lib/auth';
 import { type BottomBarItem, useBottomBarItems } from '../lib/bottomBar';
 import { useServerUrl } from '../lib/serverUrl';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import { useMountTransition } from './AnimatedDialog';
 
 /** Widest the bar grows on large screens; it stretches to fit below that. */
 const MAX_WIDTH = 350;
@@ -26,7 +29,8 @@ interface MenuNavItem {
  * navigate between Gallery and Stats. Hidden on login / when unauthenticated.
  */
 export default function BottomBar() {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -34,6 +38,12 @@ export default function BottomBar() {
   const serverUrl = useServerUrl();
   const items = useBottomBarItems();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useMountTransition(menuOpen, theme.motion.base, theme.motion.fast);
+
+  const menuStyle = useAnimatedStyle(() => ({
+    opacity: menu.progress.value,
+    transform: [{ translateY: (1 - menu.progress.value) * 8 }],
+  }));
 
   if (!isAuthenticated || pathname === '/login') return null;
 
@@ -58,7 +68,10 @@ export default function BottomBar() {
     <>
       {menuOpen ? (
         <Pressable
-          style={StyleSheet.absoluteFill}
+          // Just below the bar's wrap (zIndex 100): catches outside clicks
+          // anywhere on the page without sitting under sibling stacking
+          // contexts, while the bar and menu stay tappable above it.
+          style={[StyleSheet.absoluteFill, { zIndex: 99 }]}
           onPress={() => setMenuOpen(false)}
           accessibilityLabel="Close menu"
         />
@@ -68,7 +81,7 @@ export default function BottomBar() {
         style={[styles.wrap, { paddingBottom: insets.bottom + SPACING.SMALL }]}
         pointerEvents="box-none"
       >
-        <View style={[styles.bar, { backgroundColor: palette.surface }]}>
+        <View style={[styles.bar, theme.surfaces.bar]}>
           {/* Left: screen-specific actions. */}
           <View style={styles.leftGroup}>
             {items.map((item) => (
@@ -78,20 +91,17 @@ export default function BottomBar() {
 
           {/* Right: the global menu, anchored so it never moves. */}
           <View>
-            {menuOpen ? (
-              <View
-                style={[
-                  styles.popover,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.divider,
-                  },
-                ]}
+            {menu.mounted ? (
+              <Animated.View
+                style={[styles.popover, theme.surfaces.popover, menuStyle]}
               >
                 <View
                   style={[
                     styles.serverHeader,
-                    { borderBottomColor: palette.divider },
+                    {
+                      borderBottomWidth: Math.max(theme.hairline, 1),
+                      borderBottomColor: palette.divider,
+                    },
                   ]}
                 >
                   <MaterialIcons
@@ -141,7 +151,7 @@ export default function BottomBar() {
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </Animated.View>
             ) : null}
 
             <BarButton
@@ -166,7 +176,7 @@ function BarButton({
   palette,
 }: {
   item: BottomBarItem;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
 }) {
   return (
     <Pressable
@@ -205,8 +215,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.SMALL,
-    borderRadius: 999,
-    boxShadow: '0px 6px 16px rgba(0, 0, 0, 0.18)',
     elevation: 10,
   },
   leftGroup: {
@@ -230,11 +238,8 @@ const styles = StyleSheet.create({
     bottom: '100%',
     marginBottom: SPACING.SMALL,
     minWidth: 180,
-    borderRadius: 12,
-    borderWidth: 1,
     paddingVertical: SPACING.TINY,
     overflow: 'hidden',
-    boxShadow: '0px 6px 16px rgba(0, 0, 0, 0.2)',
     elevation: 8,
   },
   serverHeader: {
@@ -243,7 +248,6 @@ const styles = StyleSheet.create({
     gap: SPACING.TINY,
     paddingHorizontal: SPACING.MEDIUM,
     paddingVertical: SPACING.SMALL,
-    borderBottomWidth: 1,
   },
   serverHost: {
     fontSize: 12,

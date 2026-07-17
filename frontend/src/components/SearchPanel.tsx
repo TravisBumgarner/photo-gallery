@@ -12,6 +12,7 @@ import {
   type TextInputKeyPressEventData,
   View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { apiFetch } from '../lib/api';
 import {
@@ -24,7 +25,9 @@ import {
 } from '../lib/recentSearches';
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import Collapsible from './Collapsible';
 
 /** Recents shown before the "show more" row takes over. */
 const COLLAPSED_RECENTS = 5;
@@ -120,7 +123,8 @@ export default function SearchPanel({
   cameraFilter,
   onCommit,
 }: SearchPanelProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const [inputValue, setInputValue] = useState(value);
   const [options, setOptions] = useState<Suggestion[]>([]);
   const [groupedOptions, setGroupedOptions] = useState<OptionGroup[]>([]);
@@ -298,6 +302,12 @@ export default function SearchPanel({
   const canToggleRecents =
     hasRecentsToShow && (hiddenRecentCount > 0 || showAllRecents);
 
+  // Rendering splits the recents differently from `visibleRecents`: the first
+  // page always renders, and the overflow stays mounted inside a Collapsible so
+  // toggling "show more" animates open/closed instead of snapping.
+  const pinnedRecents = recents.slice(0, COLLAPSED_RECENTS);
+  const overflowRecents = recents.slice(COLLAPSED_RECENTS);
+
   // Every selectable row, in the same order they're rendered below, so the
   // keyboard highlight and the list stay in lockstep. Rows are matched by key
   // at render time rather than by re-deriving indices in two places.
@@ -364,6 +374,57 @@ export default function SearchPanel({
     onChange('');
     onCommit();
   };
+
+  const renderRecent = (entry: RecentSearch) => (
+    <Animated.View
+      key={`${entry.kind}:${entry.value}`}
+      style={styles.recentRow}
+      entering={FadeIn.duration(theme.motion.base)}
+      exiting={FadeOut.duration(theme.motion.fast)}
+    >
+      <Pressable
+        onPress={() => selectRecent(entry)}
+        style={({ pressed }) => [
+          styles.option,
+          styles.recentOption,
+          {
+            backgroundColor:
+              pressed || isHighlighted(`recent:${entry.kind}:${entry.value}`)
+                ? palette.surfaceElevated
+                : 'transparent',
+            borderLeftColor: isHighlighted(
+              `recent:${entry.kind}:${entry.value}`,
+            )
+              ? palette.primary
+              : 'transparent',
+          },
+        ]}
+      >
+        <MaterialIcons
+          name={RECENT_KIND_ICON[entry.kind]}
+          size={14}
+          color={palette.textSecondary}
+        />
+        <Text
+          style={[styles.optionText, { color: palette.textPrimary }]}
+          numberOfLines={1}
+        >
+          {entry.value}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => removeRecentSearch(entry)}
+        accessibilityLabel={`Remove recent search ${entry.value}`}
+        hitSlop={8}
+        style={({ pressed }) => [
+          styles.removeRecent,
+          { opacity: pressed ? 0.4 : 0.7 },
+        ]}
+      >
+        <MaterialIcons name="close" size={14} color={palette.textSecondary} />
+      </Pressable>
+    </Animated.View>
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -473,59 +534,15 @@ export default function SearchPanel({
                 </Text>
               </Pressable>
             </View>
-            {visibleRecents.map((entry) => (
-              <View
-                key={`${entry.kind}:${entry.value}`}
-                style={styles.recentRow}
+            {pinnedRecents.map(renderRecent)}
+            {overflowRecents.length > 0 ? (
+              <Collapsible
+                expanded={showAllRecents}
+                duration={theme.motion.base}
               >
-                <Pressable
-                  onPress={() => selectRecent(entry)}
-                  style={({ pressed }) => [
-                    styles.option,
-                    styles.recentOption,
-                    {
-                      backgroundColor:
-                        pressed ||
-                        isHighlighted(`recent:${entry.kind}:${entry.value}`)
-                          ? palette.surfaceElevated
-                          : 'transparent',
-                      borderLeftColor: isHighlighted(
-                        `recent:${entry.kind}:${entry.value}`,
-                      )
-                        ? palette.primary
-                        : 'transparent',
-                    },
-                  ]}
-                >
-                  <MaterialIcons
-                    name={RECENT_KIND_ICON[entry.kind]}
-                    size={14}
-                    color={palette.textSecondary}
-                  />
-                  <Text
-                    style={[styles.optionText, { color: palette.textPrimary }]}
-                    numberOfLines={1}
-                  >
-                    {entry.value}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => removeRecentSearch(entry)}
-                  accessibilityLabel={`Remove recent search ${entry.value}`}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.removeRecent,
-                    { opacity: pressed ? 0.4 : 0.7 },
-                  ]}
-                >
-                  <MaterialIcons
-                    name="close"
-                    size={14}
-                    color={palette.textSecondary}
-                  />
-                </Pressable>
-              </View>
-            ))}
+                {overflowRecents.map(renderRecent)}
+              </Collapsible>
+            ) : null}
             {canToggleRecents ? (
               <Pressable
                 onPress={() => setShowAllRecents((v) => !v)}
@@ -612,7 +629,7 @@ function SuggestionRow({
 }: {
   suggestion: Suggestion;
   onPress: (s: Suggestion) => void;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
   highlighted: boolean;
 }) {
   return (

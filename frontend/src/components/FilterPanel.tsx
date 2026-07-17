@@ -1,6 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { apiFetch } from '../lib/api';
 import {
@@ -13,6 +14,8 @@ import {
 import type { PhotoFilters } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import Collapsible from './Collapsible';
 import SharedCollapsibleSection from './CollapsibleSection';
 import DateRangeCalendar from './DateRangeCalendar';
 import FilterListModal, {
@@ -145,7 +148,8 @@ export default function FilterPanel({
   filters,
   onFilterChange,
 }: FilterPanelProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const {
     visibleFilterSections: visibleSections,
     expandedFilterSections: expandedSections,
@@ -325,8 +329,12 @@ export default function FilterPanel({
                 }
                 style={({ pressed }) => [
                   styles.chip,
+                  theme.surfaces.chip,
                   {
                     backgroundColor: LABEL_COLORS[label],
+                    ...(theme.hairline > 0 && {
+                      borderColor: LABEL_COLORS[label],
+                    }),
                     opacity: filters.label === label ? 1 : 0.55,
                     transform: [{ scale: pressed ? 0.96 : 1 }],
                   },
@@ -440,7 +448,7 @@ export default function FilterPanel({
                 endDate: undefined,
               })
             }
-            palette={palette}
+            theme={theme}
           />
         );
       case 'iso':
@@ -507,6 +515,7 @@ export default function FilterPanel({
               styles.expandControls,
               {
                 backgroundColor: palette.surface,
+                borderBottomWidth: theme.hairline,
                 borderBottomColor: palette.divider,
               },
             ]}
@@ -636,25 +645,31 @@ export function FilterBadge({
   palette: ReturnType<typeof usePalette>;
   onClear: () => void;
 }) {
+  const theme = useTheme();
   const [hovered, setHovered] = useState(false);
   return (
-    <Tooltip title={`Clear ${label} filter`}>
-      <Pressable
-        onPress={onClear}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
-        accessibilityRole="button"
-        accessibilityLabel={`Clear ${label} filter`}
-        hitSlop={6}
-        style={[styles.activeBadge, { backgroundColor: palette.primary }]}
-      >
-        <MaterialIcons
-          name={hovered ? 'close' : 'filter-alt'}
-          size={12}
-          color={palette.primaryContrast}
-        />
-      </Pressable>
-    </Tooltip>
+    <Animated.View
+      entering={FadeIn.duration(theme.motion.base)}
+      exiting={FadeOut.duration(theme.motion.fast)}
+    >
+      <Tooltip title={`Clear ${label} filter`}>
+        <Pressable
+          onPress={onClear}
+          onHoverIn={() => setHovered(true)}
+          onHoverOut={() => setHovered(false)}
+          accessibilityRole="button"
+          accessibilityLabel={`Clear ${label} filter`}
+          hitSlop={6}
+          style={[styles.activeBadge, { backgroundColor: palette.primary }]}
+        >
+          <MaterialIcons
+            name={hovered ? 'close' : 'filter-alt'}
+            size={12}
+            color={palette.primaryContrast}
+          />
+        </Pressable>
+      </Tooltip>
+    </Animated.View>
   );
 }
 
@@ -741,15 +756,18 @@ function ToggleChip({
   onPress: () => void;
   palette: ReturnType<typeof usePalette>;
 }) {
+  const theme = useTheme();
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
+        theme.surfaces.chip,
         {
-          backgroundColor: active ? palette.primary : palette.surface,
-          borderColor: active ? palette.primary : palette.divider,
-          borderWidth: 1,
+          ...(active && { backgroundColor: palette.primary }),
+          ...(theme.hairline > 0 && {
+            borderColor: active ? palette.primary : palette.divider,
+          }),
           transform: [{ scale: pressed ? 0.96 : 1 }],
         },
       ]}
@@ -854,15 +872,16 @@ function CalendarFilter({
   selectedMonths,
   selectedDates,
   onChange,
-  palette,
+  theme,
 }: {
   dates: string[];
   dateCounts: Record<string, number>;
   selectedMonths: string;
   selectedDates: string;
   onChange: (months: string, days: string) => void;
-  palette: ReturnType<typeof usePalette>;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const palette = theme.colors;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   if (dates.length === 0) {
@@ -928,22 +947,25 @@ function CalendarFilter({
   return (
     <View style={{ gap: SPACING.TINY }}>
       {selectedMonths || selectedDates ? (
-        <Pressable
-          onPress={() => onChange('', '')}
-          style={({ pressed }) => [
-            styles.clearAllButton,
-            {
-              borderColor: palette.divider,
-              opacity: pressed ? 0.6 : 1,
-            },
-          ]}
+        <Animated.View
+          entering={FadeIn.duration(theme.motion.base)}
+          exiting={FadeOut.duration(theme.motion.fast)}
         >
-          <Text
-            style={[styles.clearAllText, { color: palette.textSecondary }]}
+          <Pressable
+            onPress={() => onChange('', '')}
+            style={({ pressed }) => [
+              styles.clearAllButton,
+              theme.surfaces.chip,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
           >
-            Clear calendar selection
-          </Text>
-        </Pressable>
+            <Text
+              style={[styles.clearAllText, { color: palette.textSecondary }]}
+            >
+              Clear calendar selection
+            </Text>
+          </Pressable>
+        </Animated.View>
       ) : null}
       {years.map((year) => {
         const months = yearGroups[year];
@@ -965,6 +987,7 @@ function CalendarFilter({
               style={[
                 styles.calRow,
                 {
+                  borderRadius: theme.radius.control,
                   backgroundColor: allMonthsInYear
                     ? palette.primary
                     : someMonthsInYear
@@ -1010,10 +1033,14 @@ function CalendarFilter({
                 }
                 style={({ pressed }) => [
                   styles.calToggle,
+                  theme.surfaces.chip,
                   {
-                    borderColor: allMonthsInYear
-                      ? palette.primaryContrast
-                      : palette.textSecondary,
+                    backgroundColor: 'transparent',
+                    ...(theme.hairline > 0 && {
+                      borderColor: allMonthsInYear
+                        ? palette.primaryContrast
+                        : palette.textSecondary,
+                    }),
                     opacity: pressed ? 0.6 : 1,
                   },
                 ]}
@@ -1029,7 +1056,10 @@ function CalendarFilter({
                 />
               </Pressable>
             </View>
-            {isYearExpanded ? (
+            <Collapsible
+              expanded={isYearExpanded}
+              duration={theme.motion.base}
+            >
               <View style={{ paddingLeft: SPACING.SMALL }}>
                 {monthKeys.map((monthKey) => {
                   const monthDates = months[monthKey];
@@ -1047,6 +1077,7 @@ function CalendarFilter({
                         style={[
                           styles.calRow,
                           {
+                            borderRadius: theme.radius.control,
                             backgroundColor: isMonthSelected
                               ? palette.primary
                               : palette.surface,
@@ -1093,10 +1124,14 @@ function CalendarFilter({
                           }
                           style={({ pressed }) => [
                             styles.calToggle,
+                            theme.surfaces.chip,
                             {
-                              borderColor: isMonthSelected
-                                ? palette.primaryContrast
-                                : palette.textSecondary,
+                              backgroundColor: 'transparent',
+                              ...(theme.hairline > 0 && {
+                                borderColor: isMonthSelected
+                                  ? palette.primaryContrast
+                                  : palette.textSecondary,
+                              }),
                               opacity: pressed ? 0.6 : 1,
                             },
                           ]}
@@ -1112,21 +1147,24 @@ function CalendarFilter({
                           />
                         </Pressable>
                       </View>
-                      {isMonthExpanded ? (
+                      <Collapsible
+                        expanded={isMonthExpanded}
+                        duration={theme.motion.base}
+                      >
                         <CalendarMonthGrid
                           year={yearNum}
                           month={monthNum}
                           dateCounts={dateCounts}
-                          selectedDates={daySet}
+                          selectedDates={selectedDates}
                           onToggle={toggleDate}
                           palette={palette}
                         />
-                      ) : null}
+                      </Collapsible>
                     </View>
                   );
                 })}
               </View>
-            ) : null}
+            </Collapsible>
           </View>
         );
       })}
@@ -1134,7 +1172,13 @@ function CalendarFilter({
   );
 }
 
-function CalendarMonthGrid({
+/**
+ * Memoized: a month is ~37 pressable cells and a sidebar spans many months,
+ * so re-rendering every grid on unrelated CalendarFilter renders is what the
+ * profiler showed as the sidebar's big commit. `selectedDates` is the raw csv
+ * (string, not a rebuilt Set) so memo comparison actually holds.
+ */
+const CalendarMonthGrid = memo(function CalendarMonthGrid({
   year,
   month,
   dateCounts,
@@ -1145,10 +1189,14 @@ function CalendarMonthGrid({
   year: number;
   month: number;
   dateCounts: Record<string, number>;
-  selectedDates: Set<string>;
+  selectedDates: string;
   onToggle: (dateStr: string) => void;
   palette: ReturnType<typeof usePalette>;
 }) {
+  const selected = useMemo(
+    () => new Set(selectedDates.split(',').filter(Boolean)),
+    [selectedDates],
+  );
   const firstOfMonth = new Date(year, month, 1);
   const startWeekday = firstOfMonth.getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1160,7 +1208,7 @@ function CalendarMonthGrid({
   for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const count = dateCounts[dateStr] || 0;
-    const isSelected = selectedDates.has(dateStr);
+    const isSelected = selected.has(dateStr);
     const hasPhotos = count > 0;
     cells.push(
       <Pressable
@@ -1227,7 +1275,7 @@ function CalendarMonthGrid({
       <View style={styles.dayGrid}>{cells}</View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   expandControls: {
@@ -1237,7 +1285,6 @@ const styles = StyleSheet.create({
     gap: SPACING.SMALL,
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
-    borderBottomWidth: 1,
   },
   expandControlButton: {
     paddingHorizontal: SPACING.TINY,
@@ -1282,7 +1329,6 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.SMALL,
   },
   clearAllButton: {
-    borderWidth: 1,
     paddingVertical: SPACING.TINY,
     paddingHorizontal: SPACING.SMALL,
     alignSelf: 'flex-start',
@@ -1312,7 +1358,6 @@ const styles = StyleSheet.create({
     height: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
   },
   weekdayRow: {
     flexDirection: 'row',

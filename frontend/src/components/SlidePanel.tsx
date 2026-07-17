@@ -1,7 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import {
-  Animated,
   Modal,
   Pressable,
   StyleSheet,
@@ -9,10 +8,16 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 import { Tooltip } from './Tooltip';
 
 const DESKTOP_WIDTH = 350;
@@ -37,6 +42,8 @@ interface SlidePanelProps {
  * Standardized container shared by every toolbar overlay (Search, Filters,
  * Sort, Folders, Display). On large screens it slides in from the left as an
  * inline column that pushes content aside; on mobile it is a full-screen modal.
+ * The theme decides whether the column sits flush (hairline divider) or floats
+ * as a detached card (margin + radius + shadow).
  */
 export default function SlidePanel({
   visible,
@@ -46,7 +53,8 @@ export default function SlidePanel({
   headerAction,
   desktopWidth = DESKTOP_WIDTH,
 }: SlidePanelProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const { width: windowWidth } = useWindowDimensions();
   const isMobile = windowWidth < MOBILE_BREAKPOINT;
   // Captured here (inside the app's SafeAreaProvider) rather than via a
@@ -56,19 +64,28 @@ export default function SlidePanel({
   // valid in this scope, so we apply them as padding inside the modal instead.
   const insets = useSafeAreaInsets();
 
-  // Desktop inline width animation state.
-  const widthAnim = useRef(
-    new Animated.Value(visible ? desktopWidth : 0),
-  ).current;
+  const floating = theme.floatingPanels;
+  // A floating panel carries its own margin, so the animated outer width must
+  // include it for the panel to fully clear the viewport when closed.
+  const outerWidth = desktopWidth + (floating ? SPACING.SMALL * 2 : 0);
+
+  // Desktop inline slide progress: drives both width and content fade.
+  const progress = useSharedValue(visible ? 1 : 0);
 
   useEffect(() => {
     if (isMobile) return;
-    Animated.timing(widthAnim, {
-      toValue: visible ? desktopWidth : 0,
-      duration: 220,
-      useNativeDriver: false,
-    }).start();
-  }, [isMobile, visible, widthAnim, desktopWidth]);
+    progress.value = withTiming(visible ? 1 : 0, {
+      duration: theme.motion.base,
+      easing: Easing.inOut(Easing.cubic),
+    });
+  }, [isMobile, visible, progress, theme.motion.base]);
+
+  const outerStyle = useAnimatedStyle(() => ({
+    width: progress.value * outerWidth,
+  }));
+  const innerStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
 
   const body = (
     <>
@@ -76,7 +93,8 @@ export default function SlidePanel({
         style={[
           styles.header,
           {
-            backgroundColor: palette.surface,
+            backgroundColor: floating ? 'transparent' : palette.surface,
+            borderBottomWidth: theme.hairline,
             borderBottomColor: palette.divider,
           },
         ]}
@@ -123,15 +141,31 @@ export default function SlidePanel({
   // Desktop: inline column that slides out from the left.
   return (
     <Animated.View
-      style={{
-        width: widthAnim,
-        backgroundColor: palette.background,
-        borderRightWidth: 1,
-        borderRightColor: palette.divider,
-        overflow: 'hidden',
-      }}
+      style={[
+        outerStyle,
+        { overflow: 'hidden' },
+        !floating && {
+          backgroundColor: palette.background,
+          borderRightWidth: theme.hairline,
+          borderRightColor: palette.divider,
+        },
+      ]}
     >
-      <View style={{ width: desktopWidth, flex: 1 }}>{body}</View>
+      <Animated.View
+        style={[
+          innerStyle,
+          { width: desktopWidth, flex: 1 },
+          floating && {
+            margin: SPACING.SMALL,
+            borderRadius: theme.radius.panel,
+            backgroundColor: palette.surface,
+            boxShadow: theme.surfaces.dialog.boxShadow,
+            overflow: 'hidden',
+          },
+        ]}
+      >
+        {body}
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -142,7 +176,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.MEDIUM,
     paddingVertical: SPACING.SMALL,
-    borderBottomWidth: 1,
     gap: SPACING.MEDIUM,
   },
   title: {

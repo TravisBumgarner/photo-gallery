@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -14,10 +14,15 @@ interface CollapsibleProps {
 }
 
 /**
- * Animates its content open/closed with a measured height + fade. The content
- * stays mounted (measured off an absolutely-positioned layer) so collapsing can
- * animate; a single eased `progress` value drives both height and opacity.
- * Seeded to the current state, so there is no animation on first mount.
+ * Animates its content open/closed with a measured height + fade. A single
+ * eased `progress` value drives both height and opacity. Seeded to the
+ * current state, so there is no animation on first mount.
+ *
+ * Content is NOT rendered until the first expand — sections that were never
+ * opened cost nothing (the filter sidebar's calendar alone is thousands of
+ * elements when mounted collapsed). After the first expand it stays mounted
+ * (off an absolutely-positioned measuring layer) so collapsing can animate
+ * and re-opening is instant.
  */
 export default function Collapsible({
   expanded,
@@ -26,6 +31,10 @@ export default function Collapsible({
 }: CollapsibleProps) {
   const height = useSharedValue(0);
   const progress = useSharedValue(expanded ? 1 : 0);
+  const [hasExpanded, setHasExpanded] = useState(expanded);
+  // Render-phase state adjustment: mount content in the same commit as the
+  // expand, so the measure layer exists before the height animation runs.
+  if (expanded && !hasExpanded) setHasExpanded(true);
 
   useEffect(() => {
     progress.value = withTiming(expanded ? 1 : 0, { duration });
@@ -38,14 +47,16 @@ export default function Collapsible({
 
   return (
     <Animated.View style={[styles.clip, style]}>
-      <View
-        style={styles.measure}
-        onLayout={(e: LayoutChangeEvent) => {
-          height.value = e.nativeEvent.layout.height;
-        }}
-      >
-        {children}
-      </View>
+      {hasExpanded ? (
+        <View
+          style={styles.measure}
+          onLayout={(e: LayoutChangeEvent) => {
+            height.value = e.nativeEvent.layout.height;
+          }}
+        >
+          {children}
+        </View>
+      ) : null}
     </Animated.View>
   );
 }

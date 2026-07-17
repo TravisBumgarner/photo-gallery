@@ -2,12 +2,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import {
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
   type ViewStyle,
 } from 'react-native';
 import Sortable from 'react-native-sortables';
+
+import ThemedCheckbox from './ThemedCheckbox';
 
 import {
   setStatsChartOrder,
@@ -21,7 +22,8 @@ import {
   useSettings,
 } from '../lib/settings';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 
 const FILTER_LABELS: Record<StatsFilterKey, string> = Object.fromEntries(
   STATS_FILTERS.map((s) => [s.key, s.label]),
@@ -36,7 +38,8 @@ const CHART_LABELS: Record<StatsChartKey, string> = Object.fromEntries(
 const GRAB_CURSOR = { cursor: 'grab' } as unknown as ViewStyle;
 
 export default function StatsSettingsPanel() {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const settings = useSettings();
 
   return (
@@ -52,23 +55,25 @@ export default function StatsSettingsPanel() {
           Toggle which filters appear in the sidebar, and drag the handle to
           reorder them.
         </Text>
-        <Sortable.Grid
-          columns={1}
-          data={settings.statsFilterOrder}
-          keyExtractor={(key) => key}
-          rowGap={0}
-          customHandle
-          dragActivationDelay={0}
-          onDragEnd={({ data }) => setStatsFilterOrder(data)}
-          renderItem={({ item: key }) => (
-            <SortRow
-              label={FILTER_LABELS[key]}
-              value={settings.visibleStatsFilters[key]}
-              onValueChange={(next) => setStatsFilterVisible(key, next)}
-              palette={palette}
-            />
-          )}
-        />
+        <View style={[styles.listCard, theme.surfaces.card]}>
+          <Sortable.Grid
+            columns={1}
+            data={settings.statsFilterOrder}
+            keyExtractor={(key) => key}
+            rowGap={0}
+            customHandle
+            dragActivationDelay={0}
+            onDragEnd={({ data }) => setStatsFilterOrder(data)}
+            renderItem={({ item: key }) => (
+              <SortRow
+                label={FILTER_LABELS[key]}
+                value={settings.visibleStatsFilters[key]}
+                onValueChange={(next) => setStatsFilterVisible(key, next)}
+                palette={palette}
+              />
+            )}
+          />
+        </View>
       </View>
 
       <View style={{ gap: SPACING.SMALL }}>
@@ -78,23 +83,25 @@ export default function StatsSettingsPanel() {
         <Text style={[styles.sectionHelp, { color: palette.textSecondary }]}>
           Toggle which charts appear, and drag the handle to reorder them.
         </Text>
-        <Sortable.Grid
-          columns={1}
-          data={settings.statsChartOrder}
-          keyExtractor={(key) => key}
-          rowGap={0}
-          customHandle
-          dragActivationDelay={0}
-          onDragEnd={({ data }) => setStatsChartOrder(data)}
-          renderItem={({ item: key }) => (
-            <SortRow
-              label={CHART_LABELS[key]}
-              value={settings.visibleStatsCharts[key]}
-              onValueChange={(next) => setStatsChartVisible(key, next)}
-              palette={palette}
-            />
-          )}
-        />
+        <View style={[styles.listCard, theme.surfaces.card]}>
+          <Sortable.Grid
+            columns={1}
+            data={settings.statsChartOrder}
+            keyExtractor={(key) => key}
+            rowGap={0}
+            customHandle
+            dragActivationDelay={0}
+            onDragEnd={({ data }) => setStatsChartOrder(data)}
+            renderItem={({ item: key }) => (
+              <SortRow
+                label={CHART_LABELS[key]}
+                value={settings.visibleStatsCharts[key]}
+                onValueChange={(next) => setStatsChartVisible(key, next)}
+                palette={palette}
+              />
+            )}
+          />
+        </View>
       </View>
     </ScrollView>
   );
@@ -109,7 +116,7 @@ function SortRow({
   label: string;
   value: boolean;
   onValueChange: (next: boolean) => void;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
 }) {
   return (
     <View
@@ -133,7 +140,11 @@ function SortRow({
       <Text style={[styles.rowLabel, { color: palette.textPrimary }]}>
         {label}
       </Text>
-      <Switch value={value} onValueChange={onValueChange} />
+      <ThemedCheckbox
+        value={value}
+        onValueChange={onValueChange}
+        accessibilityLabel={`Show ${label}`}
+      />
     </View>
   );
 }
@@ -150,6 +161,9 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: FONT_SIZES.SMALL,
     flex: 1,
+  },
+  listCard: {
+    overflow: 'hidden',
   },
   sortRow: {
     width: '100%',

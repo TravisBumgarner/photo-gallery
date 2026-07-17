@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -8,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Paragraph, Spinner, YStack } from 'tamagui';
 
 import ActiveFilterChips, {
   describeFilters,
@@ -28,11 +28,11 @@ import { type BottomBarItem, useSetBottomBarItems } from '../lib/bottomBar';
 import {
   getAutoColumnCount,
   setColumnCount,
-  useSettings,
+  useSetting,
 } from '../lib/settings';
 import type { Photo, PhotoFilters, PhotosResponse } from '../lib/types';
 import { SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 
 const PAGE_SIZE = 100;
 
@@ -69,7 +69,8 @@ function buildQueryString(
 }
 
 export default function HomeScreen() {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const { isAuthenticated } = useAuth();
   const { width } = useWindowDimensions();
 
@@ -81,19 +82,35 @@ export default function HomeScreen() {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [filters, setFilters] = useState<PhotoFilters>(DEFAULT_FILTERS);
   // Every toolbar overlay shares one slide-out container; only one is open at
-  // a time so they all behave identically.
-  const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
+  // a time so they all behave identically. `panel` keeps its last value while
+  // the sidebar animates closed, so the exit doesn't flash another panel's
+  // content; only `open` flips on close.
+  const [panelState, setPanelState] = useState<{
+    panel: PanelKey;
+    open: boolean;
+  }>({ panel: 'search', open: false });
+  const { panel } = panelState;
+  const activePanel = panelState.open ? panelState.panel : null;
   const searchValue = filters.contentSearch || filters.search || '';
 
-  const closePanel = useCallback(() => setActivePanel(null), []);
+  const closePanel = useCallback(
+    () => setPanelState((s) => ({ ...s, open: false })),
+    [],
+  );
   const togglePanel = useCallback(
-    (panel: PanelKey) =>
-      setActivePanel((prev) => (prev === panel ? null : panel)),
+    (next: PanelKey) =>
+      setPanelState((s) =>
+        s.open && s.panel === next
+          ? { ...s, open: false }
+          : { panel: next, open: true },
+      ),
     [],
   );
 
   // Column count: a saved override (set in Settings or by pinch) or auto-sized.
-  const { columnCount: columnOverride } = useSettings();
+  // Slice subscription: the gallery must not re-render on unrelated settings
+  // writes (filter section toggles fire on every sidebar interaction).
+  const columnOverride = useSetting((s) => s.columnCount);
   const columnCount = columnOverride ?? getAutoColumnCount(width);
 
   const loadingRef = useRef(false);
@@ -163,18 +180,31 @@ export default function HomeScreen() {
     setSelectedPhoto(null);
   }, []);
 
+  // Keep the viewer fed: stepping through photos never scrolls the grid, so
+  // onEndReached alone would let rapid next-taps run into the end of the
+  // loaded window and go dead until a page fetch completes. Load ahead while
+  // the viewer approaches the boundary instead.
+  useEffect(() => {
+    if (!selectedPhoto || !hasMore) return;
+    const idx = photos.findIndex((p) => p.id === selectedPhoto.id);
+    if (idx !== -1 && photos.length - idx <= 20) handleLoadMore();
+  }, [selectedPhoto, photos, hasMore, handleLoadMore]);
+
   const handleViewerNavigate = useCallback(
     (direction: 'prev' | 'next') => {
-      if (!selectedPhoto) return;
-      const idx = photos.findIndex((p) => p.id === selectedPhoto.id);
-      if (idx === -1) return;
-      if (direction === 'prev' && idx > 0) {
-        setSelectedPhoto(photos[idx - 1]);
-      } else if (direction === 'next' && idx < photos.length - 1) {
-        setSelectedPhoto(photos[idx + 1]);
-      }
+      // Functional update: rapid taps arrive faster than re-renders, so
+      // deriving from the latest state (not a closure) keeps every step.
+      setSelectedPhoto((current) => {
+        if (!current) return current;
+        const idx = photos.findIndex((p) => p.id === current.id);
+        if (idx === -1) return current;
+        if (direction === 'prev' && idx > 0) return photos[idx - 1];
+        if (direction === 'next' && idx < photos.length - 1)
+          return photos[idx + 1];
+        return current;
+      });
     },
-    [selectedPhoto, photos],
+    [photos],
   );
 
   const handleFilterChange = useCallback((changed: Partial<PhotoFilters>) => {
@@ -219,36 +249,39 @@ export default function HomeScreen() {
         key: 'search',
         icon: 'search',
         label: 'Search',
-        active: !!searchValue,
+        active: activePanel === 'search' || !!searchValue,
         onPress: () => togglePanel('search'),
       },
       {
         key: 'filter',
         icon: 'filter-list-alt',
         label: 'Filters',
+        active: activePanel === 'filter',
         onPress: () => togglePanel('filter'),
       },
       {
         key: 'sort',
         icon: 'swap-vert',
         label: 'Sort',
+        active: activePanel === 'sort',
         onPress: () => togglePanel('sort'),
       },
       {
         key: 'folder',
         icon: 'folder',
         label: 'Folders',
-        active: !!filters.folder,
+        active: activePanel === 'folder' || !!filters.folder,
         onPress: () => togglePanel('folder'),
       },
       {
         key: 'settings',
         icon: 'settings',
         label: 'Settings',
+        active: activePanel === 'settings',
         onPress: () => togglePanel('settings'),
       },
     ],
-    [searchValue, filters.folder, togglePanel],
+    [activePanel, searchValue, filters.folder, togglePanel],
   );
   useSetBottomBarItems(barItems);
 
@@ -261,11 +294,11 @@ export default function HomeScreen() {
     >
       <View style={styles.body}>
         <SlidePanel
-          visible={activePanel !== null}
+          visible={panelState.open}
           onClose={closePanel}
-          title={activePanel ? PANEL_TITLES[activePanel] : ''}
+          title={PANEL_TITLES[panel]}
           headerAction={
-            activePanel === 'filter' ? (
+            panel === 'filter' ? (
               <Pressable
                 onPress={handleResetFilters}
                 accessibilityLabel="Reset all filters"
@@ -281,7 +314,7 @@ export default function HomeScreen() {
             ) : undefined
           }
         >
-          {activePanel === 'search' ? (
+          {panel === 'search' ? (
             <SearchPanel
               value={searchValue}
               onChange={handleSearchChange}
@@ -293,18 +326,18 @@ export default function HomeScreen() {
               cameraFilter={filters.camera}
               onCommit={handleSearchCommit}
             />
-          ) : activePanel === 'filter' ? (
+          ) : panel === 'filter' ? (
             <FilterPanel
               filters={filters}
               onFilterChange={handleFilterChange}
             />
-          ) : activePanel === 'sort' ? (
+          ) : panel === 'sort' ? (
             <SortModal
               sortBy={filters.sortBy ?? 'dateCaptured'}
               sortOrder={filters.sortOrder ?? 'desc'}
               onChange={handleFilterChange}
             />
-          ) : activePanel === 'folder' ? (
+          ) : panel === 'folder' ? (
             <FolderPanel
               folder={filters.folder ?? ''}
               onFolderChange={(folder) =>
@@ -312,7 +345,7 @@ export default function HomeScreen() {
               }
               onClose={closePanel}
             />
-          ) : activePanel === 'settings' ? (
+          ) : panel === 'settings' ? (
             <SettingsPanel />
           ) : null}
         </SlidePanel>
@@ -324,29 +357,18 @@ export default function HomeScreen() {
               chip bar and swallow taps meant to clear a filter. */}
           <View style={styles.gridRegion}>
             {photos.length === 0 && loading ? (
-              <YStack items="center" justify="center" style={{ flex: 1 }}>
-                <Spinner size="large" />
-              </YStack>
+              <View style={styles.centered}>
+                <ActivityIndicator size="large" color={palette.primary} />
+              </View>
             ) : photos.length === 0 && error ? (
-              <YStack
-                items="center"
-                justify="center"
-                p={SPACING.MEDIUM}
-                style={{ flex: 1 }}
-              >
-                <Paragraph style={{ color: palette.error }}>{error}</Paragraph>
-              </YStack>
+              <View style={[styles.centered, styles.centeredPadded]}>
+                <Text style={{ color: palette.error }}>{error}</Text>
+              </View>
             ) : photos.length === 0 ? (
-              <YStack
-                items="center"
-                justify="center"
-                p={SPACING.MEDIUM}
-                gap={SPACING.MEDIUM}
-                style={{ flex: 1 }}
-              >
-                <Paragraph style={{ color: palette.textSecondary }}>
+              <View style={[styles.centered, styles.centeredPadded]}>
+                <Text style={{ color: palette.textSecondary }}>
                   No photos match your filters.
-                </Paragraph>
+                </Text>
                 {/* Dead end otherwise: the chip bar up top scrolls horizontally
                   and is easy to miss, so repeat the active filters here where
                   the user is actually looking. */}
@@ -368,6 +390,7 @@ export default function HomeScreen() {
                         styles.clearAllButton,
                         {
                           backgroundColor: palette.primary,
+                          borderRadius: theme.radius.control,
                           opacity: pressed ? 0.6 : 1,
                         },
                       ]}
@@ -383,7 +406,7 @@ export default function HomeScreen() {
                     </Pressable>
                   </>
                 ) : null}
-              </YStack>
+              </View>
             ) : (
               <PhotoGrid
                 photos={photos}
@@ -404,7 +427,7 @@ export default function HomeScreen() {
             {/* Clicking the photos dismisses the sidebar. Rendered last so it
                 sits above the grid, and transparent so nothing is obscured.
                 On mobile the panel is a modal covering this anyway. */}
-            {activePanel !== null && !isMobile ? (
+            {panelState.open && !isMobile ? (
               <Pressable
                 style={StyleSheet.absoluteFill}
                 onPress={closePanel}
@@ -431,6 +454,15 @@ const styles = StyleSheet.create({
   body: { flex: 1, flexDirection: 'row' },
   content: { flex: 1, minWidth: 0 },
   gridRegion: { flex: 1, minWidth: 0 },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centeredPadded: {
+    padding: SPACING.MEDIUM,
+    gap: SPACING.MEDIUM,
+  },
   resetButton: {
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
@@ -449,7 +481,6 @@ const styles = StyleSheet.create({
   clearAllButton: {
     paddingHorizontal: SPACING.MEDIUM,
     paddingVertical: SPACING.SMALL,
-    borderRadius: 999,
   },
   clearAllText: {
     fontSize: 14,

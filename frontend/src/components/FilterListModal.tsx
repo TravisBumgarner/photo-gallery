@@ -1,16 +1,10 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import AnimatedDialog from './AnimatedDialog';
 
 export interface FilterListOption {
   label: string;
@@ -36,7 +30,8 @@ export default function FilterListModal({
   onChange,
   onClose,
 }: FilterListModalProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const [sortMode, setSortMode] = useState<SortMode>('popularity');
 
   // Reset to popularity each time the modal opens so the most-used items lead.
@@ -72,23 +67,8 @@ export default function FilterListModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View
-          style={[
-            styles.dialog,
-            { backgroundColor: palette.surface, borderColor: palette.divider },
-          ]}
-        >
-          <View
-            style={[styles.header, { borderBottomColor: palette.divider }]}
-          >
+    <AnimatedDialog visible={visible} onClose={onClose} style={styles.dialog}>
+      <View style={[styles.header, { borderBottomColor: palette.divider }]}>
             <Text style={[styles.title, { color: palette.textPrimary }]}>
               {title}
             </Text>
@@ -120,13 +100,13 @@ export default function FilterListModal({
               label="Popularity"
               active={sortMode === 'popularity'}
               onPress={() => setSortMode('popularity')}
-              palette={palette}
+              theme={theme}
             />
             <SortToggle
               label="A–Z"
               active={sortMode === 'abc'}
               onPress={() => setSortMode('abc')}
-              palette={palette}
+              theme={theme}
             />
             {selected.size > 0 ? (
               <Pressable
@@ -212,9 +192,7 @@ export default function FilterListModal({
               </Text>
             ) : null}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </AnimatedDialog>
   );
 }
 
@@ -222,21 +200,25 @@ function SortToggle({
   label,
   active,
   onPress,
-  palette,
+  theme,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
-  palette: ReturnType<typeof usePalette>;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const palette = theme.colors;
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.sortChip,
+        theme.surfaces.chip,
         {
           backgroundColor: active ? palette.primary : 'transparent',
-          borderColor: active ? palette.primary : palette.divider,
+          ...(theme.hairline > 0 && {
+            borderColor: active ? palette.primary : palette.divider,
+          }),
           opacity: pressed ? 0.7 : 1,
         },
       ]}
@@ -254,18 +236,10 @@ function SortToggle({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.MEDIUM,
-  },
   dialog: {
     width: '100%',
     maxWidth: 360,
     maxHeight: '90%',
-    borderWidth: 1,
     flex: 1,
   },
   header: {
@@ -304,7 +278,6 @@ const styles = StyleSheet.create({
   sortChip: {
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
-    borderWidth: 1,
   },
   sortChipText: {
     fontSize: FONT_SIZES.SMALL,

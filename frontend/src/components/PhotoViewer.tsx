@@ -24,7 +24,9 @@ import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -35,14 +37,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, imageUrl, thumbnailUrl } from '../lib/api';
 import type { Photo } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
+import { useMountTransition } from './AnimatedDialog';
 import { Tooltip } from './Tooltip';
 
 /**
- * One slide takes this long. It's a single motion now (the old two-leg
- * out-then-in slide cost double this), so it can afford to be brisk.
+ * One slide takes this long. Navigation commits immediately and the slide
+ * only plays catch-up, so this is purely aesthetic — it never gates input.
  */
 const SLIDE_MS = 220;
+
+/**
+ * Photos want a dark stage in every theme, so the image backdrop stays
+ * near-black instead of following the theme background. All surrounding
+ * chrome (bars, panels, chips) is themed.
+ */
+const PHOTO_STAGE_BG = 'hsl(0, 0%, 5%)';
 
 interface PhotoViewerProps {
   photo: Photo | null;
@@ -115,10 +126,11 @@ export default function PhotoViewer({
   onNavigate,
   onSelectPhoto,
 }: PhotoViewerProps) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const { width } = useWindowDimensions();
   const isMobile = width < 600;
-  const [showMetadata, setShowMetadata] = useState(!isMobile);
+  const [showMetadata, setShowMetadata] = useState(false);
   const [showNeighbors, setShowNeighbors] = useState(false);
   const [neighbors, setNeighbors] = useState<NeighborsResponse>({
     before: [],
@@ -155,6 +167,9 @@ export default function PhotoViewer({
   const [areaWidth, setAreaWidth] = useState(0);
   const translateX = useSharedValue(0);
   const isAnimatingRef = useRef(false);
+  // Set when a tap/key navigation commits, so the layout effect below knows to
+  // start the incoming photo offset and settle it, rather than snapping.
+  const settleFromRef = useRef<'prev' | 'next' | null>(null);
 
   const releaseAnimating = useCallback(() => {
     isAnimatingRef.current = false;
@@ -164,32 +179,70 @@ export default function PhotoViewer({
     transform: [{ translateX: translateX.value }],
   }));
 
-  // Re-centre the track whenever the photo changes (or the area is first
-  // measured). Tying this to the photo rather than doing it in the animation
-  // callback is what makes the hand-off seamless: it lands in the same commit
-  // as the shifted slots, so it's a visual no-op. The photo that sat in the
-  // next slot at -2W is now the middle slot at -W — identical pixels — instead
-  // of there being a frame where the track and the slots disagree.
+  // Runs in the same commit as the shifted slots, whenever the photo changes
+  // (or the area is first measured).
+  //
+  // Swipe path (settleFromRef empty): the gesture already animated the track
+  // to the target, so re-centring to -W shows identical pixels — a no-op.
+  //
+  // Tap/key path (settleFromRef set): navigation commits the photo FIRST and
+  // the slide plays catch-up. The slots have shifted one place, so keeping the
+  // exact same pixels on screen means offsetting the track by one slot width
+  // (+W for next, -W for prev) from wherever it currently is — mid-animation
+  // included, which is what lets rapid taps chain with no jump — and then
+  // settling to rest.
   useLayoutEffect(() => {
+    const from = settleFromRef.current;
+    settleFromRef.current = null;
+    if (from && areaWidth > 0) {
+      cancelAnimation(translateX);
+      const shifted = translateX.value + (from === 'next' ? areaWidth : -areaWidth);
+      // Clamp to the track's valid range in case of extreme chaining.
+      translateX.value = Math.max(-areaWidth * 2, Math.min(0, shifted));
+      isAnimatingRef.current = true;
+      translateX.value = withTiming(
+        -areaWidth,
+        { duration: SLIDE_MS },
+        (finished) => {
+          'worklet';
+          if (finished) runOnJS(releaseAnimating)();
+        },
+      );
+      return;
+    }
     translateX.value = -areaWidth;
     isAnimatingRef.current = false;
-  }, [photo?.id, areaWidth, translateX]);
+  }, [photo?.id, areaWidth, translateX, releaseAnimating]);
 
-  // Fetch chronological neighbors
+  // Fetch chronological neighbors. They drive prev/next only when the photo
+  // isn't in the current result set, and the strip only when it's shown — so
+  // skip the request entirely during plain grid navigation (it was firing on
+  // every step and re-rendering the viewer mid-slide). Responses are cached
+  // per photo for the viewer's lifetime.
+  const photoId = photo?.id;
+  const neighborsCacheRef = useRef<Map<number, NeighborsResponse>>(new Map());
   useEffect(() => {
-    if (!photo) return;
+    if (photoId == null) return;
+    if (inResults && !showNeighbors) return;
+    const cached = neighborsCacheRef.current.get(photoId);
+    if (cached) {
+      setNeighbors(cached);
+      return;
+    }
     let cancelled = false;
-    apiFetch(`/api/photos/${photo.id}/neighbors?window=10`)
+    apiFetch(`/api/photos/${photoId}/neighbors?window=10`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: NeighborsResponse | null) => {
-        if (cancelled || !data) return;
-        setNeighbors({ before: data.before ?? [], after: data.after ?? [] });
+        if (!data) return;
+        const next = { before: data.before ?? [], after: data.after ?? [] };
+        neighborsCacheRef.current.set(photoId, next);
+        if (!cancelled) setNeighbors(next);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [photo]);
+  }, [photoId, inResults, showNeighbors]);
 
   // Progressive preload of adjacent images. When the photo is in the current
   // result set, walk that list. Otherwise use the chronological neighbors
@@ -246,42 +299,25 @@ export default function PhotoViewer({
   const prevDisabled = !prevPhoto;
   const nextDisabled = !nextPhoto;
 
+  // Tap/key navigation: start the slide on this very frame (instant visual
+  // response, no waiting on React) AND commit the photo immediately. When the
+  // commit lands, the layout effect above shifts the track by one slot from
+  // wherever the animation has reached — identical pixels — and settles, so
+  // the two never disagree and rapid taps chain without blocking.
   const slideTo = useCallback(
     (direction: 'prev' | 'next') => {
       if (!photo) return;
       if (direction === 'next' && nextDisabled) return;
       if (direction === 'prev' && prevDisabled) return;
-      if (areaWidth === 0) {
-        commitNav(direction);
-        return;
+      if (areaWidth > 0) {
+        isAnimatingRef.current = true;
+        const target = direction === 'next' ? -areaWidth * 2 : 0;
+        translateX.value = withTiming(target, { duration: SLIDE_MS });
       }
-      if (isAnimatingRef.current) return;
-      isAnimatingRef.current = true;
-      // One motion: slide the whole track by a slot. The neighbour is already
-      // mounted alongside, so it arrives as the current photo leaves.
-      const target = direction === 'next' ? -areaWidth * 2 : 0;
-      translateX.value = withTiming(
-        target,
-        { duration: SLIDE_MS },
-        (finished) => {
-          'worklet';
-          if (finished) {
-            runOnJS(commitNav)(direction);
-          } else {
-            runOnJS(releaseAnimating)();
-          }
-        },
-      );
+      settleFromRef.current = direction;
+      commitNav(direction);
     },
-    [
-      areaWidth,
-      commitNav,
-      nextDisabled,
-      photo,
-      prevDisabled,
-      releaseAnimating,
-      translateX,
-    ],
+    [areaWidth, commitNav, nextDisabled, photo, prevDisabled, translateX],
   );
 
   // Keyboard nav on web. RN doesn't have a keydown event on native.
@@ -353,10 +389,26 @@ export default function PhotoViewer({
     ],
   );
 
-  if (!photo) return null;
-
   const hasNeighbors =
     neighbors.before.length > 0 || neighbors.after.length > 0;
+
+  // Toggled chrome (neighbors strip, metadata panel) eases in and out with a
+  // fade + small slide instead of popping. useMountTransition keeps each
+  // mounted until its exit animation finishes.
+  const neighborsTransition = useMountTransition(
+    showNeighbors && hasNeighbors,
+    theme.motion.base,
+    theme.motion.fast,
+  );
+  const metadataTransition = useMountTransition(
+    showMetadata,
+    theme.motion.base,
+    theme.motion.fast,
+  );
+  const neighborsProgress = neighborsTransition.progress;
+  const metadataProgress = metadataTransition.progress;
+
+  if (!photo) return null;
 
   // onLayout only reports after the first paint, so before it lands the middle
   // slot falls back to the full area — with the flanking slots at zero width it
@@ -388,7 +440,7 @@ export default function PhotoViewer({
             <View
               style={[
                 styles.imageArea,
-                { backgroundColor: palette.background },
+                { backgroundColor: PHOTO_STAGE_BG },
               ]}
               onLayout={(e) => {
                 const w = e.nativeEvent.layout.width;
@@ -409,18 +461,15 @@ export default function PhotoViewer({
                       >
                         <Image
                           source={{ uri: imageUrl(p.originalPath) }}
-                          placeholder={
-                            p.blurhash
-                              ? {
-                                  blurhash: p.blurhash,
-                                  width: p.width ?? undefined,
-                                  height: p.height ?? undefined,
-                                }
-                              : undefined
-                          }
+                          // The grid thumbnail is already in cache — an
+                          // instant, decode-free placeholder. (The old
+                          // full-dimension blurhash decode stalled the JS
+                          // thread for hundreds of ms per mount and never
+                          // rendered on web anyway.)
+                          placeholder={{ uri: thumbnailUrl(p.thumbnailPath) }}
                           placeholderContentFit="contain"
                           contentFit="contain"
-                          transition={200}
+                          transition={100}
                           style={StyleSheet.absoluteFill}
                           recyclingKey={String(p.id)}
                         />
@@ -437,9 +486,13 @@ export default function PhotoViewer({
               </GestureDetector>
             </View>
 
-            {/* Neighbors strip */}
-            {showNeighbors && hasNeighbors && (
+            {/* Neighbors strip. Keyed by breakpoint: the collapse animation
+                drives height on mobile but width on desktop, and a resize
+                across the breakpoint would leave the old mode's dimension
+                stuck on the node — remounting resets it. */}
+            {neighborsTransition.mounted && hasNeighbors && (
               <NeighborsStrip
+                key={isMobile ? 'neighbors-mobile' : 'neighbors-desktop'}
                 photos={[
                   ...neighbors.before.filter((p) => p.id !== photo.id),
                   photo,
@@ -448,21 +501,29 @@ export default function PhotoViewer({
                 activeId={photo.id}
                 isMobile={isMobile}
                 onSelect={(p) => onSelectPhoto(p)}
+                progress={neighborsProgress}
               />
             )}
 
-            {/* Metadata panel */}
-            {showMetadata && (
-              <MetadataPanel photo={photo} isMobile={isMobile} />
+            {/* Metadata panel — same breakpoint keying as the strip. */}
+            {metadataTransition.mounted && (
+              <MetadataPanel
+                key={isMobile ? 'metadata-mobile' : 'metadata-desktop'}
+                photo={photo}
+                isMobile={isMobile}
+                progress={metadataProgress}
+              />
             )}
           </View>
 
-          {/* Bottom bar */}
+          {/* Bottom bar: flush and in-flow — floating overlapped the mobile
+              neighbors/metadata panels, which live at the bottom too. */}
           <View
             style={[
               styles.bottomBar,
               {
                 backgroundColor: palette.surface,
+                borderTopWidth: theme.hairline,
                 borderTopColor: palette.divider,
               },
             ]}
@@ -497,10 +558,11 @@ export default function PhotoViewer({
                 />
               </>
             )}
+            {/* Always enabled: neighbors are fetched lazily when the strip is
+                first shown, so gating on data-already-loaded would deadlock. */}
             <IconBtn
               name="view-carousel"
               onPress={() => setShowNeighbors((v) => !v)}
-              disabled={!hasNeighbors}
               active={showNeighbors}
               palette={palette}
               title={showNeighbors ? 'Hide neighbors' : 'Show neighbors'}
@@ -535,7 +597,7 @@ function IconBtn({
   onPress: () => void;
   disabled?: boolean;
   active?: boolean;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
   title: string;
 }) {
   const color = disabled
@@ -560,36 +622,61 @@ function IconBtn({
   );
 }
 
+const NEIGHBORS_STRIP_WIDTH = 72;
+const NEIGHBORS_STRIP_HEIGHT = 80;
+
 function NeighborsStrip({
   photos,
   activeId,
   isMobile,
   onSelect,
+  progress,
 }: {
   photos: Photo[];
   activeId: number;
   isMobile: boolean;
   onSelect: (p: Photo) => void;
+  /** Mount transition progress: collapses the strip's layout size, so the
+   *  photo area resizes smoothly instead of jumping. */
+  progress: SharedValue<number>;
 }) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
+  const collapseStyle = useAnimatedStyle(() =>
+    isMobile
+      ? {
+          height: progress.value * NEIGHBORS_STRIP_HEIGHT,
+          opacity: progress.value,
+        }
+      : {
+          width: progress.value * NEIGHBORS_STRIP_WIDTH,
+          opacity: progress.value,
+        },
+  );
   return (
-    <View
+    <Animated.View
       style={[
+        { overflow: 'hidden', backgroundColor: palette.surface },
         isMobile
           ? {
-              height: 80,
-              borderTopWidth: 1,
+              borderTopWidth: theme.hairline,
               borderTopColor: palette.divider,
             }
           : {
-              width: 72,
-              borderLeftWidth: 1,
+              borderLeftWidth: theme.hairline,
               borderLeftColor: palette.divider,
             },
-        { backgroundColor: palette.surface },
+        collapseStyle,
       ]}
     >
-      <ScrollView
+      <View
+        style={
+          isMobile
+            ? { height: NEIGHBORS_STRIP_HEIGHT }
+            : { width: NEIGHBORS_STRIP_WIDTH, flex: 1 }
+        }
+      >
+        <ScrollView
         horizontal={isMobile}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -626,8 +713,9 @@ function NeighborsStrip({
             </Pressable>
           );
         })}
-      </ScrollView>
-    </View>
+        </ScrollView>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -638,15 +726,40 @@ function joinParts(...parts: (string | number | null | undefined)[]): string {
     .join(' · ');
 }
 
+const METADATA_PANEL_WIDTH = 180;
+/** Mobile metadata sheet grows to its content but never above this; taller
+ *  content scrolls inside. */
+const METADATA_MAX_HEIGHT_MOBILE = 280;
+
 function MetadataPanel({
   photo,
   isMobile,
+  progress,
 }: {
   photo: Photo;
   isMobile: boolean;
+  /** Mount transition progress: collapses the panel's layout size, so the
+   *  photo area resizes smoothly instead of jumping. */
+  progress: SharedValue<number>;
 }) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const keywords = parseKeywords(photo.keywords);
+  // Mobile has no fixed panel size — measure the content and animate to it.
+  const contentHeight = useSharedValue(0);
+  const collapseStyle = useAnimatedStyle(() =>
+    isMobile
+      ? {
+          height:
+            Math.min(contentHeight.value, METADATA_MAX_HEIGHT_MOBILE) *
+            progress.value,
+          opacity: progress.value,
+        }
+      : {
+          width: progress.value * METADATA_PANEL_WIDTH,
+          opacity: progress.value,
+        },
+  );
 
   const settingsLine = joinParts(
     photo.iso ? `ISO ${photo.iso}` : null,
@@ -661,27 +774,33 @@ function MetadataPanel({
   );
 
   return (
-    <View
+    <Animated.View
       style={[
+        { overflow: 'hidden', backgroundColor: palette.surface },
         isMobile
           ? {
-              borderTopWidth: 1,
+              borderTopWidth: theme.hairline,
               borderTopColor: palette.divider,
             }
           : {
-              width: 180,
-              borderLeftWidth: 1,
+              borderLeftWidth: theme.hairline,
               borderLeftColor: palette.divider,
             },
-        { backgroundColor: palette.surface },
+        collapseStyle,
       ]}
     >
-      <ScrollView
-        contentContainerStyle={{
-          padding: SPACING.MEDIUM,
-          gap: SPACING.SMALL,
-        }}
+      <View
+        style={
+          isMobile ? undefined : { width: METADATA_PANEL_WIDTH, flex: 1 }
+        }
       >
+        <ScrollView>
+          <View
+            style={{ padding: SPACING.MEDIUM, gap: SPACING.SMALL }}
+            onLayout={(e) => {
+              contentHeight.value = e.nativeEvent.layout.height;
+            }}
+          >
         <Text
           style={[styles.filename, { color: palette.textPrimary }]}
           numberOfLines={1}
@@ -738,12 +857,14 @@ function MetadataPanel({
         {keywords.length > 0 && (
           <View style={styles.chipRow}>
             {keywords.map((k, i) => (
-              <KeywordChip key={i} label={k} palette={palette} />
+              <KeywordChip key={i} label={k} />
             ))}
           </View>
         )}
-      </ScrollView>
-    </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -752,7 +873,7 @@ function StarRating({
   palette,
 }: {
   rating: number | null | undefined;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
 }) {
   if (!rating) {
     return (
@@ -774,7 +895,8 @@ function StarRating({
 }
 
 function LabelChip({ label }: { label: string | null | undefined }) {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   if (!label || !LABEL_COLORS[label]) {
     return (
       <Text style={[styles.value, { color: palette.textPrimary }]}>N/A</Text>
@@ -783,31 +905,22 @@ function LabelChip({ label }: { label: string | null | undefined }) {
   const bg = LABEL_COLORS[label];
   const fg = label === 'Yellow' ? '#000' : '#fff';
   return (
-    <View style={[styles.chip, { backgroundColor: bg }]}>
+    <View
+      style={[
+        styles.chip,
+        { backgroundColor: bg, borderRadius: theme.radius.chip },
+      ]}
+    >
       <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
     </View>
   );
 }
 
-function KeywordChip({
-  label,
-  palette,
-}: {
-  label: string;
-  palette: ReturnType<typeof usePalette>;
-}) {
+function KeywordChip({ label }: { label: string }) {
+  const theme = useTheme();
   return (
-    <View
-      style={[
-        styles.chip,
-        {
-          backgroundColor: palette.surfaceElevated,
-          borderWidth: 1,
-          borderColor: palette.divider,
-        },
-      ]}
-    >
-      <Text style={[styles.chipText, { color: palette.textPrimary }]}>
+    <View style={[styles.chip, theme.surfaces.chip]}>
+      <Text style={[styles.chipText, { color: theme.colors.textPrimary }]}>
         {label}
       </Text>
     </View>
@@ -845,7 +958,6 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.SMALL,
     paddingHorizontal: SPACING.MEDIUM,
     gap: SPACING.SMALL,
-    borderTopWidth: 1,
   },
   iconButton: {
     width: 40,
@@ -876,9 +988,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 2,
     position: 'relative',
-  },
-  metadataPanel: {
-    flexShrink: 0,
   },
   filename: {
     fontSize: FONT_SIZES.MEDIUM,

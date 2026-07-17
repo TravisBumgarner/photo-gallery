@@ -1,7 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Platform } from 'react-native';
-import { Button, H4, Input, Paragraph, YStack } from 'tamagui';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -10,12 +16,13 @@ import {
   normalizeServerUrl,
   setServerUrl,
 } from '../lib/serverUrl';
-import { FORM_MAX_WIDTH, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import { FONT_SIZES, FORM_MAX_WIDTH, SPACING } from '../styles/styleConsts';
+import { useTheme } from '../styles/useTheme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const { setAuthenticated } = useAuth();
   // Web is served by the backend (same origin), so there's no server to enter —
   // the field and its handling are native-only.
@@ -70,33 +77,35 @@ export default function LoginScreen() {
     }
   };
 
+  const inputStyle = [
+    styles.input,
+    {
+      backgroundColor: palette.background,
+      borderWidth: Math.max(theme.hairline, 1),
+      borderColor: palette.divider,
+      borderRadius: theme.radius.control,
+      color: palette.textPrimary,
+    },
+  ];
+  const submitDisabled = loading || !password || (!isWeb && !server);
+
   return (
-    <YStack
-      items="center"
-      justify="center"
-      p={SPACING.MEDIUM}
-      style={{ flex: 1, backgroundColor: palette.background }}
+    <View
+      style={[styles.screen, { backgroundColor: palette.background }]}
     >
-      <YStack
-        p={SPACING.LARGE}
-        maxW={FORM_MAX_WIDTH}
-        style={{
-          width: '100%',
-          gap: SPACING.MEDIUM,
-          backgroundColor: palette.surface,
-        }}
-      >
-        <H4 text="center" style={{ color: palette.textPrimary }}>
+      <View style={[styles.card, theme.surfaces.card]}>
+        <Text style={[styles.title, { color: palette.textPrimary }]}>
           Login
-        </H4>
+        </Text>
 
         {error ? (
-          <Paragraph style={{ color: palette.error }}>{error}</Paragraph>
+          <Text style={[styles.error, { color: palette.error }]}>{error}</Text>
         ) : null}
 
         {showServerField ? (
-          <Input
+          <TextInput
             placeholder="Server address (https://...)"
+            placeholderTextColor={palette.textSecondary}
             value={server}
             onChangeText={setServer}
             autoCapitalize="none"
@@ -108,13 +117,14 @@ export default function LoginScreen() {
             textContentType="URL"
             autoComplete="off"
             autoFocus={!server}
+            style={inputStyle}
           />
         ) : null}
 
-        <Input
+        <TextInput
           placeholder="Password"
+          placeholderTextColor={palette.textSecondary}
           value={password}
-          type="password"
           onChangeText={setPassword}
           secureTextEntry
           // Let password managers offer/save the password for this login.
@@ -122,21 +132,86 @@ export default function LoginScreen() {
           autoComplete="password"
           autoFocus={isWeb || !showServerField}
           onSubmitEditing={handleSubmit}
+          style={inputStyle}
         />
 
-        <Button
-          disabled={loading || !password || (!isWeb && !server)}
+        <Pressable
+          disabled={submitDisabled}
           onPress={handleSubmit}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.submit,
+            {
+              backgroundColor: palette.primary,
+              borderRadius: theme.radius.control,
+              opacity: submitDisabled ? 0.5 : pressed ? 0.8 : 1,
+            },
+          ]}
         >
-          {loading ? 'Signing in...' : 'Sign In'}
-        </Button>
+          <Text style={[styles.submitLabel, { color: palette.primaryContrast }]}>
+            {loading ? 'Signing in...' : 'Sign In'}
+          </Text>
+        </Pressable>
 
         {!isWeb && !showServerField ? (
-          <Button size="$2" chromeless onPress={() => setShowServerField(true)}>
-            Change server
-          </Button>
+          <Pressable
+            onPress={() => setShowServerField(true)}
+            style={({ pressed }) => [
+              styles.changeServer,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text
+              style={[styles.changeServerLabel, { color: palette.textSecondary }]}
+            >
+              Change server
+            </Text>
+          </Pressable>
         ) : null}
-      </YStack>
-    </YStack>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.MEDIUM,
+  },
+  card: {
+    width: '100%',
+    maxWidth: FORM_MAX_WIDTH,
+    padding: SPACING.LARGE,
+    gap: SPACING.MEDIUM,
+  },
+  title: {
+    fontSize: FONT_SIZES.LARGE,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  error: {
+    fontSize: FONT_SIZES.SMALL,
+  },
+  input: {
+    paddingHorizontal: SPACING.SMALL,
+    paddingVertical: SPACING.SMALL,
+    fontSize: FONT_SIZES.MEDIUM,
+  },
+  submit: {
+    alignItems: 'center',
+    paddingVertical: SPACING.SMALL,
+  },
+  submitLabel: {
+    fontSize: FONT_SIZES.MEDIUM,
+    fontWeight: '600',
+  },
+  changeServer: {
+    alignItems: 'center',
+    paddingVertical: SPACING.TINY,
+  },
+  changeServerLabel: {
+    fontSize: FONT_SIZES.SMALL,
+  },
+});

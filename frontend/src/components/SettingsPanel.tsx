@@ -1,15 +1,17 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import { useState } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   useWindowDimensions,
   View,
   type ViewStyle,
 } from 'react-native';
 import Sortable from 'react-native-sortables';
+
+import ThemedCheckbox from './ThemedCheckbox';
 
 import {
   FILTER_SECTIONS,
@@ -21,10 +23,18 @@ import {
   setFilterSectionMode,
   setFilterSectionOrder,
   setSectionVisible,
+  setThemeKey,
   useSettings,
 } from '../lib/settings';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
-import { usePalette } from '../styles/usePalette';
+import {
+  buildTheme,
+  THEME_KEYS,
+  type Theme,
+  type ThemeKey,
+} from '../styles/theme';
+import type { Palette } from '../styles/usePalette';
+import { useTheme } from '../styles/useTheme';
 
 const SECTION_LABELS: Record<FilterSectionKey, string> = Object.fromEntries(
   FILTER_SECTIONS.map((s) => [s.key, s.label]),
@@ -34,10 +44,14 @@ const SECTION_LABELS: Record<FilterSectionKey, string> = Object.fromEntries(
 // type only allows auto/pointer, so cast past it for the web-only hint.
 const GRAB_CURSOR = { cursor: 'grab' } as unknown as ViewStyle;
 
+type SettingsTab = 'general' | 'themes';
+
 export default function SettingsPanel() {
-  const palette = usePalette();
+  const theme = useTheme();
+  const palette = theme.colors;
   const settings = useSettings();
   const { width } = useWindowDimensions();
+  const [tab, setTab] = useState<SettingsTab>('general');
 
   const order = settings.filterSectionOrder;
   const autoColumns = getAutoColumnCount(width);
@@ -45,6 +59,79 @@ export default function SettingsPanel() {
   const effectiveColumns = settings.columnCount ?? autoColumns;
 
   return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.tabRow}>
+        {(
+          [
+            { key: 'general' as const, label: 'General' },
+            { key: 'themes' as const, label: 'Themes' },
+          ]
+        ).map(({ key, label }) => {
+          const active = tab === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setTab(key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              style={({ pressed }) => [
+                styles.tabButton,
+                theme.surfaces.chip,
+                {
+                  backgroundColor: active ? palette.primary : 'transparent',
+                  ...(theme.hairline > 0 && {
+                    borderColor: active ? palette.primary : palette.divider,
+                  }),
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tabLabel,
+                  {
+                    color: active
+                      ? palette.primaryContrast
+                      : palette.textPrimary,
+                    fontWeight: active ? '700' : '500',
+                  },
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {tab === 'themes' ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            padding: SPACING.MEDIUM,
+            gap: SPACING.MEDIUM,
+          }}
+        >
+          <View style={{ gap: SPACING.SMALL }}>
+            <Text
+              style={[styles.sectionHelp, { color: palette.textSecondary }]}
+            >
+              Restyles the whole app. Light or dark still follows your system.
+            </Text>
+            <View style={{ gap: SPACING.SMALL }}>
+              {THEME_KEYS.map((key) => (
+                <ThemeCard
+                  key={key}
+                  themeKey={key}
+                  scheme={theme.scheme}
+                  selected={settings.themeKey === key}
+                  accent={palette.primary}
+                />
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      ) : (
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: SPACING.MEDIUM, gap: SPACING.MEDIUM }}
@@ -57,11 +144,7 @@ export default function SettingsPanel() {
           Number of columns in the photo grid.
         </Text>
         <View
-          style={[
-            styles.list,
-            { backgroundColor: palette.surface, borderColor: palette.divider },
-          ]}
-        >
+          style={[styles.list, theme.surfaces.card]}>
           <View style={styles.displayRow}>
             <Text style={[styles.rowLabel, { color: palette.textPrimary }]}>
               Columns
@@ -73,6 +156,7 @@ export default function SettingsPanel() {
               style={({ pressed }) => [
                 styles.autoButton,
                 {
+                  borderRadius: theme.radius.chip,
                   borderColor: isAutoColumns
                     ? palette.primary
                     : palette.divider,
@@ -93,7 +177,15 @@ export default function SettingsPanel() {
                 Auto
               </Text>
             </Pressable>
-            <View style={[styles.stepper, { borderColor: palette.divider }]}>
+            <View
+              style={[
+                styles.stepper,
+                {
+                  borderRadius: theme.radius.chip,
+                  borderColor: palette.divider,
+                },
+              ]}
+            >
               <StepperButton
                 icon="remove"
                 onPress={() => setColumnCount(effectiveColumns - 1)}
@@ -126,11 +218,7 @@ export default function SettingsPanel() {
           Choose how many filter sections can be expanded at once.
         </Text>
         <View
-          style={[
-            styles.list,
-            { backgroundColor: palette.surface, borderColor: palette.divider },
-          ]}
-        >
+          style={[styles.list, theme.surfaces.card]}>
           {(
             [
               {
@@ -209,7 +297,11 @@ export default function SettingsPanel() {
           Toggle which filter sections appear in the sidebar, and drag the
           handle to reorder them.
         </Text>
-        <Sortable.Grid
+        {/* Card frame around the whole reorder list, matching the other
+            settings groups. Dragged rows render within the grid, so the
+            card's overflow clip only matters at the very edges mid-drag. */}
+        <View style={[styles.list, theme.surfaces.card]}>
+          <Sortable.Grid
           columns={1}
           data={order}
           keyExtractor={(key) => key}
@@ -239,15 +331,86 @@ export default function SettingsPanel() {
               <Text style={[styles.rowLabel, { color: palette.textPrimary }]}>
                 {SECTION_LABELS[key]}
               </Text>
-              <Switch
+              <ThemedCheckbox
                 value={settings.visibleFilterSections[key]}
                 onValueChange={(next) => setSectionVisible(key, next)}
+                accessibilityLabel={`Show ${SECTION_LABELS[key]} section`}
               />
             </View>
           )}
-        />
+          />
+        </View>
       </View>
     </ScrollView>
+      )}
+    </View>
+  );
+}
+
+/**
+ * One selectable theme option, drawn *in* the theme it represents — its own
+ * background, shapes, and accent — so the picker doubles as a live preview.
+ */
+function ThemeCard({
+  themeKey,
+  scheme,
+  selected,
+  accent,
+}: {
+  themeKey: ThemeKey;
+  scheme: Theme['scheme'];
+  selected: boolean;
+  accent: string;
+}) {
+  const preview = buildTheme(themeKey, scheme);
+  const c = preview.colors;
+  return (
+    <Pressable
+      onPress={() => setThemeKey(themeKey)}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`Use ${preview.name} theme`}
+      style={({ pressed }) => [
+        styles.themeCard,
+        {
+          backgroundColor: c.background,
+          borderRadius: Math.min(preview.radius.panel, 16),
+          borderColor: selected ? accent : c.divider,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      {/* Miniature chrome: a chip, a card, and an accent pill in the
+          candidate theme's shapes. */}
+      <View style={styles.themeSwatchRow}>
+        <View
+          style={[
+            styles.themeSwatchChip,
+            preview.surfaces.chip,
+            { backgroundColor: c.primary },
+          ]}
+        />
+        <View style={[styles.themeSwatchCard, preview.surfaces.card]} />
+        <View
+          style={[
+            styles.themeSwatchCard,
+            preview.surfaces.card,
+            { backgroundColor: c.surfaceElevated },
+          ]}
+        />
+      </View>
+      <View style={styles.themeNameRow}>
+        <Text style={[styles.themeName, { color: c.textPrimary }]}>
+          {preview.name}
+        </Text>
+        {selected ? (
+          <MaterialIcons name="check-circle" size={18} color={accent} />
+        ) : null}
+      </View>
+      <Text style={[styles.themeTagline, { color: c.textSecondary }]}>
+        {preview.tagline}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -261,7 +424,7 @@ function StepperButton({
   icon: React.ComponentProps<typeof MaterialIcons>['name'];
   onPress: () => void;
   disabled: boolean;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
   label: string;
 }) {
   return (
@@ -274,7 +437,7 @@ function StepperButton({
         { opacity: disabled ? 0.3 : pressed ? 0.5 : 1 },
       ]}
     >
-      <MaterialIcons name={icon} size={20} color={palette.textPrimary} />
+      <MaterialIcons name={icon} size={16} color={palette.textPrimary} />
     </Pressable>
   );
 }
@@ -289,7 +452,53 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.SMALL,
   },
   list: {
-    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  tabRow: {
+    flexDirection: 'row',
+    gap: SPACING.SMALL,
+    paddingHorizontal: SPACING.MEDIUM,
+    paddingTop: SPACING.SMALL,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.TINY + 2,
+    paddingHorizontal: SPACING.SMALL,
+  },
+  tabLabel: {
+    fontSize: FONT_SIZES.SMALL,
+  },
+  themeCard: {
+    padding: SPACING.SMALL,
+    gap: SPACING.TINY,
+    borderWidth: 2,
+  },
+  themeSwatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.TINY,
+    marginBottom: SPACING.TINY,
+  },
+  themeSwatchChip: {
+    width: 34,
+    height: 18,
+  },
+  themeSwatchCard: {
+    width: 44,
+    height: 18,
+  },
+  themeNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  themeName: {
+    fontSize: FONT_SIZES.SMALL,
+    fontWeight: '700',
+  },
+  themeTagline: {
+    fontSize: FONT_SIZES.TINY,
   },
   rowLabel: {
     fontSize: FONT_SIZES.SMALL,
@@ -306,7 +515,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.SMALL,
     paddingVertical: SPACING.TINY,
     borderWidth: 1,
-    borderRadius: 999,
   },
   autoText: {
     fontSize: FONT_SIZES.TINY,
@@ -315,21 +523,20 @@ const styles = StyleSheet.create({
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.SMALL,
-    paddingHorizontal: SPACING.SMALL,
-    paddingVertical: SPACING.TINY,
-    borderRadius: 999,
+    gap: SPACING.TINY,
+    paddingHorizontal: SPACING.TINY,
+    paddingVertical: 2,
     borderWidth: 1,
   },
   stepperButton: {
-    width: 32,
-    height: 32,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperCount: {
-    fontSize: FONT_SIZES.MEDIUM,
-    minWidth: 22,
+    fontSize: FONT_SIZES.SMALL,
+    minWidth: 18,
     textAlign: 'center',
     fontWeight: '600',
   },
