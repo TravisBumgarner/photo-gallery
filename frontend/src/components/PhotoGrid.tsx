@@ -293,7 +293,15 @@ function PhotoGrid({
   );
 
   if (!isMobile || !onColumnCountChange) return list;
-  return <GestureDetector gesture={pinchGesture}>{list}</GestureDetector>;
+  // touchAction is web-only and essential here: gesture-handler otherwise sets
+  // `touch-action: none` on the wrapper, which tells mobile browsers to stop
+  // handling pans — killing scroll for the whole grid. `pan-y` keeps vertical
+  // scrolling native while pointer events still reach the pinch handler.
+  return (
+    <GestureDetector gesture={pinchGesture} touchAction="pan-y">
+      {list}
+    </GestureDetector>
+  );
 }
 
 const styles = StyleSheet.create({

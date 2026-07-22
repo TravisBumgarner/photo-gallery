@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "main": "expo-router/entry",
-  "version": "1.2.0",
+  "version": "1.5.0",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -9,9 +9,12 @@
     "@tamagui/config": "^2.0.0",
     "expo": "^56.0.12",
     "expo-constants": "~56.0.15",
+    "expo-file-system": "~56.0.8",
     "expo-image": "~56.0.9",
     "expo-linking": "~56.0.11",
+    "expo-media-library": "~56.0.9",
     "expo-router": "~56.2.6",
+    "expo-sharing": "~56.0.22",
     "expo-splash-screen": "^56.0.10",
     "react": "19.2.3",
     "react-dom": "19.2.3",

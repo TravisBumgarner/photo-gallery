@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -35,6 +36,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiFetch, imageUrl, thumbnailUrl } from '../lib/api';
+import { downloadPhoto } from '../lib/download';
 import type { Photo } from '../lib/types';
 import { FONT_SIZES, SPACING } from '../styles/styleConsts';
 import type { Palette } from '../styles/usePalette';
@@ -136,6 +138,8 @@ export default function PhotoViewer({
     before: [],
     after: [],
   });
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const currentIndex = useMemo(
     () => (photo ? photos.findIndex((p) => p.id === photo.id) : -1),
@@ -158,6 +162,26 @@ export default function PhotoViewer({
     },
     [inResults, neighbors, onNavigate, onSelectPhoto, photo],
   );
+
+  // A failure belongs to the photo it happened on — don't carry it forward.
+  useEffect(() => {
+    setDownloadError(null);
+  }, [photo?.id]);
+
+  const handleDownload = useCallback(async () => {
+    if (!photo || downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadPhoto(photo);
+    } catch (err) {
+      setDownloadError(
+        err instanceof Error ? err.message : 'Could not download this photo',
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }, [downloading, photo]);
 
   // Slide animation state. The image area is a three-slot filmstrip —
   // [prev, current, next] — laid out side by side and translated as one track,
@@ -516,6 +540,15 @@ export default function PhotoViewer({
             )}
           </View>
 
+          {downloadError && (
+            <Text
+              style={[styles.downloadError, { color: palette.error }]}
+              numberOfLines={2}
+            >
+              {downloadError}
+            </Text>
+          )}
+
           {/* Bottom bar: flush and in-flow — floating overlapped the mobile
               neighbors/metadata panels, which live at the bottom too. */}
           <View
@@ -574,6 +607,23 @@ export default function PhotoViewer({
               palette={palette}
               title={showMetadata ? 'Hide metadata' : 'Show metadata'}
             />
+            <View
+              style={[styles.divider, { backgroundColor: palette.divider }]}
+            />
+            <IconBtn
+              name="file-download"
+              onPress={handleDownload}
+              disabled={downloading}
+              busy={downloading}
+              palette={palette}
+              title={
+                downloading
+                  ? 'Downloading…'
+                  : Platform.OS === 'web'
+                    ? 'Download original'
+                    : 'Save to Photos'
+              }
+            />
           </View>
         </SafeAreaView>
       </GestureHandlerRootView>
@@ -590,6 +640,7 @@ function IconBtn({
   onPress,
   disabled,
   active,
+  busy,
   palette,
   title,
 }: {
@@ -597,6 +648,7 @@ function IconBtn({
   onPress: () => void;
   disabled?: boolean;
   active?: boolean;
+  busy?: boolean;
   palette: Palette;
   title: string;
 }) {
@@ -616,7 +668,11 @@ function IconBtn({
           { opacity: disabled ? 0.4 : pressed ? 0.6 : 1 },
         ]}
       >
-        <MaterialIcons name={name} size={24} color={color} />
+        {busy ? (
+          <ActivityIndicator size="small" color={color} />
+        ) : (
+          <MaterialIcons name={name} size={24} color={color} />
+        )}
       </Pressable>
     </Tooltip>
   );
@@ -969,6 +1025,12 @@ const styles = StyleSheet.create({
     width: 1,
     height: 24,
     marginHorizontal: SPACING.SMALL,
+  },
+  downloadError: {
+    paddingHorizontal: SPACING.MEDIUM,
+    paddingBottom: SPACING.TINY,
+    fontSize: FONT_SIZES.SMALL,
+    textAlign: 'center',
   },
   neighborsScroll: {
     flexShrink: 0,
