@@ -6,7 +6,7 @@ export interface PhotoSection {
   photos: Photo[];
 }
 
-function getGroupKey(photo: Photo, sortBy: string): string {
+export function getGroupKey(photo: Photo, sortBy: string): string {
   switch (sortBy) {
     case 'iso':
       return photo.iso != null ? String(photo.iso) : '__unknown__';
@@ -48,6 +48,15 @@ function getGroupLabel(key: string, sortBy: string): string {
     default:
       return key;
   }
+}
+
+/**
+ * Convert a raw group key from /photos/sections into the same string form
+ * getGroupKey produces, so server section metadata and client-side grouping
+ * agree (both sides ultimately stringify the same JSON values).
+ */
+export function normalizeSectionKey(raw: string | number | null): string {
+  return raw === null ? '__unknown__' : String(raw);
 }
 
 /** Group a flat photo array into sections based on the current sort field. */

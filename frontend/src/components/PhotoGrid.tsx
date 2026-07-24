@@ -1,12 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -16,6 +9,7 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type ViewToken,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -33,6 +27,8 @@ interface PhotoGridProps {
   hasMore: boolean;
   columnCount: number;
   sortBy: string | undefined;
+  collapsedSections: Set<string>;
+  onToggleSection: (key: string) => void;
   onLoadMore: () => void;
   onPhotoPress: (photo: Photo) => void;
   onColumnCountChange?: (count: number) => void;
@@ -111,6 +107,8 @@ function PhotoGrid({
   hasMore,
   columnCount,
   sortBy,
+  collapsedSections,
+  onToggleSection,
   onLoadMore,
   onPhotoPress,
   onColumnCountChange,
@@ -123,21 +121,33 @@ function PhotoGrid({
 
   const listRef = useRef<FlatList<Row>>(null);
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // First row currently in the viewport, tracked so collapsing knows whether
+  // the user is scrolled inside the section being collapsed.
+  const firstVisibleKeyRef = useRef<string | null>(null);
+  const pendingScrollKeyRef = useRef<string | null>(null);
+  const handleViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      firstVisibleKeyRef.current = viewableItems[0]?.key ?? null;
+    },
+  ).current;
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 0 })
+    .current;
 
-  // Section keys are sort-specific — clear state when the grouping changes.
-  useEffect(() => {
-    setCollapsed(new Set());
-  }, [sortBy]);
-
-  const toggleCollapsed = useCallback((key: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+  const handleToggleSection = useCallback(
+    (key: string, currentlyCollapsed: boolean) => {
+      // Collapsing while scrolled inside the section would leave the viewport
+      // on whatever content slides up into it — snap back to the section's
+      // header instead, so repeated collapses don't strand the user mid-list.
+      if (!currentlyCollapsed) {
+        const first = firstVisibleKeyRef.current;
+        if (first === `h-${key}` || first?.startsWith(`r-${key}-`)) {
+          pendingScrollKeyRef.current = key;
+        }
+      }
+      onToggleSection(key);
+    },
+    [onToggleSection],
+  );
 
   // Discrete pinch-to-zoom: each gesture changes column count by at most one
   // step. Tracks whether the current gesture has already triggered a change
@@ -189,9 +199,27 @@ function PhotoGrid({
   );
 
   const rows = useMemo(
-    () => buildRows(photos, sortBy, columnCount, collapsed),
-    [photos, sortBy, columnCount, collapsed],
+    () => buildRows(photos, sortBy, columnCount, collapsedSections),
+    [photos, sortBy, columnCount, collapsedSections],
   );
+
+  // After a collapse rebuilds the rows, land the viewport on the collapsed
+  // section's header (queued by handleToggleSection above).
+  useEffect(() => {
+    const key = pendingScrollKeyRef.current;
+    if (!key) return;
+    pendingScrollKeyRef.current = null;
+    const index = rows.findIndex(
+      (r) => r.type === 'header' && r.sectionKey === key,
+    );
+    if (index >= 0) {
+      listRef.current?.scrollToIndex({
+        index,
+        animated: false,
+        viewPosition: 0,
+      });
+    }
+  }, [rows]);
 
   const stickyIndices = useMemo(
     () =>
@@ -207,7 +235,7 @@ function PhotoGrid({
       if (item.type === 'header') {
         return (
           <Pressable
-            onPress={() => toggleCollapsed(item.sectionKey)}
+            onPress={() => handleToggleSection(item.sectionKey, item.collapsed)}
             accessibilityRole="button"
             accessibilityLabel={`${
               item.collapsed ? 'Expand' : 'Collapse'
@@ -255,7 +283,7 @@ function PhotoGrid({
         </View>
       );
     },
-    [cellSize, onPhotoPress, palette, theme.hairline, toggleCollapsed],
+    [cellSize, onPhotoPress, palette, theme.hairline, handleToggleSection],
   );
 
   const keyExtractor = useCallback((r: Row) => r.key, []);
@@ -267,6 +295,8 @@ function PhotoGrid({
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       stickyHeaderIndices={stickyIndices}
+      onViewableItemsChanged={handleViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
       onEndReached={hasMore ? onLoadMore : undefined}
       onEndReachedThreshold={8}
       initialNumToRender={columnCount * 20}

@@ -3,6 +3,10 @@ import { z } from 'zod';
 export const photoFiltersSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
+  // Absolute row offset into the sorted result set; overrides page when set.
+  // Lets the client skip past collapsed sections instead of paging through
+  // them (offsets come from /photos/sections).
+  offset: z.coerce.number().int().min(0).optional(),
   search: z.string().default(''),
   contentSearch: z.string().default(''),
   camera: z.string().default(''),
@@ -24,7 +28,15 @@ export const photoFiltersSchema = z.object({
   people: z.string().default(''),
   dogs: z.string().default(''),
   sortBy: z
-    .enum(['dateCaptured', 'filename', 'rating', 'createdAt'])
+    .enum([
+      'dateCaptured',
+      'filename',
+      'rating',
+      'createdAt',
+      'iso',
+      'aperture',
+      'camera',
+    ])
     .default('dateCaptured'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });

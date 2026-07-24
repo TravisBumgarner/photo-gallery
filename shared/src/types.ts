@@ -27,6 +27,18 @@ export interface PhotosResponse {
   pagination: Pagination;
 }
 
+// One group in the current sort order, as returned by /photos/sections.
+// `key` is the raw group value (month string, ISO number, camera name, …);
+// null when the sort column is null for that group.
+export interface PhotoSectionMeta {
+  key: string | number | null;
+  count: number;
+}
+
+export interface SectionsResponse {
+  sections: PhotoSectionMeta[];
+}
+
 export interface PhotoFilters {
   search?: string;
   contentSearch?: string;
