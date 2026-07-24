@@ -287,6 +287,25 @@ export function buildFilterConditions(filters: {
   return and(...conditions);
 }
 
+/**
+ * Sort expression per sortBy value. Filename sorts case-insensitively so the
+ * grid's first-letter sections (which uppercase the letter) stay contiguous —
+ * under binary collation 'B1.jpg' < 'a2.jpg' < 'b3.jpg' would interleave the
+ * A and B sections.
+ */
+function sortColumn(sortBy: string): AnyColumn | SQL {
+  const columns: Record<string, AnyColumn | SQL> = {
+    dateCaptured: photos.dateCaptured,
+    filename: sql`${photos.filename} COLLATE NOCASE`,
+    rating: photos.rating,
+    createdAt: photos.createdAt,
+    iso: photos.iso,
+    aperture: photos.aperture,
+    camera: photos.camera,
+  };
+  return columns[sortBy] ?? photos.dateCaptured;
+}
+
 // In-memory metadata cache
 let metadataCache: {
   data: Record<string, unknown>;
@@ -314,13 +333,14 @@ router.get('/photos', async (req, res) => {
     const {
       page: pageNum,
       limit: limitNum,
+      offset: offsetParam,
       sortBy,
       sortOrder,
       contentSearch,
       ...filterParams
     } = parsed.data;
 
-    const offset = (pageNum - 1) * limitNum;
+    const offset = offsetParam ?? (pageNum - 1) * limitNum;
 
     if (contentSearch && contentSearch.length > 0) {
       // Filter-first, rank-second: apply non-content filters in SQL to get a
@@ -402,7 +422,7 @@ router.get('/photos', async (req, res) => {
           limit: limitNum,
           total,
           totalPages: Math.ceil(total / limitNum),
-          hasMore: pageNum * limitNum < total,
+          hasMore: offset + paginated.length < total,
         },
       });
       return;
@@ -410,15 +430,8 @@ router.get('/photos', async (req, res) => {
 
     const whereClause = buildFilterConditions(filterParams);
 
-    // Determine sort column and order
-    const validSortColumns: Record<string, AnyColumn> = {
-      dateCaptured: photos.dateCaptured,
-      filename: photos.filename,
-      rating: photos.rating,
-      createdAt: photos.createdAt,
-    };
     const orderFn = sortOrder === 'asc' ? asc : desc;
-    const orderByColumn = validSortColumns[sortBy] ?? photos.dateCaptured;
+    const orderByColumn = sortColumn(sortBy);
 
     // Execute query with window function to get total count in a single pass.
     // The id tiebreaker makes the order deterministic across page fetches AND
@@ -447,12 +460,90 @@ router.get('/photos', async (req, res) => {
         limit: limitNum,
         total,
         totalPages: Math.ceil(total / limitNum),
-        hasMore: pageNum * limitNum < total,
+        hasMore: offset + allPhotos.length < total,
       },
     });
   } catch (error) {
     console.error('Error fetching photos:', error);
     res.status(500).json({ error: 'Failed to fetch photos' });
+  }
+});
+
+// Section outline for the current filters + sort: every group the grid will
+// render, in the exact order /photos emits photos, with per-group counts.
+// The client uses the cumulative counts as offsets to skip collapsed sections
+// instead of paging through them. Group keys mirror the frontend's
+// groupPhotosBySort: months for date sorts, raw values otherwise.
+export async function querySections(
+  dbConn: typeof db,
+  sortBy: string,
+  sortOrder: 'asc' | 'desc',
+  whereClause: SQL | undefined,
+): Promise<{ key: string | number | null; count: number }[]> {
+  const groupExprs: Record<string, SQL> = {
+    dateCaptured: sql`strftime('%Y-%m', ${photos.dateCaptured}, 'unixepoch')`,
+    createdAt: sql`strftime('%Y-%m', ${photos.createdAt}, 'unixepoch')`,
+    iso: sql`${photos.iso}`,
+    aperture: sql`${photos.aperture}`,
+    camera: sql`${photos.camera}`,
+    filename: sql`upper(substr(${photos.filename}, 1, 1))`,
+  };
+  const groupExpr = groupExprs[sortBy];
+
+  if (!groupExpr) {
+    // Ungrouped sorts (rating): the grid shows a single section.
+    const [row] = await dbConn
+      .select({ count: sql<number>`count(*)` })
+      .from(photos)
+      .where(whereClause);
+    return row.count > 0 ? [{ key: null, count: row.count }] : [];
+  }
+
+  // Ordering by the group key matches photo order because every key is a
+  // monotonic function of its sort column, and SQLite places NULL keys
+  // exactly where it places NULL sort values (first asc, last desc).
+  const orderFn = sortOrder === 'asc' ? asc : desc;
+  return dbConn
+    .select({
+      key: sql<string | number | null>`${groupExpr}`,
+      count: sql<number>`count(*)`,
+    })
+    .from(photos)
+    .where(whereClause)
+    .groupBy(groupExpr)
+    .orderBy(orderFn(groupExpr));
+}
+
+router.get('/photos/sections', async (req, res) => {
+  try {
+    const parsed = photoFiltersSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid query parameters',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const {
+      page: _page,
+      limit: _limit,
+      offset: _offset,
+      sortBy,
+      sortOrder,
+      contentSearch: _contentSearch,
+      ...filterParams
+    } = parsed.data;
+
+    const sections = await querySections(
+      db,
+      sortBy,
+      sortOrder,
+      buildFilterConditions(filterParams),
+    );
+    res.json({ sections });
+  } catch (error) {
+    console.error('Error fetching sections:', error);
+    res.status(500).json({ error: 'Failed to fetch sections' });
   }
 });
 
