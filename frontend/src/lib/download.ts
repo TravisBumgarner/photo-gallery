@@ -1,10 +1,12 @@
 import { File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import { Platform } from 'react-native';
 
 import { imageUrl } from './api';
 import type { Photo } from './types';
+
+// Native implementation — web builds resolve download.web.ts instead, because
+// expo-media-library has no web support and throws at import time there.
 
 /** `originalPath` is a bare filename, but guard against stray path segments. */
 function fileNameFor(photo: Photo): string {
@@ -22,11 +24,7 @@ async function shareFallback(uri: string): Promise<void> {
 /**
  * Save the full-resolution original.
  *
- * Web: fetched as a blob rather than pointed at with a plain `<a download>`,
- * because in local dev the backend is a different origin — browsers ignore the
- * download attribute cross-origin and navigate to the image instead.
- *
- * Native: `/images` sits behind the session cookie, which iOS's shared cookie
+ * `/images` sits behind the session cookie, which iOS's shared cookie
  * storage attaches to the download for us. The file lands in the cache
  * directory (system-reclaimable) and is then added to the photo library.
  *
@@ -38,21 +36,6 @@ async function shareFallback(uri: string): Promise<void> {
 export async function downloadPhoto(photo: Photo): Promise<void> {
   const url = imageUrl(photo.originalPath);
   const name = fileNameFor(photo);
-
-  if (Platform.OS === 'web') {
-    const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) throw new Error(`Download failed (${res.status})`);
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(objectUrl);
-    return;
-  }
 
   const file = await File.downloadFileAsync(url, new File(Paths.cache, name), {
     idempotent: true,
