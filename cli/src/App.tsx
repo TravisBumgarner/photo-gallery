@@ -16,7 +16,8 @@ import {
   SUPPORTED_IMAGE_FORMATS,
 } from './configFiles.js';
 import { ConfigStep } from './ConfigStep.js';
-import { DeployStep } from './DeployStep.js';
+import { DeployParamsEditor, DeployStep } from './DeployStep.js';
+import { DEPLOY_PARAMS } from './deployParams.js';
 import { LabelStep } from './LabelStep.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 import { PullStep } from './PullStep.js';
@@ -53,6 +54,7 @@ type Screen =
   | 'done'
   | 'serve'
   | 'deployRun'
+  | 'deploySettings'
   | 'pull'
   | 'config'
   | 'firstRun';
@@ -444,6 +446,15 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
               { label: 'Serve on this computer', value: 'serve' },
               { label: 'Publish photos to your site', value: 'publish' },
               { label: 'Update the app on your site', value: 'app' },
+              // Only automated targets have params to edit.
+              ...(DEPLOY_PARAMS[REMOTE_TARGET]
+                ? [
+                    {
+                      label: 'Deploy settings (server address, key…)',
+                      value: 'deploySettings',
+                    },
+                  ]
+                : []),
               { label: '← Back', value: 'back' },
             ]}
             onSelect={(item) => {
@@ -451,6 +462,8 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
                 setDeployTarget('localhost');
                 savePrefs({ importDir, deployTarget: 'localhost' });
                 setScreen('serve');
+              } else if (item.value === 'deploySettings') {
+                setScreen('deploySettings');
               } else if (item.value === 'publish' || item.value === 'app') {
                 setDeployTarget(REMOTE_TARGET);
                 savePrefs({ importDir, deployTarget: REMOTE_TARGET });
@@ -591,6 +604,14 @@ export function App({ forceSetup = false }: { forceSetup?: boolean }) {
           target={deployTarget}
           action={deployAction}
           onDone={() => exit()}
+          onBack={() => setScreen('deploy')}
+        />
+      )}
+
+      {screen === 'deploySettings' && (
+        <DeployParamsEditor
+          target={REMOTE_TARGET}
+          onDone={() => setScreen('deploy')}
           onBack={() => setScreen('deploy')}
         />
       )}
