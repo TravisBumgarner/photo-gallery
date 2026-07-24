@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useEscapeBack } from './useEscapeBack.js';
@@ -10,6 +10,7 @@ import { DEPLOY_TARGETS, deployGuidePath } from './configFiles.js';
 import {
   DEPLOY_PARAMS,
   deployScriptPath,
+  hasSavedDeployParams,
   loadDeployParams,
   pushScriptPath,
   saveDeployParams,
@@ -95,6 +96,36 @@ function openPath(p: string): void {
   }
 }
 
+/** Edit and save a target's deploy params without running anything — the
+ * "Deploy settings" entry in the Serve/deploy menu. Values persist
+ * field-by-field, exactly like the pre-deploy form. */
+export function DeployParamsEditor({
+  target,
+  onDone,
+  onBack,
+}: {
+  target: string;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <Box flexDirection="column">
+      <Text bold>Deploy settings — {label(target)}</Text>
+      <Text dimColor>Enter keeps each saved value.</Text>
+      <ParamForm
+        fields={DEPLOY_PARAMS[target] ?? []}
+        initial={loadDeployParams(target)}
+        onPersist={(v) => saveDeployParams(target, v)}
+        onSubmit={(v) => {
+          saveDeployParams(target, v);
+          onDone();
+        }}
+        onCancel={onBack}
+      />
+    </Box>
+  );
+}
+
 /** Push to a remote target — either the app code (`action: 'app'`, deploy.sh) or
  * the photos + DB (`action: 'data'`, push.sh). Supported targets (have
  * DEPLOY_PARAMS) prompt for their env params — pre-filled, editable — then run
@@ -114,7 +145,12 @@ export function DeployStep({
   onBack: () => void;
 }) {
   const fields = DEPLOY_PARAMS[target];
-  const [stage, setStage] = useState<Stage>(fields ? 'params' : 'manual');
+  // Saved params from a completed earlier form → skip straight to the deploy
+  // (edit them via the deploy menu's Settings entry, or from a failure screen).
+  const skipForm = Boolean(fields) && hasSavedDeployParams(target);
+  const [stage, setStage] = useState<Stage>(
+    !fields ? 'manual' : skipForm ? 'checking' : 'params',
+  );
   const [detail, setDetail] = useState('');
   const tail = useRef<string[]>([]);
   const pendingVals = useRef<Record<string, string>>({});
@@ -200,17 +236,30 @@ export function DeployStep({
     });
   };
 
+  // Auto-start when the form is being skipped (mount only — run() is stable
+  // for the component's lifetime in all the ways that matter here).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire once on mount
+  useEffect(() => {
+    if (skipForm) run(loadDeployParams(target));
+  }, []);
+
   // Shared end-screen actions: open the live site, the full log, or finish.
+  // A failure also offers the (normally skipped) form — the saved server
+  // address or key being wrong is the usual cause.
   const endActions = (
     <SelectInput
       items={[
         ...(siteUrl ? [{ label: 'Open the site', value: 'site' }] : []),
         { label: 'Open the full log', value: 'log' },
+        ...(stage === 'failed' && fields
+          ? [{ label: 'Edit deploy settings & retry', value: 'edit' }]
+          : []),
         { label: 'Finish', value: 'finish' },
       ]}
       onSelect={(item) => {
         if (item.value === 'site') openPath(siteUrl);
         else if (item.value === 'log') openPath(logPath);
+        else if (item.value === 'edit') setStage('params');
         else onDone();
       }}
     />

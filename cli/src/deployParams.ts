@@ -190,6 +190,15 @@ function readStore(): Store {
   }
 }
 
+/** True once the form has been completed for a target: every param key is
+ * present in the saved store (empty string is a real answer — e.g. the default
+ * SSH key). Lets re-deploys skip the form entirely. */
+export function hasSavedDeployParams(target: string): boolean {
+  const saved = readStore()[target];
+  if (!saved) return false;
+  return (DEPLOY_PARAMS[target] ?? []).every((p) => p.key in saved);
+}
+
 /** Saved params for a target, back-filled with each param's default. */
 export function loadDeployParams(target: string): Record<string, string> {
   const saved = readStore()[target] ?? {};
